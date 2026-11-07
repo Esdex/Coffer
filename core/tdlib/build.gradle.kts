@@ -9,8 +9,20 @@ plugins {
 val tdlibPin = Properties().apply { file("tdlib.properties").inputStream().use(::load) }
 val distDir = file("dist")
 
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) file.inputStream().use(::load)
+}
+
 // Through the dsl type: the generated `android` accessor casts source sets to a legacy type and fails on AGP 9.
 extensions.configure<com.android.build.api.dsl.LibraryExtension> {
+    defaultConfig {
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // Device tests sign in to Telegram's test servers with the personal keys. Passed to
+        // `am instrument` at run time, not packed into an APK, and never printed.
+        localProperties.getProperty("COFFER_API_ID")?.let { testInstrumentationRunnerArguments["cofferApiId"] = it.trim() }
+        localProperties.getProperty("COFFER_API_HASH")?.let { testInstrumentationRunnerArguments["cofferApiHash"] = it.trim() }
+    }
     sourceSets.getByName("main") {
         java.directories += distDir.resolve("java").path
         jniLibs.directories += distDir.resolve("libs").path
@@ -41,4 +53,8 @@ dependencies {
     api(project(":core:storage"))
     // The generated TdApi.java uses @IntDef.
     implementation(libs.androidx.annotation)
+
+    androidTestImplementation(testFixtures(project(":core:storage")))
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }
