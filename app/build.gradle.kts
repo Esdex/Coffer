@@ -114,4 +114,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+
+    // The storage self-check runs the StorageBackend contract inside debug builds.
+    debugImplementation(testFixtures(project(":core:storage")))
 }

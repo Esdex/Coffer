@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import me.esdex.coffer.R
+import me.esdex.coffer.debug.DebugTools
 
 /** Signed in to Telegram. The vault itself comes on top of this. */
 @Composable
@@ -22,5 +23,6 @@ fun AccountScreen(accountName: String?, onLogOut: () -> Unit, modifier: Modifier
         Text(stringResource(R.string.account_signed_in), style = MaterialTheme.typography.headlineSmall)
         accountName?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
         OutlinedButton(onClick = onLogOut) { Text(stringResource(R.string.account_log_out)) }
+        DebugTools(Modifier.padding(top = 16.dp))
     }
 }
