@@ -115,6 +115,15 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
 
+    // libsodium for Android. Its POM pulls the plain JNA jar, which has no Android native library;
+    // the AAR of the same JNA version does.
+    implementation(libs.lazysodium.android) {
+        exclude(group = "net.java.dev.jna", module = "jna")
+    }
+    implementation(libs.jna) {
+        artifact { type = "aar" }
+    }
+
     // The storage self-check runs the StorageBackend contract inside debug builds.
     debugImplementation(testFixtures(project(":core:storage")))
 }
