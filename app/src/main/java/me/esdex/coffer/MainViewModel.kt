@@ -10,10 +10,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
+import me.esdex.coffer.core.vault.VaultManager
 import javax.inject.Inject
 
 @HiltViewModel
-class MainViewModel @Inject constructor(private val telegram: Telegram) : ViewModel() {
+class MainViewModel @Inject constructor(
+    private val telegram: Telegram,
+    private val vault: VaultManager,
+) : ViewModel() {
 
     val signedIn: StateFlow<Boolean> = telegram.state
         .map { it == AuthState.Ready }
@@ -26,6 +30,10 @@ class MainViewModel @Inject constructor(private val telegram: Telegram) : ViewMo
 
     init {
         telegram.start()
+    }
+
+    fun lock() {
+        viewModelScope.launch { vault.lockVault() }
     }
 
     fun logOut() {

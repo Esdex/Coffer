@@ -109,6 +109,7 @@ dependencies {
     implementation(project(":core:crypto"))
     implementation(project(":core:storage"))
     implementation(project(":core:tdlib"))
+    implementation(project(":core:vault"))
     implementation(project(":core:index"))
     implementation(project(":core:sync"))
     implementation(project(":feature:onboarding"))
@@ -121,6 +122,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.androidx.fragment)
 
     // libsodium for Android. Its POM pulls the plain JNA jar, which has no Android native library;
     // the AAR of the same JNA version does.

@@ -6,6 +6,9 @@ plugins {
 
 dependencies {
     implementation(project(":core:tdlib"))
+    implementation(project(":core:vault"))
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)

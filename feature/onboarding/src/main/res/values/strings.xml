@@ -55,4 +55,67 @@
     <string name="login_error_api_id_invalid">Telegram does not accept these API keys.</string>
     <string name="login_error_api_id_published">Telegram has blocked these API keys. Create new ones at my.telegram.org.</string>
     <string name="login_error_other">Telegram error: %1$s</string>
+    <string name="welcome_title">Coffer</string>
+    <string name="welcome_what">An encrypted file vault in your Telegram Saved Messages. Files, names and folders are encrypted on this phone before anything is sent; Telegram only stores blobs it cannot read.</string>
+    <string name="welcome_api">Coffer talks to Telegram through the official Telegram API with your own account. There is no Coffer server.</string>
+    <string name="welcome_saved_messages">Your files will show up in Saved Messages as files named like cfr_1a2b3c4d5e6f.bin. Do not delete them in the regular Telegram app, or the files they belong to will be lost.</string>
+    <string name="welcome_start">Get started</string>
+
+    <string name="vault_searching_title">Looking for your vault</string>
+    <string name="vault_searching_explanation">Checking Saved Messages for a Coffer vault.</string>
+    <string name="vault_searching_scanned">%1$d messages checked</string>
+
+    <string name="vault_password">Vault password</string>
+    <string name="vault_password_repeat">Repeat the password</string>
+    <string name="vault_unlock">Unlock</string>
+    <string name="vault_unlock_title">Unlock your vault</string>
+    <string name="vault_unlock_explanation">Enter the vault password. It is not your Telegram password.</string>
+    <string name="vault_unlock_prompt">Unlock Coffer</string>
+    <string name="vault_unlock_device">Unlock with fingerprint or screen lock</string>
+    <string name="vault_use_recovery_key">Use the recovery key instead</string>
+    <string name="vault_use_password">Use the password instead</string>
+
+    <string name="vault_recovery_unlock_title">Recovery key</string>
+    <string name="vault_recovery_unlock_explanation">Enter the 24 words you wrote down when the vault was created, separated by spaces.</string>
+    <string name="vault_recovery_key">Recovery key</string>
+    <string name="vault_recovery_word_count">%1$d of %2$d words</string>
+    <string name="vault_recovery_unknown_words">Not in the word list: %1$s</string>
+
+    <string name="vault_create_title">Create your vault</string>
+    <string name="vault_create_explanation">No vault was found in your Saved Messages. Choose a password for a new one. Anyone who gets into your Telegram account could try to guess it, so make it strong: a few unrelated words work well.</string>
+    <string name="vault_create_continue">Continue</string>
+    <string name="vault_strength_0">Very weak</string>
+    <string name="vault_strength_1">Weak</string>
+    <string name="vault_strength_2">Fair</string>
+    <string name="vault_strength_3">Good</string>
+    <string name="vault_strength_4">Strong</string>
+    <string name="vault_strength_too_short">At least %1$d characters.</string>
+
+    <string name="vault_recovery_title">Your recovery key</string>
+    <string name="vault_recovery_explanation">These 24 words open your vault if you forget the password. Write them down on paper, in order, and keep them somewhere safe. Anyone with these words can open your vault. They will not be shown again.</string>
+    <string name="vault_recovery_written">I have written down all 24 words</string>
+    <string name="vault_confirm_title">Check your recovery key</string>
+    <string name="vault_confirm_explanation">Type these words from your paper copy.</string>
+    <string name="vault_confirm_word">Word %1$d</string>
+    <string name="vault_confirm_show_again">Show the words again</string>
+
+    <string name="vault_device_title">Unlock with fingerprint or screen lock</string>
+    <string name="vault_device_explanation">Open the vault with your fingerprint, face or screen lock instead of typing the password every time. The vault key stays in this phone\'s secure hardware and is lost if a new fingerprint or face is added; then the password is needed once.</string>
+    <string name="vault_device_enable">Turn on</string>
+    <string name="vault_device_enable_prompt">Turn on unlock for Coffer</string>
+    <string name="vault_device_skip">Not now</string>
+
+    <string name="vault_publishing_title">Saving your vault to Telegram</string>
+
+    <string name="vault_error_wrong_password">Wrong password.</string>
+    <string name="vault_error_word_count">A recovery key has 24 words.</string>
+    <string name="vault_error_unknown_word">Some words are not in the recovery word list.</string>
+    <string name="vault_error_checksum">These words are not a valid recovery key. Check for a misspelled or swapped word.</string>
+    <string name="vault_error_other_vault">This recovery key belongs to a different vault.</string>
+    <string name="vault_error_words_mismatch">These words do not match. Check your paper copy, or show the words again.</string>
+    <string name="vault_error_passwords_differ">The passwords do not match.</string>
+    <string name="vault_error_vault_appeared">A vault was just created from another device. Unlock that one instead.</string>
+    <string name="vault_error_device_key">Could not unlock with the screen lock. Use the password.</string>
+    <string name="vault_error_device_invalidated">A new fingerprint or face was added, so unlock with the password once.</string>
+    <string name="vault_error_storage">Telegram error: %1$s</string>
 </resources>
