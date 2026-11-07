@@ -1,4 +1,5 @@
 pluginManagement {
+    includeBuild("build-logic")
     repositories {
         google {
             content {
@@ -24,4 +25,11 @@ dependencyResolutionManagement {
 
 rootProject.name = "Coffer"
 include(":app")
- 
+include(":core:crypto")
+include(":core:storage")
+include(":core:tdlib")
+include(":core:index")
+include(":core:sync")
+include(":feature:onboarding")
+include(":feature:browser")
+include(":feature:settings")
