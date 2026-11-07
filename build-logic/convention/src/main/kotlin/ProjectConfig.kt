@@ -14,7 +14,8 @@ internal object CofferSdk {
     // 30, not 29: BiometricPrompt with a CryptoObject accepts DEVICE_CREDENTIAL only from API 30 (SPEC §3.8).
     const val MIN = 30
 
-    val JAVA = JavaVersion.VERSION_17
+    // 21: lazysodium 5.2.0 (the first with 16 KB aligned libraries) ships Java 21 bytecode.
+    val JAVA = JavaVersion.VERSION_21
 }
 
 internal val Project.libs: VersionCatalog
