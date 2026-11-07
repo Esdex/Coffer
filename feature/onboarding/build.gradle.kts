@@ -1,4 +1,14 @@
 plugins {
     alias(libs.plugins.coffer.android.library)
     alias(libs.plugins.coffer.android.compose)
+    alias(libs.plugins.coffer.hilt)
+}
+
+dependencies {
+    implementation(project(":core:tdlib"))
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+    // Draws the sign-in QR code. Pure Java, no Android or network code.
+    implementation(libs.zxing.core)
 }

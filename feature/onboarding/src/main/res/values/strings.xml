@@ -1,0 +1,58 @@
+<resources>
+    <string name="login_continue">Continue</string>
+    <string name="login_start_over">Start over</string>
+    <string name="login_change_api_keys">Change API keys</string>
+
+    <string name="login_api_keys_title">Telegram API keys</string>
+    <string name="login_api_keys_explanation">Coffer talks to Telegram with your own API keys, so no one else\'s app stands between you and your files.</string>
+    <string name="login_api_keys_steps">1. Open my.telegram.org and sign in with your phone number.\n2. Go to API development tools.\n3. Create an application (any title and short name).\n4. Copy App api_id and App api_hash here.</string>
+    <string name="login_api_keys_open_site">Open my.telegram.org</string>
+    <string name="login_api_id">api_id</string>
+    <string name="login_api_hash">api_hash</string>
+
+    <string name="login_phone_title">Sign in to Telegram</string>
+    <string name="login_phone_explanation">Enter your phone number with the country code. Your files will be stored, encrypted, in your Saved Messages.</string>
+    <string name="login_phone_number">Phone number</string>
+    <string name="login_use_qr">Sign in with a QR code instead</string>
+    <string name="login_use_phone">Use phone number instead</string>
+
+    <string name="login_qr_title">Scan with Telegram</string>
+    <string name="login_qr_explanation">On a phone where you are signed in, open Telegram, go to Settings, Devices, Link Desktop Device, and scan this code.</string>
+
+    <string name="login_code_title">Enter the code</string>
+    <string name="login_code_in_app">We sent the code to your Telegram app on another device.</string>
+    <string name="login_code_sms">We sent the code by SMS to %1$s.</string>
+    <string name="login_code_call">You will get a call to %1$s with the code.</string>
+    <string name="login_code_fragment">The code was sent to your anonymous number on Fragment.</string>
+    <string name="login_code_other">Enter the code Telegram sent you.</string>
+    <string name="login_code">Code</string>
+    <string name="login_code_resend">Send the code another way</string>
+
+    <string name="login_email_title">Email for sign-in</string>
+    <string name="login_email_explanation">Telegram asks for an email address to send sign-in codes to.</string>
+    <string name="login_email">Email</string>
+    <string name="login_email_code_explanation">We sent the code to %1$s.</string>
+
+    <string name="login_password_title">Two-step verification</string>
+    <string name="login_password_explanation">Your account is protected with a password. Enter your Telegram cloud password.</string>
+    <string name="login_password">Password</string>
+    <string name="login_password_hint">Hint: %1$s</string>
+
+    <string name="login_registration_required">This number has no Telegram account. Create one in the official Telegram app first, then sign in here.</string>
+    <string name="login_premium_required">Telegram asks for a Premium subscription before this sign-in. That can only be done in the official Telegram app.</string>
+
+    <string name="login_failed_title">Telegram could not start</string>
+    <string name="login_failed_explanation">Error: %1$s</string>
+    <string name="login_failed_reset">Reset Telegram data and try again</string>
+
+    <string name="login_error_api_keys_format">api_id is a number and api_hash is 32 characters of 0-9 and a-f.</string>
+    <string name="login_error_flood_wait">Too many attempts. Telegram asks to wait %1$s.</string>
+    <string name="login_error_phone_invalid">This phone number is not valid.</string>
+    <string name="login_error_phone_banned">Telegram has banned this phone number.</string>
+    <string name="login_error_code_invalid">Wrong code.</string>
+    <string name="login_error_code_expired">The code has expired. Start over to get a new one.</string>
+    <string name="login_error_password_invalid">Wrong password.</string>
+    <string name="login_error_api_id_invalid">Telegram does not accept these API keys.</string>
+    <string name="login_error_api_id_published">Telegram has blocked these API keys. Create new ones at my.telegram.org.</string>
+    <string name="login_error_other">Telegram error: %1$s</string>
+</resources>
