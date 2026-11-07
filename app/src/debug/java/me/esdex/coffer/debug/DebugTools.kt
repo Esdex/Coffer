@@ -8,6 +8,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -24,14 +25,31 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.storage.StorageEvent
 import me.esdex.coffer.core.tdlib.Telegram
+import me.esdex.coffer.core.vault.DeviceUnlock
+import me.esdex.coffer.core.vault.VaultManager
+import me.esdex.coffer.core.vault.VaultStore
 import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
 class DebugToolsViewModel @Inject constructor(
     private val telegram: Telegram,
+    private val vault: VaultManager,
+    private val store: VaultStore,
+    private val device: DeviceUnlock,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
+
+    /** For calibrating Argon2id on real phones (SPEC §3.3). */
+    val lastKdfMillis: Long? get() = vault.lastKdfMillis
+
+    val deviceUnlockEnabled: Boolean get() = device.isEnabled
+
+    /** The offer comes once; this brings it back after the next password unlock. */
+    fun offerDeviceUnlockAgain() {
+        store.biometricOffered = false
+    }
+
 
     sealed interface CheckState {
         data object Idle : CheckState
@@ -83,6 +101,9 @@ fun DebugTools(modifier: Modifier = Modifier, viewModel: DebugToolsViewModel = h
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         HorizontalDivider()
         Text("Debug", style = MaterialTheme.typography.titleMedium)
+        Text("Last password check: ${viewModel.lastKdfMillis?.let { "$it ms" } ?: "none yet"}")
+        Text("Screen-lock unlock: ${if (viewModel.deviceUnlockEnabled) "on" else "off"}")
+        OutlinedButton(onClick = viewModel::offerDeviceUnlockAgain) { Text("Offer screen-lock unlock again") }
         Text("Events from Telegram: new ${events.newMessages}, deletions ${events.deletions}  ${events.last}")
         Button(onClick = viewModel::runSelfCheck, enabled = check != DebugToolsViewModel.CheckState.Running) {
             Text("Run storage self-check")
