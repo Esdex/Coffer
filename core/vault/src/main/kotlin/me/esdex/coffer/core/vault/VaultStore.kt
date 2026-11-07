@@ -1,0 +1,75 @@
+package me.esdex.coffer.core.vault
+
+import me.esdex.coffer.core.crypto.format.Captions
+import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
+import me.esdex.coffer.core.storage.MessageId
+import java.io.File
+import java.util.Properties
+
+/**
+ * What this device remembers about its vault between launches: the headers, so the unlock screen
+ * comes up without a search and works offline, and a few preferences. Nothing secret: the headers are
+ * the same text that sits in Saved Messages.
+ */
+class VaultStore(private val dir: File) {
+    private val headersFile get() = File(dir, "headers.txt")
+    private val prefsFile get() = File(dir, "vault.properties")
+
+    @Synchronized
+    fun headers(): List<FoundHeader> {
+        if (!headersFile.exists()) return emptyList()
+        return headersFile.readLines().mapNotNull { line ->
+            val (id, caption) = line.split(' ', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
+            val record = Captions.parse(caption) ?: return@mapNotNull null
+            val header = VaultHeaderCodec.decode(record) ?: return@mapNotNull null
+            FoundHeader(MessageId(id.toLongOrNull() ?: return@mapNotNull null), header)
+        }
+    }
+
+    @Synchronized
+    fun saveHeaders(headers: List<FoundHeader>) {
+        write(headersFile, headers.joinToString("") { "${it.messageId.value} ${VaultHeaderCodec.encode(it.header)}\n" })
+    }
+
+    /** Auto-lock after this long in the background; null = off. SPEC §9: on, 5 minutes by default. */
+    var autoLockMinutes: Int?
+        @Synchronized get() {
+            val value = prefs().getProperty(AUTO_LOCK) ?: return DEFAULT_AUTO_LOCK_MINUTES
+            return value.toIntOrNull()?.takeIf { it > 0 }
+        }
+
+        @Synchronized set(value) = updatePrefs { it.setProperty(AUTO_LOCK, value?.toString() ?: "off") }
+
+    /** The user said no to biometric unlock once; do not ask again on every unlock. */
+    var biometricOffered: Boolean
+        @Synchronized get() = prefs().getProperty(BIOMETRIC_OFFERED) == "true"
+
+        @Synchronized set(value) = updatePrefs { it.setProperty(BIOMETRIC_OFFERED, value.toString()) }
+
+    /** Signing out of Telegram forgets the vault on this device (SPEC §9). */
+    @Synchronized
+    fun clear() {
+        dir.deleteRecursively()
+    }
+
+    private fun prefs() = Properties().apply { if (prefsFile.exists()) prefsFile.inputStream().use(::load) }
+
+    private fun updatePrefs(change: (Properties) -> Unit) {
+        val prefs = prefs().also(change)
+        val text = java.io.StringWriter().also { prefs.store(it, null) }.toString()
+        write(prefsFile, text)
+    }
+
+    private fun write(file: File, text: String) {
+        dir.mkdirs()
+        val temp = File(dir, file.name + ".tmp")
+        temp.writeText(text)
+        check(temp.renameTo(file)) { "could not store ${file.name}" }
+    }
+
+    private companion object {
+        const val AUTO_LOCK = "autoLockMinutes"
+        const val BIOMETRIC_OFFERED = "biometricOffered"
+        const val DEFAULT_AUTO_LOCK_MINUTES = 5
+    }
+}
