@@ -1,15 +1,26 @@
 package me.esdex.coffer.core.crypto
 
-import com.goterl.lazysodium.LazySodiumJava
-import com.goterl.lazysodium.SodiumJava
+import com.goterl.lazysodium.LazySodium
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import me.esdex.coffer.core.crypto.sodium.LazySodiumAdapter
 import me.esdex.coffer.core.crypto.sodium.Sodium
 
-/** Real libsodium through the same adapter the app uses. */
-val realSodium: Sodium by lazy { LazySodiumAdapter(LazySodiumJava(SodiumJava())) }
+/**
+ * Real libsodium through the same adapter the app uses: lazysodium-java on the JVM, lazysodium-android when
+ * the app's device tests run this suite. Looked up by name, so either library alone on the classpath works.
+ */
+val realSodium: Sodium by lazy {
+    val flavour = if (classExists("com.goterl.lazysodium.LazySodiumAndroid")) "Android" else "Java"
+    val native = Class.forName("com.goterl.lazysodium.Sodium$flavour")
+    val lazySodium = Class.forName("com.goterl.lazysodium.LazySodium$flavour")
+        .getConstructor(native)
+        .newInstance(native.getConstructor().newInstance()) as LazySodium
+    LazySodiumAdapter(lazySodium)
+}
+
+private fun classExists(name: String) = runCatching { Class.forName(name) }.isSuccess
 
 /** Real primitives, but [randomBytes] hands out the given values in order: for byte-exact vectors. */
 class ScriptedSodium(vararg randoms: ByteArray) : Sodium by realSodium {

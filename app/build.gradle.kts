@@ -55,6 +55,13 @@ android {
     buildFeatures {
         buildConfig = true
     }
+
+    // The whole :core:crypto test suite runs again on a device, against lazysodium-android: the same
+    // oracle vectors, now through the native library the app ships.
+    sourceSets.getByName("androidTest") {
+        kotlin.directories += "../core/crypto/src/test/kotlin"
+        resources.directories += "../core/crypto/src/test/resources"
+    }
 }
 
 val apiId: String = localProperties.getProperty("COFFER_API_ID").orEmpty().trim()
@@ -123,6 +130,9 @@ dependencies {
     implementation(libs.jna) {
         artifact { type = "aar" }
     }
+
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.kotlinx.serialization.json)
 
     // The storage self-check runs the StorageBackend contract inside debug builds.
     debugImplementation(testFixtures(project(":core:storage")))
