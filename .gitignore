@@ -1,0 +1,17 @@
+*.iml
+.gradle
+.kotlin
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# Claude Code working files, kept private for now
+/.claude
+/.mcp.json
+/CLAUDE.md
+/SPEC.md
