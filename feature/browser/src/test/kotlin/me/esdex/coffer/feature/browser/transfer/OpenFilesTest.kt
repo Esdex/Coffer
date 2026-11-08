@@ -33,3 +33,17 @@ class OpenFilesTest {
         OpenFiles.sweep(File(temp.root, "never-created"), 0)
     }
 }
+
+class ShareCopiesTest {
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    @Test
+    fun sweepKeepsOnlyWhatIsStillWanted() {
+        val queued = temp.newFile("queued")
+        val onScreen = temp.newFile("on-screen")
+        temp.newFile("orphan")
+        ShareInbox.sweep(temp.root, setOf(queued, File(onScreen.path)))
+        assertEquals(setOf("queued", "on-screen"), temp.root.list()!!.toSet())
+    }
+}

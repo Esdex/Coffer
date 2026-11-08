@@ -97,6 +97,7 @@ class VaultContent @Inject constructor(
     private val index: VaultIndex,
     private val registry: TransferRegistry,
     private val store: VaultStore,
+    private val inbox: ShareInbox,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var session: Job? = null
@@ -143,6 +144,7 @@ class VaultContent @Inject constructor(
         close()
         keysFlow.value = keys
         session = scope.launch {
+            sweepShareCopies(keys)
             val storage = telegram.readyStorage(Long.MAX_VALUE) ?: return@launch
             val indexer = Indexer(storage, index, keys)
             val snapshotter = Snapshotter(storage, index, indexer, keys, File(context.cacheDir, "snapshot"), System::currentTimeMillis)
@@ -298,6 +300,27 @@ class VaultContent @Inject constructor(
         pendingWork.trySend(Unit)
     }
 
+    /** Queues the files the inbox holds into [folderId]; their copies are deleted once uploaded. */
+    suspend fun addShared(folderId: Id?) {
+        val items = inbox.take()
+        upload(items.map { UploadRequest(Uri.fromFile(it.file), it.name, it.mime, folderId) })
+    }
+
+    /**
+     * Copies no pending upload and no open share screen needs: left by a crash or by an upload
+     * cancelled while locked. Their sources are sealed, so this needs the open vault.
+     */
+    private suspend fun sweepShareCopies(keys: VaultKeys) {
+        if (inbox.state.value is ShareInbox.State.Copying) return
+        val queued = index.uploads().mapNotNullTo(HashSet()) { upload ->
+            keys.local.openUpload(upload.uploadId, upload.sealedRequest)?.source
+                ?.takeIf { ShareInbox.isCopy(context, it) }
+                ?.let { Uri.parse(it).path }
+                ?.let(::File)
+        }
+        ShareInbox.sweep(ShareInbox.dir(context), queued + inbox.held())
+    }
+
     /** Decrypts into [target] (a document the user picked), or for another app when [target] is null. */
     suspend fun download(fileId: Id, target: Uri?) {
         val keys = keysFlow.value ?: return
@@ -341,6 +364,7 @@ class VaultContent @Inject constructor(
     suspend fun cancelUpload(uploadId: String) {
         WorkManager.getInstance(context).cancelUniqueWork(TransferWorker.uploadName(uploadId))
         val upload = index.uploads().find { it.uploadId == uploadId } ?: return
+        keysFlow.value?.local?.openUpload(uploadId, upload.sealedRequest)?.let { ShareInbox.deleteCopy(context, it.source) }
         val storage = telegram.readyStorage() ?: return
         UploadRunner(sodium, storage, index, File(context.cacheDir, "upload")).cancel(upload)
         upload.fileId?.let(registry::remove)

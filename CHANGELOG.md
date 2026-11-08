@@ -20,3 +20,4 @@
 - Settings: auto-lock after 1 to 60 minutes or off, unlock with screen lock on or off, block screenshots, weekly integrity check on or off. Integrity check, rescan and log out moved here; log out asks first.
 - Decrypted copies opened in another app are removed from the phone 10 minutes after opening.
 - Change the vault password, and show the recovery key again; both ask for the current password first.
+- Share to Coffer from any app: one file or several, into a folder you pick; Coffer returns to the app you shared from.

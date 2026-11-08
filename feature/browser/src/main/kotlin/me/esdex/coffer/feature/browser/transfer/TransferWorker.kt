@@ -76,8 +76,12 @@ class TransferWorker @AssistedInject constructor(
             val source = entry.source ?: return Result.success()
             runner.run(upload, entry.keys, ContentUriSource(applicationContext, source)) { done, total -> report(done, total) }
             registry.remove(fileId)
+            // A file shared into Coffer was copied for this upload (SPEC §6, step 1); done with it.
+            ShareInbox.deleteCopy(applicationContext, source)
             Result.success()
         } catch (_: SourceChangedException) {
+            // Abandoned and out of the queue: its copy, if any, has nothing left to serve.
+            entry.source?.let { ShareInbox.deleteCopy(applicationContext, it) }
             registry.remove(fileId)
             registry.fail(id, TransferRegistry.Failure.SOURCE_CHANGED)
             Result.failure()
