@@ -334,4 +334,22 @@ class VaultStoreTest {
         assertEquals(emptyList<FoundHeader>(), VaultStore(temp.root).headers())
         assertEquals(5, VaultStore(temp.root).autoLockMinutes)
     }
+
+    @Test
+    fun switchesHaveTheirDefaultsAndSurvive() {
+        val store = VaultStore(temp.root)
+        // SPEC §9 and §5.8: screenshots allowed, weekly check on.
+        assertFalse(store.blockScreenshots)
+        assertTrue(store.weeklyCheck)
+        val before = store.changes.value
+        store.blockScreenshots = true
+        store.weeklyCheck = false
+        assertEquals(before + 2, store.changes.value)
+        val reread = VaultStore(temp.root)
+        assertTrue(reread.blockScreenshots)
+        assertFalse(reread.weeklyCheck)
+        store.clear()
+        assertFalse(VaultStore(temp.root).blockScreenshots)
+        assertTrue(VaultStore(temp.root).weeklyCheck)
+    }
 }

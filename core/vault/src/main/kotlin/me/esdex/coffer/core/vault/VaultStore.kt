@@ -1,5 +1,8 @@
 package me.esdex.coffer.core.vault
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import me.esdex.coffer.core.crypto.format.Captions
 import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
 import me.esdex.coffer.core.storage.MessageId
@@ -14,6 +17,11 @@ import java.util.Properties
 class VaultStore(private val dir: File) {
     private val headersFile get() = File(dir, "headers.txt")
     private val prefsFile get() = File(dir, "vault.properties")
+
+    private val version = MutableStateFlow(0)
+
+    /** Ticks on every change to the preferences, for screens that show them. */
+    val changes: StateFlow<Int> = version.asStateFlow()
 
     @Synchronized
     fun headers(): List<FoundHeader> {
@@ -46,10 +54,23 @@ class VaultStore(private val dir: File) {
 
         @Synchronized set(value) = updatePrefs { it.setProperty(BIOMETRIC_OFFERED, value.toString()) }
 
-    /** Signing out of Telegram forgets the vault on this device (SPEC §9). */
+    /** FLAG_SECURE on every screen (SPEC §9: off by default). */
+    var blockScreenshots: Boolean
+        @Synchronized get() = prefs().getProperty(BLOCK_SCREENSHOTS) == "true"
+
+        @Synchronized set(value) = updatePrefs { it.setProperty(BLOCK_SCREENSHOTS, value.toString()) }
+
+    /** The weekly integrity check (SPEC §5.8: on by default). */
+    var weeklyCheck: Boolean
+        @Synchronized get() = prefs().getProperty(WEEKLY_CHECK) != "false"
+
+        @Synchronized set(value) = updatePrefs { it.setProperty(WEEKLY_CHECK, value.toString()) }
+
+    /** Signing out of Telegram forgets the vault on this device (SPEC §9), preferences included. */
     @Synchronized
     fun clear() {
         dir.deleteRecursively()
+        version.value++
     }
 
     private fun prefs() = Properties().apply { if (prefsFile.exists()) prefsFile.inputStream().use(::load) }
@@ -58,6 +79,7 @@ class VaultStore(private val dir: File) {
         val prefs = prefs().also(change)
         val text = java.io.StringWriter().also { prefs.store(it, null) }.toString()
         write(prefsFile, text)
+        version.value++
     }
 
     private fun write(file: File, text: String) {
@@ -70,6 +92,8 @@ class VaultStore(private val dir: File) {
     private companion object {
         const val AUTO_LOCK = "autoLockMinutes"
         const val BIOMETRIC_OFFERED = "biometricOffered"
+        const val BLOCK_SCREENSHOTS = "blockScreenshots"
+        const val WEEKLY_CHECK = "weeklyCheck"
         const val DEFAULT_AUTO_LOCK_MINUTES = 5
     }
 }
