@@ -1,5 +1,6 @@
 package me.esdex.coffer.core.sync
 
+import android.annotation.SuppressLint
 import me.esdex.coffer.core.crypto.CofferFormat
 import me.esdex.coffer.core.crypto.ContentEncryptor
 import me.esdex.coffer.core.crypto.ContentDecryptor
@@ -98,6 +99,9 @@ class UploadPreparer(private val keys: VaultKeys, private val index: VaultIndex,
  * upload resumes where it stopped. The second pass re-hashes the whole source; if it no longer matches
  * what part 0's caption promises, the upload is abandoned rather than leave a file that fails to verify.
  */
+// usableSpace leaves out cache the system could clear: an upload refused for space it might have had is
+// better than one that runs out of it in the middle of a part.
+@SuppressLint("UsableSpace")
 class UploadRunner(
     private val sodium: Sodium,
     private val storage: StorageBackend,

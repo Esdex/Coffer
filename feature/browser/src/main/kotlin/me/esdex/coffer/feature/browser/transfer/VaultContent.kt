@@ -2,6 +2,7 @@ package me.esdex.coffer.feature.browser.transfer
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
@@ -315,7 +316,7 @@ class VaultContent @Inject constructor(
         val queued = index.uploads().mapNotNullTo(HashSet()) { upload ->
             keys.local.openUpload(upload.uploadId, upload.sealedRequest)?.source
                 ?.takeIf { ShareInbox.isCopy(context, it) }
-                ?.let { Uri.parse(it).path }
+                ?.let { it.toUri().path }
                 ?.let(::File)
         }
         ShareInbox.sweep(ShareInbox.dir(context), queued + inbox.held())

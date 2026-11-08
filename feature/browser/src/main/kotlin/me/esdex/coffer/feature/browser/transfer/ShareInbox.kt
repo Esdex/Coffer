@@ -1,5 +1,6 @@
 package me.esdex.coffer.feature.browser.transfer
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -46,6 +47,8 @@ class ShareInbox @Inject constructor(@ApplicationContext private val context: Co
     val state: StateFlow<State> = stateFlow.asStateFlow()
 
     /** Copies [uris] right away; anything received before and not added yet is discarded. */
+    // usableSpace on purpose, as for uploads: refusing early beats running out halfway through a copy.
+    @SuppressLint("UsableSpace")
     fun receive(uris: List<Uri>, typeHint: String?) {
         discard()
         if (uris.isEmpty()) return
