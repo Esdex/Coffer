@@ -220,7 +220,7 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey) {
 }
 
 /** Runs a model constructor on decoded input; its validation failures mean "not a valid record". */
-private inline fun <T> validated(block: () -> T?): T? = try {
+internal inline fun <T> validated(block: () -> T?): T? = try {
     block()
 } catch (_: IllegalArgumentException) {
     null

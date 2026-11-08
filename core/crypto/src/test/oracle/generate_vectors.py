@@ -161,6 +161,14 @@ def main(out_path):
         "fileDelete": sealed_caption("op", {1: op_id, 2: "file.delete", 3: 1006, 4: file_id}, 0x26),
         "index": sealed_caption("index", {1: folder_id, 2: 123456789012, 3: 1762531200789, 4: 98765}, 0x30),
     }
+    # Device-only sealing of the local index (SPEC §8): not part of the Telegram format, checked all the same.
+    local_key = kdf(master, 1, b"coflocal")
+    local_body = cbor({1: "Отчёт 2026.pdf", 2: None, 3: "application/pdf", 4: 1762531200123, 5: 1762531200456,
+                       6: content_hash, 7: wrapped_dek})
+    n_local = nonce(0x70)
+    v["local"] = {"key": local_key.hex(), "nonce": n_local.hex(), "cbor": local_body.hex(),
+                  "sealed": (n_local + xchacha_seal(local_key, n_local, local_body, b"coffer/local/v1/file" + file_id)).hex()}
+
     v["ids"] = {"fileId": file_id.hex(), "folderId": folder_id.hex(), "opId": op_id.hex(), "contentHash": content_hash.hex()}
 
     # Worst case for the caption budget (SPEC §4.2): 255-byte name, 127-byte mime, 8-byte integers.

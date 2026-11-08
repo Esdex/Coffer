@@ -97,6 +97,18 @@ class KeyRing private constructor(
     }
 }
 
+/**
+ * The device-only key that seals the local index (SPEC §8). Derived like the subkeys, with its own
+ * context, and never used for anything that goes to Telegram.
+ */
+object LocalKeys {
+    private val CONTEXT = "coflocal".toByteArray(Charsets.US_ASCII)
+
+    fun derive(sodium: Sodium, master: SecretKey): SecretKey = master.withBytes {
+        SecretKey.adopt(sodium.kdfDerive(CofferFormat.KEY_BYTES, 1, CONTEXT, it))
+    }
+}
+
 /** Per-file data keys, SPEC §3.1, §3.2. */
 object FileKeys {
 
