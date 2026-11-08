@@ -5,12 +5,9 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -20,6 +17,10 @@ import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.Maintenance
 import me.esdex.coffer.core.tdlib.Telegram
+import me.esdex.coffer.core.tdlib.TelegramAccount
+import me.esdex.coffer.core.ui.theme.Appearance
+import me.esdex.coffer.core.ui.theme.AppearanceStore
+import me.esdex.coffer.core.ui.theme.ThemeMode
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
@@ -36,6 +37,7 @@ data class SettingsState(
     val weeklyCheck: Boolean = true,
     val deviceUnlockAvailable: Boolean = false,
     val deviceUnlockOn: Boolean = false,
+    val debugTools: Boolean = false,
 )
 
 @HiltViewModel
@@ -45,22 +47,67 @@ class SettingsViewModel @Inject constructor(
     private val vault: VaultManager,
     private val content: VaultContent,
     private val telegram: Telegram,
+    private val appearanceStore: AppearanceStore,
 ) : ViewModel() {
+
+    val appearance: StateFlow<Appearance> = appearanceStore.appearance
+
+    private val accountFlow = MutableStateFlow<TelegramAccount?>(null)
+
+    /** Who is signed in, for the Account section; null until Telegram answers. */
+    val account: StateFlow<TelegramAccount?> = accountFlow.asStateFlow()
+
+    fun loadAccount() {
+        viewModelScope.launch { accountFlow.value = runCatching { telegram.account() }.getOrNull() ?: accountFlow.value }
+    }
+
+    fun setThemeMode(mode: ThemeMode) = appearanceStore.update { it.copy(themeMode = mode) }
+
+    fun setAmoled(on: Boolean) = appearanceStore.update { it.copy(amoled = on) }
+
+    fun setDynamicColor(on: Boolean) = appearanceStore.update { it.copy(dynamicColor = on) }
+
+    /** A long vault operation shown as a page of its own: running, then how it ended. */
+    sealed interface Operation {
+        val kind: Kind
+
+        data class Running(override val kind: Kind) : Operation
+        data class Done(override val kind: Kind, val report: Maintenance.Report?) : Operation
+        data class Failed(override val kind: Kind, val message: Int) : Operation
+    }
+
+    enum class Kind { CHECK, RESCAN }
+
+    private val operationFlow = MutableStateFlow<Operation?>(null)
+    val operation: StateFlow<Operation?> = operationFlow.asStateFlow()
+
+    private fun runOperation(kind: Kind, block: suspend () -> Maintenance.Report?) {
+        if (operationFlow.value is Operation.Running) return
+        operationFlow.value = Operation.Running(kind)
+        viewModelScope.launch {
+            operationFlow.value = try {
+                Operation.Done(kind, block())
+            } catch (_: FloodWaitException) {
+                Operation.Failed(kind, R.string.settings_error_flood)
+            } catch (_: StorageException) {
+                Operation.Failed(kind, R.string.settings_error_network)
+            }
+        }
+    }
+
+    fun dismissOperation() {
+        if (operationFlow.value !is Operation.Running) operationFlow.value = null
+    }
 
     // DeviceUnlock keeps its state in a file of its own; this re-reads it after a change made here.
     private val deviceTick = MutableStateFlow(0)
 
     val state: StateFlow<SettingsState> = combine(store.changes, deviceTick) { _, _ ->
-        SettingsState(store.autoLockMinutes, store.blockScreenshots, store.weeklyCheck, device.isAvailable(), device.isEnabled)
+        SettingsState(store.autoLockMinutes, store.blockScreenshots, store.weeklyCheck, device.isAvailable(), device.isEnabled, store.debugTools)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
     /** Messages read so far by a check or rescan in progress; null when idle. */
     val working: StateFlow<Int?> = content.catchingUp
-
-    private val integrityFlow = MutableStateFlow<Maintenance.Report?>(null)
-
-    /** The last integrity check started here, until its result is dismissed. */
-    val integrity: StateFlow<Maintenance.Report?> = integrityFlow.asStateFlow()
 
     // A channel, not a shared flow: a notice sent while a sub-page is open waits for the main page.
     private val messagesFlow = Channel<Int>(Channel.BUFFERED)
@@ -78,6 +125,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setWeeklyCheck(on: Boolean) {
         store.weeklyCheck = on
+    }
+
+    fun setDebugTools(on: Boolean) {
+        store.debugTools = on
     }
 
     /** Step 1 of turning screen-lock unlock on: the cipher for the system prompt, or null if Keystore refuses. */
@@ -113,13 +164,12 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun checkIntegrity() = act { integrityFlow.value = content.checkIntegrity() }
+    fun checkIntegrity() = runOperation(Kind.CHECK) { content.checkIntegrity() }
 
-    fun dismissIntegrity() {
-        integrityFlow.value = null
+    fun rescan() = runOperation(Kind.RESCAN) {
+        content.rescan()
+        null
     }
-
-    fun rescan() = act { content.rescan() }
 
     // Password and recovery key (SPEC §9), both behind the current password.
 
@@ -136,8 +186,10 @@ class SettingsViewModel @Inject constructor(
     /** The recovery key, while it is on screen. */
     val recoveryWords: StateFlow<List<String>?> = wordsFlow.asStateFlow()
 
-    private val passwordChangedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val passwordChanged: SharedFlow<Unit> = passwordChangedFlow.asSharedFlow()
+    private val passwordChangedFlow = MutableStateFlow(false)
+
+    /** The change went through: the page shows so until it is left. */
+    val passwordChanged: StateFlow<Boolean> = passwordChangedFlow.asStateFlow()
 
     fun showRecoveryKey(password: String) {
         if (busyFlow.value) return
@@ -160,6 +212,7 @@ class SettingsViewModel @Inject constructor(
     fun leaveSecrets() {
         wordsFlow.value = null
         wrongPasswordFlow.value = false
+        passwordChangedFlow.value = false
     }
 
     fun changePassword(current: String, newPassword: String) {
@@ -171,8 +224,7 @@ class SettingsViewModel @Inject constructor(
                 when (vault.changePassword(storage, current, newPassword)) {
                     VaultManager.PasswordChange.Changed -> {
                         wrongPasswordFlow.value = false
-                        passwordChangedFlow.emit(Unit)
-                        messagesFlow.send(R.string.settings_password_changed)
+                        passwordChangedFlow.value = true
                     }
                     VaultManager.PasswordChange.WrongPassword -> wrongPasswordFlow.value = true
                     VaultManager.PasswordChange.Locked -> Unit
@@ -192,7 +244,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     companion object {
-        /** Choices for auto-lock, in minutes; null is off. SPEC §9: 5 by default. */
-        val AUTO_LOCK_CHOICES: List<Int?> = listOf(null, 1, 5, 15, 30, 60)
+        /** Auto-lock delays on offer, in minutes. SPEC §9: 5 by default. */
+        val AUTO_LOCK_DELAYS: List<Int> = listOf(1, 5, 15, 30, 60)
+        const val DEFAULT_AUTO_LOCK = 5
     }
 }

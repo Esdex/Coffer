@@ -10,22 +10,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,24 +36,23 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.esdex.coffer.core.ui.components.CofferScaffold
+import me.esdex.coffer.core.ui.components.OperationLoading
+import me.esdex.coffer.core.ui.components.OperationSuccess
 import me.esdex.coffer.core.vault.PasswordPolicy
 
 /** A settings page that asks for the current password first (SPEC §9). */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SecretPage(title: String, onBack: () -> Unit, modifier: Modifier, content: @Composable () -> Unit) {
     BackHandler(onBack = onBack)
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = { TextButton(onClick = onBack) { Text(stringResource(R.string.settings_back)) } },
-            )
-        },
-    ) { padding ->
+    CofferScaffold(title = title, onBack = onBack, modifier = modifier) { padding ->
         Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier
+                .fillMaxSize()
+                .padding(top = padding.calculateTopPadding())
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = padding.calculateBottomPadding() + 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) { content() }
     }
@@ -79,14 +74,28 @@ private fun PasswordField(value: String, label: String, onChange: (String) -> Un
 fun ChangePasswordPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: SettingsViewModel) {
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val wrong by viewModel.wrongPassword.collectAsStateWithLifecycle()
+    val changed by viewModel.passwordChanged.collectAsStateWithLifecycle()
     var current by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var repeated by remember { mutableStateOf("") }
     val check = remember(password) { PasswordPolicy.check(password) }
-    val leave = rememberUpdatedState { viewModel.leaveSecrets(); onBack() }
-    LaunchedEffect(Unit) { viewModel.passwordChanged.collect { leave.value() } }
+    val leave = { viewModel.leaveSecrets(); onBack() }
 
-    SecretPage(stringResource(R.string.settings_password), onBack = leave.value, modifier = modifier) {
+    if (changed) {
+        BackHandler(onBack = leave)
+        OperationSuccess(
+            title = stringResource(R.string.settings_password_changed),
+            body = stringResource(R.string.settings_password_changed_body),
+            onDone = leave,
+            modifier = modifier.safeDrawingPadding(),
+        )
+        return
+    }
+    if (busy) {
+        OperationLoading(title = stringResource(R.string.settings_password_changing), modifier = modifier.safeDrawingPadding())
+        return
+    }
+    SecretPage(stringResource(R.string.settings_password), onBack = leave, modifier = modifier) {
         Text(stringResource(R.string.settings_password_explanation), style = MaterialTheme.typography.bodyMedium)
         PasswordField(current, stringResource(R.string.settings_password_current), { current = it }, isError = wrong)
         if (wrong) Text(stringResource(R.string.settings_password_wrong), color = MaterialTheme.colorScheme.error)
@@ -96,10 +105,9 @@ fun ChangePasswordPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewMo
         if (repeated.isNotEmpty() && repeated != password) Text(stringResource(R.string.settings_password_mismatch), color = MaterialTheme.colorScheme.error)
         Button(
             onClick = { viewModel.changePassword(current, password) },
-            enabled = !busy && current.isNotEmpty() && check.acceptable && repeated == password,
+            enabled = current.isNotEmpty() && check.acceptable && repeated == password,
             modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(R.string.settings_password_change)) }
-        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
 

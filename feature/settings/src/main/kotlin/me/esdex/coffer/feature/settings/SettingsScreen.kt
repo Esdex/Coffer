@@ -4,30 +4,24 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
 import androidx.biometric.BiometricPrompt
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.EaseInOutCubic
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Key
+import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Security
+import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,8 +29,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
@@ -46,225 +41,209 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.esdex.coffer.core.ui.components.GroupBuilder
+import me.esdex.coffer.core.ui.components.GroupedRoundIcon
+import me.esdex.coffer.core.ui.components.GroupedRow
+import me.esdex.coffer.core.ui.components.OperationFailure
+import me.esdex.coffer.core.ui.components.OperationLoading
+import me.esdex.coffer.core.ui.components.OperationSuccess
+import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.vault.DeviceUnlock
 import javax.crypto.Cipher
 
-/** Settings, SPEC §9. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun SettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: SettingsViewModel = hiltViewModel()) {
-    BackHandler(onBack = onBack)
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    val working by viewModel.working.collectAsStateWithLifecycle()
-    val integrity by viewModel.integrity.collectAsStateWithLifecycle()
-    val activity = LocalContext.current.fragmentActivity()
-    val resources = LocalResources.current
-    val promptTitle = stringResource(R.string.settings_device_prompt)
-    val snackbar = remember { SnackbarHostState() }
-    var choosingAutoLock by remember { mutableStateOf(false) }
-    var confirmRescan by remember { mutableStateOf(false) }
-    var confirmLogOut by remember { mutableStateOf(false) }
-    var page by rememberSaveable { mutableStateOf(Page.MAIN) }
+/** Where in Settings the user is. [depth] decides which way a change slides; [parent] is where back goes. */
+private enum class Screen(val depth: Int) {
+    MAIN(0),
+    SECURITY(1),
+    VAULT(1),
+    APPEARANCE(1),
+    MAINTENANCE(1),
+    ACCOUNT(1),
+    ABOUT(1),
+    DEBUG(1),
+    PASSWORD(2),
+    RECOVERY(2),
+    LICENSES(2),
+    OPERATION(3),
+    ;
 
-    when (page) {
-        Page.MAIN -> Unit
-        Page.PASSWORD -> return ChangePasswordPage(onBack = { page = Page.MAIN }, modifier = modifier, viewModel = viewModel)
-        Page.RECOVERY -> return RecoveryKeyPage(onBack = { page = Page.MAIN }, modifier = modifier, viewModel = viewModel)
+    val parent: Screen
+        get() = when (this) {
+            PASSWORD, RECOVERY -> VAULT
+            LICENSES -> ABOUT
+            else -> MAIN
+        }
+}
+
+/**
+ * Settings, SPEC §9: a list of sections, each a screen of its own, as in Arcanum. [debugTools] is
+ * what debug builds hand in for a Debug section; release builds pass null and have none.
+ */
+@Composable
+fun SettingsScreen(
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    debugTools: (@Composable () -> Unit)? = null,
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
+    var current by rememberSaveable { mutableStateOf(Screen.MAIN) }
+    val operation by viewModel.operation.collectAsStateWithLifecycle()
+    // A running or finished vault operation takes the screen until it is dismissed.
+    val shown = if (operation != null) Screen.OPERATION else current
+    val activity = LocalContext.current.fragmentActivity()
+    val promptTitle = stringResource(R.string.settings_device_prompt)
+    val onDeviceUnlock: (Boolean) -> Unit = { on ->
+        if (!on) {
+            viewModel.disableDeviceUnlock()
+        } else {
+            val cipher = viewModel.deviceUnlockCipher()
+            if (cipher != null && activity != null) {
+                activity.authenticate(cipher, promptTitle) { done -> if (done != null) viewModel.completeDeviceUnlock(done) else viewModel.disableDeviceUnlock() }
+            }
+        }
+    }
+    val back = { current = current.parent }
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val debugPromptTitle = stringResource(R.string.settings_debug_prompt)
+    // Six taps on the icon in About, then the phone's own screen lock, as in Arcanum.
+    val unlockDebug: ((onResult: (Boolean) -> Unit) -> Unit)? = if (debugTools == null || activity == null) {
+        null
+    } else {
+        { onResult ->
+            activity.confirmOwner(debugPromptTitle) { ok ->
+                if (ok) {
+                    viewModel.setDebugTools(true)
+                    current = Screen.DEBUG
+                }
+                onResult(ok)
+            }
+        }
     }
 
+    AnimatedContent(
+        targetState = shown,
+        transitionSpec = {
+            val spec = tween<androidx.compose.ui.unit.IntOffset>(SLIDE_MILLIS, easing = EaseInOutCubic)
+            if (targetState.depth > initialState.depth) {
+                slideInHorizontally(spec) { it } togetherWith slideOutHorizontally(spec) { -it }
+            } else {
+                slideInHorizontally(spec) { -it } togetherWith slideOutHorizontally(spec) { it }
+            }
+        },
+        modifier = modifier,
+        label = "settings",
+    ) { screen ->
+        when (screen) {
+            Screen.MAIN -> MainList(onBack, viewModel, showDebug = debugTools != null && state.debugTools, onOpen = { current = it })
+            Screen.SECURITY -> SecuritySection(viewModel, back, onDeviceUnlock)
+            Screen.VAULT -> VaultSection(back, onPassword = { current = Screen.PASSWORD }, onRecovery = { current = Screen.RECOVERY })
+            Screen.APPEARANCE -> AppearanceSection(viewModel, back)
+            Screen.MAINTENANCE -> MaintenanceSection(viewModel, back)
+            Screen.ACCOUNT -> AccountSection(viewModel, back)
+            Screen.ABOUT -> AboutSection(back, onLicenses = { current = Screen.LICENSES }, onUnlockDebug = unlockDebug, debugUnlocked = state.debugTools)
+            Screen.LICENSES -> LicensesPage(back)
+            Screen.DEBUG -> DebugSection(back, onHide = { viewModel.setDebugTools(false); current = Screen.MAIN }) { debugTools?.invoke() }
+            Screen.PASSWORD -> ChangePasswordPage(onBack = back, viewModel = viewModel)
+            Screen.RECOVERY -> RecoveryKeyPage(onBack = back, viewModel = viewModel)
+            Screen.OPERATION -> OperationPage(viewModel)
+        }
+    }
+}
+
+/**
+ * The colours of the round icons on the main list: pale circles with a deep glyph of the same hue, as
+ * Android's own Settings draws them. Outside Material You on purpose, so a colour says which section
+ * it is rather than matching the wallpaper.
+ */
+private class Hue(val circle: Color, val glyph: Color)
+
+private object SectionHue {
+    val Security = Hue(Color(0xFF60D5F3), Color(0xFF004E5D))
+    val Vault = Hue(Color(0xFFB9C4FF), Color(0xFF1B2E82))
+    val Appearance = Hue(Color(0xFFFFB683), Color(0xFF753403))
+    val Maintenance = Hue(Color(0xFF7FD8C8), Color(0xFF00504A))
+    val Account = Hue(Color(0xFFD0BCFF), Color(0xFF381E72))
+    val About = Hue(Color(0xFFC7C7C7), Color(0xFF474747))
+    val Debug = Hue(Color(0xFF80DA88), Color(0xFF00522C))
+}
+
+@Composable
+private fun MainList(onBack: () -> Unit, viewModel: SettingsViewModel, showDebug: Boolean, onOpen: (Screen) -> Unit) {
+    val resources = LocalResources.current
+    val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) {
         viewModel.messages.collect { snackbar.showSnackbar(resources.getString(it)) }
     }
-
-    Scaffold(
-        modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbar) },
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings_title)) },
-                navigationIcon = { TextButton(onClick = onBack) { Text(stringResource(R.string.settings_back)) } },
-            )
-        },
-    ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState())) {
-            Section(stringResource(R.string.settings_section_security))
-            Item(
-                title = stringResource(R.string.settings_auto_lock),
-                summary = autoLockLabel(state.autoLockMinutes),
-                onClick = { choosingAutoLock = true },
-            )
-            SwitchItem(
-                title = stringResource(R.string.settings_device_unlock),
-                summary = stringResource(
-                    if (state.deviceUnlockAvailable) R.string.settings_device_unlock_summary else R.string.settings_device_unlock_unavailable,
-                ),
-                checked = state.deviceUnlockOn,
-                enabled = state.deviceUnlockAvailable && activity != null,
-                onChange = { on ->
-                    if (!on) {
-                        viewModel.disableDeviceUnlock()
-                    } else {
-                        val cipher = viewModel.deviceUnlockCipher()
-                        if (cipher != null && activity != null) {
-                            activity.authenticate(cipher, promptTitle) { done -> if (done != null) viewModel.completeDeviceUnlock(done) else viewModel.disableDeviceUnlock() }
-                        }
-                    }
-                },
-            )
-            SwitchItem(
-                title = stringResource(R.string.settings_screenshots),
-                summary = stringResource(R.string.settings_screenshots_summary),
-                checked = state.blockScreenshots,
-                onChange = viewModel::setBlockScreenshots,
-            )
-
-            Section(stringResource(R.string.settings_section_vault))
-            Item(
-                title = stringResource(R.string.settings_password),
-                summary = stringResource(R.string.settings_password_summary),
-                onClick = { page = Page.PASSWORD },
-            )
-            Item(
-                title = stringResource(R.string.settings_recovery),
-                summary = stringResource(R.string.settings_recovery_summary),
-                onClick = { page = Page.RECOVERY },
-            )
-            Item(
-                title = stringResource(R.string.settings_check),
-                summary = stringResource(R.string.settings_check_summary),
-                enabled = working == null,
-                onClick = viewModel::checkIntegrity,
-            )
-            SwitchItem(
-                title = stringResource(R.string.settings_weekly),
-                summary = stringResource(R.string.settings_weekly_summary),
-                checked = state.weeklyCheck,
-                onChange = viewModel::setWeeklyCheck,
-            )
-            Item(
-                title = stringResource(R.string.settings_rescan),
-                summary = stringResource(R.string.settings_rescan_summary),
-                enabled = working == null,
-                onClick = { confirmRescan = true },
-            )
-            working?.let {
-                LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
-                Text(
-                    pluralStringResource(R.plurals.settings_reading, it, it),
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-            }
-
-            Section(stringResource(R.string.settings_section_account))
-            Item(
-                title = stringResource(R.string.settings_log_out),
-                summary = stringResource(R.string.settings_log_out_summary),
-                onClick = { confirmLogOut = true },
-            )
+    SectionScaffold(stringResource(R.string.settings_title), onBack, snackbar) {
+        // Grouped as Android's own Settings groups its sections: no headings, a round icon of its own
+        // colour on each row, and the gap between groups doing the sorting.
+        Spacer(Modifier.height(8.dp))
+        SettingsGroup(title = null) {
+            section(Screen.SECURITY, Icons.Outlined.Security, SectionHue.Security, R.string.settings_card_security, R.string.settings_card_security_desc, onOpen)
+            section(Screen.VAULT, Icons.Outlined.Key, SectionHue.Vault, R.string.settings_card_vault, R.string.settings_card_vault_desc, onOpen)
         }
-    }
-
-    if (choosingAutoLock) {
-        AlertDialog(
-            onDismissRequest = { choosingAutoLock = false },
-            title = { Text(stringResource(R.string.settings_auto_lock)) },
-            text = {
-                Column {
-                    for (choice in SettingsViewModel.AUTO_LOCK_CHOICES) {
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .selectable(selected = choice == state.autoLockMinutes) { viewModel.setAutoLock(choice); choosingAutoLock = false }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = choice == state.autoLockMinutes, onClick = null)
-                            Spacer(Modifier.width(12.dp))
-                            Text(autoLockLabel(choice))
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { choosingAutoLock = false }) { Text(stringResource(R.string.settings_cancel)) } },
-        )
-    }
-    if (confirmRescan) {
-        AlertDialog(
-            onDismissRequest = { confirmRescan = false },
-            title = { Text(stringResource(R.string.settings_rescan_title)) },
-            text = { Text(stringResource(R.string.settings_rescan_text)) },
-            confirmButton = { TextButton(onClick = { confirmRescan = false; viewModel.rescan() }) { Text(stringResource(R.string.settings_rescan_start)) } },
-            dismissButton = { TextButton(onClick = { confirmRescan = false }) { Text(stringResource(R.string.settings_cancel)) } },
-        )
-    }
-    if (confirmLogOut) {
-        AlertDialog(
-            onDismissRequest = { confirmLogOut = false },
-            title = { Text(stringResource(R.string.settings_log_out_title)) },
-            text = { Text(stringResource(R.string.settings_log_out_text)) },
-            confirmButton = { TextButton(onClick = { confirmLogOut = false; viewModel.logOut() }) { Text(stringResource(R.string.settings_log_out)) } },
-            dismissButton = { TextButton(onClick = { confirmLogOut = false }) { Text(stringResource(R.string.settings_cancel)) } },
-        )
-    }
-    integrity?.let { report ->
-        AlertDialog(
-            onDismissRequest = viewModel::dismissIntegrity,
-            title = { Text(stringResource(R.string.settings_check_title)) },
-            text = {
-                Text(
-                    stringResource(
-                        R.string.settings_check_result,
-                        report.messagesRead,
-                        report.damaged,
-                        report.repaired,
-                        report.garbageDeleted,
-                        report.snapshotsDeleted,
-                        report.operationsCompacted,
-                    ),
-                )
-            },
-            confirmButton = { TextButton(onClick = viewModel::dismissIntegrity) { Text(stringResource(R.string.settings_ok)) } },
-        )
+        Spacer(Modifier.height(16.dp))
+        SettingsGroup(title = null) {
+            section(Screen.APPEARANCE, Icons.Outlined.Palette, SectionHue.Appearance, R.string.settings_card_appearance, R.string.settings_card_appearance_desc, onOpen)
+            section(Screen.MAINTENANCE, Icons.Outlined.Sync, SectionHue.Maintenance, R.string.settings_card_maintenance, R.string.settings_card_maintenance_desc, onOpen)
+        }
+        Spacer(Modifier.height(16.dp))
+        SettingsGroup(title = null) {
+            section(Screen.ACCOUNT, Icons.Outlined.AccountCircle, SectionHue.Account, R.string.settings_card_account, R.string.settings_card_account_desc, onOpen)
+            section(Screen.ABOUT, Icons.Outlined.Info, SectionHue.About, R.string.settings_card_about, R.string.settings_card_about_desc, onOpen)
+            if (showDebug) {
+                section(Screen.DEBUG, Icons.Outlined.BugReport, SectionHue.Debug, R.string.settings_card_debug, R.string.settings_card_debug_desc, onOpen)
+            }
+        }
     }
 }
 
-private enum class Page { MAIN, PASSWORD, RECOVERY }
-
-@Composable
-private fun autoLockLabel(minutes: Int?): String =
-    if (minutes == null) stringResource(R.string.settings_auto_lock_off) else pluralStringResource(R.plurals.settings_auto_lock_after, minutes, minutes)
-
-@Composable
-private fun Section(title: String) {
-    HorizontalDivider()
-    Text(
-        title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp),
+private fun GroupBuilder.section(screen: Screen, icon: ImageVector, hue: Hue, title: Int, subtitle: Int, onOpen: (Screen) -> Unit) = row { shape ->
+    GroupedRow(
+        shape,
+        title = stringResource(title),
+        subtitle = stringResource(subtitle),
+        leading = { GroupedRoundIcon(icon, hue.circle, hue.glyph) },
+        onClick = { onOpen(screen) },
     )
 }
 
+/** The integrity check or the rescan, running and then finished, as a page of its own. */
 @Composable
-private fun Item(title: String, summary: String, onClick: () -> Unit, enabled: Boolean = true) {
-    Column(Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyLarge, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
-        Text(summary, style = MaterialTheme.typography.bodySmall)
-    }
-}
-
-@Composable
-private fun SwitchItem(title: String, summary: String, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean = true) {
-    Row(
-        Modifier.fillMaxWidth().clickable(enabled = enabled) { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline)
-            Text(summary, style = MaterialTheme.typography.bodySmall)
-        }
-        Spacer(Modifier.width(16.dp))
-        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+private fun OperationPage(viewModel: SettingsViewModel) {
+    val operation by viewModel.operation.collectAsStateWithLifecycle()
+    val working by viewModel.working.collectAsStateWithLifecycle()
+    BackHandler(onBack = viewModel::dismissOperation)
+    val modifier = Modifier.safeDrawingPadding()
+    when (val op = operation) {
+        null -> Unit
+        is SettingsViewModel.Operation.Running -> OperationLoading(
+            title = stringResource(if (op.kind == SettingsViewModel.Kind.CHECK) R.string.settings_check_running else R.string.settings_rescan_running),
+            subtitle = working?.let { pluralStringResource(R.plurals.settings_reading, it, it) },
+            modifier = modifier,
+        )
+        is SettingsViewModel.Operation.Done -> OperationSuccess(
+            title = stringResource(if (op.kind == SettingsViewModel.Kind.CHECK) R.string.settings_check_title else R.string.settings_rescan_done),
+            body = op.report?.let { report ->
+                stringResource(
+                    R.string.settings_check_result,
+                    report.messagesRead,
+                    report.damaged,
+                    report.repaired,
+                    report.garbageDeleted,
+                    report.snapshotsDeleted,
+                    report.operationsCompacted,
+                )
+            },
+            onDone = viewModel::dismissOperation,
+            modifier = modifier,
+        )
+        is SettingsViewModel.Operation.Failed -> OperationFailure(
+            title = stringResource(R.string.settings_operation_failed),
+            body = stringResource(op.message),
+            onDone = viewModel::dismissOperation,
+            modifier = modifier,
+        )
     }
 }
 
@@ -286,8 +265,25 @@ private fun FragmentActivity.authenticate(cipher: Cipher, title: String, onDone:
     prompt.authenticate(DeviceUnlock.promptInfo(title), BiometricPrompt.CryptoObject(cipher))
 }
 
+/** The phone's own screen lock, with nothing to unlock behind it: proof that the owner is holding the phone. */
+private fun FragmentActivity.confirmOwner(title: String, onDone: (Boolean) -> Unit) {
+    val prompt = BiometricPrompt(
+        this,
+        ContextCompat.getMainExecutor(this),
+        object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) = onDone(true)
+
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) = onDone(false)
+        },
+    )
+    // Throws where no screen lock is set; that is a refusal too.
+    runCatching { prompt.authenticate(DeviceUnlock.promptInfo(title)) }.onFailure { onDone(false) }
+}
+
 private tailrec fun Context.fragmentActivity(): FragmentActivity? = when (this) {
     is FragmentActivity -> this
     is ContextWrapper -> baseContext.fragmentActivity()
     else -> null
 }
+
+private const val SLIDE_MILLIS = 350

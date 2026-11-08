@@ -428,13 +428,16 @@ class VaultStoreTest {
         // SPEC §9 and §5.8: screenshots allowed, weekly check on.
         assertFalse(store.blockScreenshots)
         assertTrue(store.weeklyCheck)
+        assertFalse(store.debugTools)
         val before = store.changes.value
         store.blockScreenshots = true
         store.weeklyCheck = false
-        assertEquals(before + 2, store.changes.value)
+        store.debugTools = true
+        assertEquals(before + 3, store.changes.value)
         val reread = VaultStore(temp.root)
         assertTrue(reread.blockScreenshots)
         assertFalse(reread.weeklyCheck)
+        assertTrue(reread.debugTools)
         store.clear()
         assertFalse(VaultStore(temp.root).blockScreenshots)
         assertTrue(VaultStore(temp.root).weeklyCheck)

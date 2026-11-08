@@ -130,6 +130,7 @@ class Telegram(
     suspend fun submitEmailCode(code: String) = current().submitEmailCode(code)
     suspend fun submitPassword(password: String) = current().submitPassword(password)
     suspend fun accountName(): String = current().accountName()
+    suspend fun account(): TelegramAccount = current().account()
     suspend fun storage(): TdlibStorageBackend = current().storage()
 
     /**

@@ -187,6 +187,25 @@ class TelegramSession(config: TdlibConfig) {
         return listOf(me.firstName, me.lastName).filter { it.isNotBlank() }.joinToString(" ")
     }
 
+    /**
+     * The signed-in account, for the settings to show. Kept in memory only and never logged. The small
+     * profile photo is fetched into TDLib's own files; without one the screen shows initials.
+     */
+    suspend fun account(): TelegramAccount {
+        val me = send(TdApi.GetMe())
+        val photo = me.profilePhoto?.small?.let { file ->
+            runCatching { send(TdApi.DownloadFile(file.id, PHOTO_PRIORITY, 0, 0, true)).local.path }.getOrNull()?.takeIf { it.isNotEmpty() }
+        }
+        return TelegramAccount(
+            firstName = me.firstName,
+            lastName = me.lastName,
+            username = me.usernames?.activeUsernames?.firstOrNull(),
+            phoneNumber = me.phoneNumber,
+            isPremium = me.isPremium,
+            photoPath = photo,
+        )
+    }
+
     /** Ends the Telegram session on the server and deletes TDLib's local data. */
     suspend fun logOut() {
         send(TdApi.LogOut())
@@ -248,3 +267,6 @@ class TelegramSession(config: TdlibConfig) {
         }
     }
 }
+
+// Below the transfers' priority: a profile picture is never worth slowing a file down for.
+private const val PHOTO_PRIORITY = 1

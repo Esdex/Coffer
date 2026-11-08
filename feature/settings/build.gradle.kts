@@ -5,6 +5,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":core:ui"))
     implementation(project(":core:vault"))
     implementation(project(":core:sync"))
     implementation(project(":core:tdlib"))
