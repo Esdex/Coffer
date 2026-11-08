@@ -380,6 +380,110 @@ class Indexer(
         )
     }
 
+    /** What the integrity check changed in the index, and what it leaves to delete from Saved Messages. */
+    class Reconciled(
+        val damaged: Int,
+        val repaired: Int,
+        val garbage: List<MessageId>,
+        val oldSnapshots: List<MessageId>,
+    )
+
+    /**
+     * The integrity check (SPEC §5.8, §5.7) against [history], all of Saved Messages read oldest first.
+     * Only what was read is judged: a message newer than the last one read arrived while reading.
+     *
+     * - A part the index has but history does not: the file is damaged.
+     * - A part history has but the index missed, even a whole file: added back.
+     * - Part 0 and not every part, older than a day: damaged, an upload that never finished. Kept for
+     *   the user to see and delete, since after a rescan it cannot be told from damage.
+     * - Parts whose part 0 never came, older than a day, and parts left over after a `file.delete`: garbage.
+     * - Snapshots beyond the newest three, including ones this device never heard of: old.
+     *
+     * This device's own uploads in progress are left alone.
+     */
+    suspend fun reconcile(history: List<StoredMessage>, nowSeconds: Long): Reconciled = lock.withLock {
+        val readUpTo = history.lastOrNull()?.id ?: return@withLock Reconciled(0, 0, emptyList(), emptyList())
+        for (message in history) applyLocked(message)
+        val present = history.mapTo(HashSet()) { it.id }
+
+        class Part(val index: Int, val message: StoredMessage, val caption: String, val isFirst: Boolean)
+        val partsByFile = mutableMapOf<Id, MutableList<Part>>()
+        val snapshotsRead = mutableListOf<KnownSnapshot>()
+        for (message in history) {
+            val caption = (message.content as? MessageContent.Blob)?.caption ?: continue
+            val record = Captions.parse(caption) ?: continue
+            when (record.kind) {
+                RecordKind.BLOB -> keys.meta.decodeBlob(record)?.let { p ->
+                    partsByFile.getOrPut(p.fileId) { mutableListOf() } += Part(p.partIndex, message, caption, p.meta != null)
+                }
+                RecordKind.INDEX -> keys.meta.decodeIndex(record)?.let {
+                    snapshotsRead += KnownSnapshot(message.id, MessageId(it.lastAppliedMessageId))
+                }
+                else -> Unit
+            }
+        }
+        val uploading = index.uploads().mapNotNullTo(HashSet()) { it.fileId }
+        val dayAgo = nowSeconds - GARBAGE_AGE_SECONDS
+        var damaged = 0
+        var repaired = 0
+
+        // Whole files the index missed come back first, through the same path as any part.
+        val deletedFiles = index.deletedFiles()
+        val known = index.files().mapTo(HashSet()) { it.fileId }
+        for ((fileId, parts) in partsByFile) {
+            if (fileId in known || fileId in deletedFiles || parts.none { it.isFirst }) continue
+            for (part in parts.sortedBy { it.message.id }) applyBlob(part.message.id, part.caption)
+            repaired++
+        }
+
+        for (file in index.files()) {
+            if (file.fileId in uploading) continue
+            val gone = file.parts.values.filter { it <= readUpTo && it !in present }
+            for (id in gone) index.removePart(id)
+            for (part in partsByFile[file.fileId].orEmpty()) {
+                if (part.index < file.partCount && file.parts[part.index] == null) {
+                    index.putPart(file.fileId, part.index, part.message.id)
+                    repaired++
+                }
+            }
+            val parts = index.parts(file.fileId)
+            val complete = (0 until file.partCount).all { it in parts }
+            val firstDate = partsByFile[file.fileId]?.firstOrNull { it.isFirst }?.message?.date
+            val status = when {
+                gone.isNotEmpty() -> FileStatus.DAMAGED
+                // Every part is there after all: whatever marked it damaged was wrong.
+                complete -> FileStatus.READY
+                file.status == FileStatus.DAMAGED -> FileStatus.DAMAGED
+                firstDate != null && firstDate < dayAgo -> FileStatus.DAMAGED
+                else -> FileStatus.INCOMPLETE
+            }
+            if (status != file.status) {
+                index.setStatus(file.fileId, status)
+                if (status == FileStatus.DAMAGED) damaged++
+            }
+        }
+
+        val stillKnown = index.files().mapTo(HashSet()) { it.fileId }
+        val garbage = mutableListOf<MessageId>()
+        for ((fileId, parts) in partsByFile) {
+            if (fileId in uploading || fileId in stillKnown) continue
+            val leftover = fileId in deletedFiles
+            val abandoned = parts.none { it.isFirst } && parts.all { it.message.date < dayAgo }
+            if (leftover || abandoned) garbage += parts.map { it.message.id }
+        }
+        for (id in garbage) index.removePart(id)
+
+        for (snapshot in snapshotsRead) index.putSnapshot(snapshot)
+        val oldSnapshots = index.snapshots().sortedByDescending { it.messageId }.drop(Snapshotter.KEEP).map { it.messageId }
+        for (id in oldSnapshots) index.removeSnapshot(id)
+
+        if (damaged + repaired > 0) {
+            damageSeen += damaged + repaired
+            changesFlow.tryEmit(Unit)
+        }
+        Reconciled(damaged, repaired, garbage, oldSnapshots)
+    }
+
     /**
      * A file still marked UPLOADING with no upload left for it (an upload that ended without finishing
      * its row, as after a crash) gets the status its parts say.
@@ -391,6 +495,11 @@ class Indexer(
             val complete = (0 until file.partCount).all { it in file.parts }
             index.setStatus(file.fileId, if (complete) FileStatus.READY else FileStatus.INCOMPLETE)
         }
+    }
+
+    private companion object {
+        /** SPEC §5.7: an upload that has not finished in a day is not coming. */
+        const val GARBAGE_AGE_SECONDS = 24 * 60 * 60L
     }
 
     private suspend fun refreshStatus(fileId: Id) {

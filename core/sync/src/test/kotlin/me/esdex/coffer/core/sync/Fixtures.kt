@@ -104,11 +104,14 @@ internal class CountingStorage(private val inner: StorageBackend) : StorageBacke
 }
 
 /** One device: its storage handle, its own index, the shared vault keys. */
-internal class Device(cloud: FakeCloud, val keys: VaultKeys, temp: java.io.File) {
+internal class Device(private val cloud: FakeCloud, val keys: VaultKeys, temp: java.io.File) {
     val storage = CountingStorage(cloud.device())
     val index = InMemoryVaultIndex()
     val indexer = Indexer(storage, index, keys)
     val snapshotter = Snapshotter(storage, index, indexer, keys, java.io.File(temp, "snapshots")) { 1_762_531_200_000 }
+
+    // On the cloud's clock, so message dates and "now" agree when a test moves time on.
+    val maintenance = Maintenance(storage, index, indexer, snapshotter, keys) { cloud.now() * 1000 }
     val preparer = UploadPreparer(keys, index) { 1_762_531_200_000 }
     val runner = UploadRunner(sodium, storage, index, temp)
     val downloader = DownloadRunner(sodium, storage, index)
