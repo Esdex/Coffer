@@ -23,6 +23,9 @@
     <string name="browser_delete_title">Delete file?</string>
     <string name="browser_delete_text">%1$s will be deleted from Saved Messages on all your devices.</string>
 
+    <string name="browser_error_network">Could not reach Telegram. Try again.</string>
+    <string name="browser_error_flood">Telegram asks to slow down. Try again in a little while.</string>
+
     <string name="browser_status_uploading">Uploading</string>
     <string name="browser_status_incomplete">Incomplete: some parts are still on their way</string>
     <string name="browser_status_damaged">Damaged: a part was deleted outside Coffer</string>

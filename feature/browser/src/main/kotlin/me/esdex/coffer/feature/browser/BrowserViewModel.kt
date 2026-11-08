@@ -4,9 +4,12 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -16,6 +19,8 @@ import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.index.PendingDownload
 import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
+import me.esdex.coffer.core.storage.FloodWaitException
+import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import javax.inject.Inject
@@ -56,6 +61,11 @@ class BrowserViewModel @Inject constructor(
 
     private val sortingFlow = MutableStateFlow(Sorting())
     val sorting: StateFlow<Sorting> = sortingFlow.asStateFlow()
+
+    private val messagesFlow = MutableSharedFlow<Int>(extraBufferCapacity = 4)
+
+    /** Short notices for a snackbar, as string resources: an action that did not reach Telegram. */
+    val messages: SharedFlow<Int> = messagesFlow.asSharedFlow()
 
     private val allFiles: StateFlow<List<FileItem>> = combine(index.observeFiles(), content.keys) { files, keys ->
         if (keys == null) return@combine emptyList()
@@ -105,6 +115,19 @@ class BrowserViewModel @Inject constructor(
         sortingFlow.value = if (current.by == by) current.copy(descending = !current.descending) else Sorting(by)
     }
 
+    /** Runs an action that talks to Telegram; a failure becomes a notice instead of a crash. */
+    private fun act(block: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                block()
+            } catch (_: FloodWaitException) {
+                messagesFlow.emit(R.string.browser_error_flood)
+            } catch (_: StorageException) {
+                messagesFlow.emit(R.string.browser_error_network)
+            }
+        }
+    }
+
     fun upload(requests: List<VaultContent.UploadRequest>) {
         viewModelScope.launch { content.upload(requests) }
     }
@@ -117,13 +140,10 @@ class BrowserViewModel @Inject constructor(
         viewModelScope.launch { content.download(fileId, null) }
     }
 
-    fun delete(fileId: Id) {
-        viewModelScope.launch { content.delete(fileId) }
-    }
+    fun delete(fileId: Id) = act { content.delete(fileId) }
 
-    fun cancel(item: TransferItem) {
-        viewModelScope.launch { if (item.isUpload) content.cancelUpload(item.id) else content.cancelDownload(item.id) }
-    }
+    // Cancelling an upload deletes what it sent, so it talks to Telegram too.
+    fun cancel(item: TransferItem) = act { if (item.isUpload) content.cancelUpload(item.id) else content.cancelDownload(item.id) }
 
     fun retry(item: TransferItem) = content.retry(item.id)
 }

@@ -36,6 +36,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -80,6 +82,7 @@ fun BrowserScreen(
     var showTransfers by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var sortOpen by remember { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
 
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     fun askForNotifications() {
@@ -104,13 +107,25 @@ fun BrowserScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        viewModel.messages.collect { snackbar.showSnackbar(context.getString(it)) }
+    }
+
     if (showTransfers) {
-        TransfersScreen(transfers, onBack = { showTransfers = false }, onCancel = viewModel::cancel, onRetry = viewModel::retry, modifier = modifier)
+        TransfersScreen(
+            transfers,
+            onBack = { showTransfers = false },
+            onCancel = viewModel::cancel,
+            onRetry = viewModel::retry,
+            modifier = modifier,
+            snackbarHost = { SnackbarHost(snackbar) },
+        )
         return
     }
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.browser_title)) },
@@ -265,10 +280,12 @@ fun TransfersScreen(
     onCancel: (TransferItem) -> Unit,
     onRetry: (TransferItem) -> Unit,
     modifier: Modifier = Modifier,
+    snackbarHost: @Composable () -> Unit = {},
 ) {
     androidx.activity.compose.BackHandler(onBack = onBack)
     Scaffold(
         modifier = modifier,
+        snackbarHost = snackbarHost,
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.browser_transfers)) },
