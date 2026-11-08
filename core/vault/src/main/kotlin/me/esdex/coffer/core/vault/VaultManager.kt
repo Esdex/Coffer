@@ -9,6 +9,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.esdex.coffer.core.crypto.Bytes
 import me.esdex.coffer.core.crypto.SecretKey
+import me.esdex.coffer.core.crypto.bip39.Bip39
+import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
 import me.esdex.coffer.core.crypto.sodium.Sodium
 import me.esdex.coffer.core.storage.StorageBackend
 import kotlin.coroutines.CoroutineContext
@@ -141,6 +143,50 @@ class VaultManager(
             remember(listOf(published))
             stateFlow.value = State.Unlocked(vault.vault)
         }
+    }
+
+    /**
+     * True if [password] opens the vault that is unlocked now: asked before showing the recovery key
+     * or changing the password, so an unlocked phone alone is not enough for either.
+     */
+    suspend fun checkPassword(password: CharSequence): Boolean {
+        val open = (stateFlow.value as? State.Unlocked)?.vault ?: return false
+        val candidates = lock.withLock { headers }
+        val vault = withContext(work) { VaultUnlock.withPassword(sodium, candidates, password) } ?: return false
+        return vault.use { it.masterId == open.masterId }
+    }
+
+    /** The recovery key of the open vault (SPEC §3.7), or null while locked. */
+    fun recoveryWords(): List<String>? = (stateFlow.value as? State.Unlocked)?.vault?.withMasterKey(Bip39::toMnemonic)
+
+    sealed interface PasswordChange {
+        data object Changed : PasswordChange
+        data object WrongPassword : PasswordChange
+        data object Locked : PasswordChange
+    }
+
+    /**
+     * SPEC §4.1: a new header under [newPassword] is sent and pinned, then every older header of this
+     * vault is deleted. Interrupted after the send, both passwords keep working: unlocking tries every
+     * header with the same master_id. Other devices pick up the new header on their next unlock.
+     */
+    suspend fun changePassword(storage: StorageBackend, current: CharSequence, newPassword: CharSequence): PasswordChange {
+        if (!checkPassword(current)) {
+            return if (stateFlow.value is State.Unlocked) PasswordChange.WrongPassword else PasswordChange.Locked
+        }
+        val open = (stateFlow.value as? State.Unlocked)?.vault ?: return PasswordChange.Locked
+        val header = withContext(work) { VaultCreation.rewrap(sodium, open, newPassword, clock()) }
+        val sent = storage.sendText(VaultHeaderCodec.encode(header))
+        storage.pin(sent.id)
+        val published = FoundHeader(sent.id, header)
+        // What this device knew, and what Saved Messages holds now, in case another device added one.
+        val old = (lock.withLock { headers } + VaultHeaders.find(storage))
+            .filter { it.header.masterId == open.masterId && it.messageId != sent.id }
+            .map { it.messageId }
+            .distinct()
+        lock.withLock { remember(listOf(published)) }
+        if (old.isNotEmpty()) storage.delete(old)
+        return PasswordChange.Changed
     }
 
     /** Wipes the keys from memory (SPEC §3.8). */

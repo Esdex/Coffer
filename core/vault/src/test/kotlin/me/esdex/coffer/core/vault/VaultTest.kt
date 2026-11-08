@@ -4,6 +4,7 @@ import com.goterl.lazysodium.LazySodiumJava
 import com.goterl.lazysodium.SodiumJava
 import kotlinx.coroutines.test.runTest
 import me.esdex.coffer.core.crypto.Argon2Params
+import me.esdex.coffer.core.crypto.Bytes
 import me.esdex.coffer.core.crypto.MasterKeys
 import me.esdex.coffer.core.crypto.PasswordKdf
 import me.esdex.coffer.core.crypto.bip39.Bip39
@@ -13,13 +14,17 @@ import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
 import me.esdex.coffer.core.crypto.sodium.LazySodiumAdapter
 import me.esdex.coffer.core.storage.FakeCloud
 import me.esdex.coffer.core.storage.MessageContent
+import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
+import me.esdex.coffer.core.storage.StorageException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -189,6 +194,88 @@ class VaultManagerTest {
         again.forget()
         assertEquals(VaultManager.State.Unknown, again.state.value)
         assertEquals(VaultManager.State.Unknown, manager(VaultStore(temp.root)).state.value)
+    }
+
+    @Test
+    fun passwordIsCheckedAgainstTheOpenVault() = runTest {
+        val storage = FakeCloud().device()
+        val manager = manager()
+        manager.locate(storage)
+        val created = manager.prepareNew("the password of this vault")
+        val words = created.recoveryWords
+        // Locked: nothing to check against, and no words to show.
+        assertFalse(manager.checkPassword("the password of this vault"))
+        manager.publish(storage, created)
+        assertTrue(manager.checkPassword("the password of this vault"))
+        assertFalse(manager.checkPassword("the password of this vaulT"))
+        assertEquals(words, manager.recoveryWords())
+        manager.lockVault()
+        assertNull(manager.recoveryWords())
+        assertFalse(manager.checkPassword("the password of this vault"))
+    }
+
+    @Test
+    fun changingThePasswordReplacesTheHeader() = runTest {
+        val cloud = FakeCloud()
+        val storage = cloud.device()
+        val manager = manager()
+        manager.locate(storage)
+        val created = manager.prepareNew("old password for changing")
+        val masterId = created.vault.masterId
+        val words = created.recoveryWords
+        manager.publish(storage, created)
+        val oldHeader = storage.pinnedMessages().single()
+
+        assertEquals(VaultManager.PasswordChange.WrongPassword, manager.changePassword(storage, "not the old password", "new password after change"))
+        assertEquals(listOf(oldHeader), storage.pinnedMessages())
+
+        assertEquals(VaultManager.PasswordChange.Changed, manager.changePassword(storage, "old password for changing", "new password after change"))
+        // SPEC §4.1: a new pinned header, the old one gone, the same vault behind it.
+        val headers = cloud.allMessages().mapNotNull(FoundHeader::from)
+        assertEquals(1, headers.size)
+        assertEquals(storage.pinnedMessages().single().id, headers.single().messageId)
+        assertEquals(masterId, headers.single().header.masterId)
+        // A fresh salt: the old wrapping cannot be reused to test guesses against the new one.
+        val oldSalt = FoundHeader.from(oldHeader)!!.header.salt
+        assertNotEquals(oldSalt, headers.single().header.salt)
+        assertNotEquals(Bytes.of(ByteArray(16)), headers.single().header.salt)
+        assertTrue(manager.state.value is VaultManager.State.Unlocked)
+
+        // On this device, offline, and on a fresh one.
+        manager.lockVault()
+        val again = manager(VaultStore(temp.root))
+        assertFalse(again.unlockWithPassword("old password for changing"))
+        assertTrue(again.unlockWithPassword("new password after change"))
+        val other = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        other.locate(cloud.device())
+        assertFalse(other.unlockWithPassword("old password for changing"))
+        assertTrue(other.unlockWithPassword("new password after change"))
+        // The recovery key did not change: the master key is the same.
+        assertEquals(words, other.recoveryWords())
+    }
+
+    @Test
+    fun aChangeCutShortKeepsBothPasswordsWorking() = runTest {
+        val cloud = FakeCloud()
+        val storage = cloud.device()
+        val manager = manager()
+        manager.locate(storage)
+        manager.publish(storage, manager.prepareNew("old password before cut"))
+        // The connection drops right after the new header is pinned, before the old one is deleted.
+        val cut = object : StorageBackend by storage {
+            override suspend fun delete(ids: Collection<MessageId>) = throw StorageException("connection lost")
+        }
+        try {
+            manager.changePassword(cut, "old password before cut", "new password before cut")
+            fail("the delete should have failed")
+        } catch (_: StorageException) {
+        }
+        assertEquals(2, cloud.allMessages().mapNotNull(FoundHeader::from).size)
+        val fresh = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        fresh.locate(cloud.device())
+        assertTrue(fresh.unlockWithPassword("new password before cut"))
+        fresh.lockVault()
+        assertTrue(fresh.unlockWithPassword("old password before cut"))
     }
 
     @Test

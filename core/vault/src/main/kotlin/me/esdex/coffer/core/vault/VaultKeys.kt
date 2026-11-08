@@ -141,4 +141,22 @@ object VaultCreation {
         val vault = UnlockedVault.open(sodium, master)
         return NewVault(vault, VaultHeader(createdAt, salt, params, wrapped, vault.masterId))
     }
+
+    /**
+     * A header for the open [vault] under a new password (SPEC §3.1, §4.1): fresh salt, the same master
+     * key and master_id. Files are not touched.
+     */
+    fun rewrap(
+        sodium: Sodium,
+        vault: UnlockedVault,
+        password: CharSequence,
+        createdAt: Long,
+        params: Argon2Params = Argon2Params.DEFAULT,
+    ): VaultHeader {
+        val salt = PasswordKdf.newSalt(sodium)
+        val wrapped = PasswordKdf.deriveKek(sodium, password, salt, params).use { kek ->
+            vault.withMasterKey { MasterKeys.wrap(sodium, kek, it) }
+        }
+        return VaultHeader(createdAt, salt, params, wrapped, vault.masterId)
+    }
 }
