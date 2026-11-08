@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,6 +46,7 @@ import me.esdex.coffer.core.sync.transferKeys
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.VaultManager
+import me.esdex.coffer.core.vault.VaultStore
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -60,9 +62,23 @@ suspend fun Telegram.readyStorage(timeoutMillis: Long = 60_000): StorageBackend?
 
 /** Decrypted copies for other apps (SPEC §6): cleared on lock, at start and some minutes after opening. */
 object OpenFiles {
+    /**
+     * How long a copy stays. An app that already opened it keeps reading through its descriptor after
+     * the file is deleted, so this only limits how long the plaintext sits in the cache.
+     */
+    const val LIFETIME_MILLIS = 10 * 60 * 1000L
+
     fun dir(context: Context) = File(context.cacheDir, "open")
+
     fun clear(context: Context) {
         dir(context).deleteRecursively()
+    }
+
+    /** Deletes every copy in [dir] written more than [maxAgeMillis] before [now]. Each download has its own folder. */
+    fun sweep(dir: File, now: Long, maxAgeMillis: Long = LIFETIME_MILLIS) {
+        for (copy in dir.listFiles().orEmpty()) {
+            if (now - copy.lastModified() >= maxAgeMillis) copy.deleteRecursively()
+        }
     }
 }
 
@@ -80,6 +96,7 @@ class VaultContent @Inject constructor(
     private val vault: VaultManager,
     private val index: VaultIndex,
     private val registry: TransferRegistry,
+    private val store: VaultStore,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var session: Job? = null
@@ -104,6 +121,12 @@ class VaultContent @Inject constructor(
 
     fun start() {
         OpenFiles.clear(context)
+        scope.launch {
+            while (true) {
+                delay(60_000)
+                sweepOpenFiles()
+            }
+        }
         scope.launch {
             vault.state.collect { state ->
                 if (state is VaultManager.State.Unlocked) {
@@ -132,7 +155,7 @@ class VaultContent @Inject constructor(
                     onCaughtUp = {
                         catchUpFlow.value = null
                         // SPEC §5.8: weekly, quietly; a failure waits for the next unlock.
-                        launch { if (current.maintenance.isDue()) runCatchingStorage { maintain(current) } }
+                        launch { if (store.weeklyCheck && current.maintenance.isDue()) runCatchingStorage { maintain(current) } }
                     },
                 )
             }
@@ -205,6 +228,9 @@ class VaultContent @Inject constructor(
             }
         }
     }
+
+    /** Copies opened in other apps go after [OpenFiles.LIFETIME_MILLIS]; also called on return to the app. */
+    fun sweepOpenFiles() = OpenFiles.sweep(OpenFiles.dir(context), System.currentTimeMillis())
 
     /** One maintenance run at a time, and never alongside a snapshot: both may send one. */
     private suspend fun maintain(current: Live, onProgress: (Int) -> Unit = {}): Maintenance.Report =
