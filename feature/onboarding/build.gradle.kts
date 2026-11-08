@@ -5,6 +5,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":core:ui"))
     implementation(project(":core:tdlib"))
     implementation(project(":core:vault"))
     implementation(libs.androidx.biometric)

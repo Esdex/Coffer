@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="login_continue">Continue</string>
     <string name="login_start_over">Start over</string>
     <string name="login_change_api_keys">Change API keys</string>
@@ -45,7 +45,7 @@
     <string name="login_failed_explanation">Error: %1$s</string>
     <string name="login_failed_reset">Reset Telegram data and try again</string>
 
-    <string name="login_error_api_keys_format">api_id is a number and api_hash is 32 characters of 0-9 and a-f.</string>
+    <string name="login_error_api_keys_format" tools:ignore="TypographyDashes">api_id is a number and api_hash is 32 characters of 0-9 and a-f.</string>
     <string name="login_error_flood_wait">Too many attempts. Telegram asks to wait %1$s.</string>
     <string name="login_error_phone_invalid">This phone number is not valid.</string>
     <string name="login_error_phone_banned">Telegram has banned this phone number.</string>
@@ -60,10 +60,16 @@
     <string name="welcome_api">Coffer talks to Telegram through the official Telegram API with your own account. There is no Coffer server.</string>
     <string name="welcome_saved_messages">Your files will show up in Saved Messages as files named like cfr_1a2b3c4d5e6f.bin. Do not delete them in the regular Telegram app, or the files they belong to will be lost.</string>
     <string name="welcome_start">Get started</string>
+    <string name="welcome_next">Next</string>
+    <string name="welcome_api_title">Your account, no server</string>
+    <string name="welcome_saved_title">Kept in Saved Messages</string>
 
     <string name="vault_searching_title">Looking for your vault</string>
     <string name="vault_searching_explanation">Checking Saved Messages for a Coffer vault.</string>
-    <string name="vault_searching_scanned">%1$d messages checked</string>
+    <plurals name="vault_searching_scanned">
+        <item quantity="one">%1$d message checked</item>
+        <item quantity="other">%1$d messages checked</item>
+    </plurals>
 
     <string name="vault_password">Vault password</string>
     <string name="vault_password_repeat">Repeat the password</string>
@@ -78,7 +84,7 @@
     <string name="vault_recovery_unlock_title">Recovery key</string>
     <string name="vault_recovery_unlock_explanation">Enter the 24 words you wrote down when the vault was created, separated by spaces.</string>
     <string name="vault_recovery_key">Recovery key</string>
-    <string name="vault_recovery_word_count">%1$d of %2$d words</string>
+    <string name="vault_recovery_word_count" tools:ignore="PluralsCandidate">%1$d of %2$d words</string>
     <string name="vault_recovery_unknown_words">Not in the word list: %1$s</string>
 
     <string name="vault_create_title">Create your vault</string>
@@ -89,7 +95,10 @@
     <string name="vault_strength_2">Fair</string>
     <string name="vault_strength_3">Good</string>
     <string name="vault_strength_4">Strong</string>
-    <string name="vault_strength_too_short">At least %1$d characters.</string>
+    <plurals name="vault_strength_too_short">
+        <item quantity="one">At least %1$d character.</item>
+        <item quantity="other">At least %1$d characters.</item>
+    </plurals>
 
     <string name="vault_recovery_title">Your recovery key</string>
     <string name="vault_recovery_explanation">These 24 words open your vault if you forget the password. Write them down on paper, in order, and keep them somewhere safe. Anyone with these words can open your vault. You can see them again later in Settings, after entering the password.</string>

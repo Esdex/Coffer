@@ -28,8 +28,12 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import me.esdex.coffer.core.ui.components.Hero
+import me.esdex.coffer.core.ui.components.HeroAnimation
+import me.esdex.coffer.core.ui.components.PillButton
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.CodeDelivery
@@ -84,19 +88,18 @@ fun LoginScreen(modifier: Modifier = Modifier, viewModel: LoginViewModel = hiltV
 private fun LoginError?.isApiKeyProblem() = this is LoginError.Telegram && code.startsWith("API_ID")
 
 @Composable
-private fun Title(text: String) = Text(text, style = MaterialTheme.typography.headlineSmall)
+private fun Title(text: String) = Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
 
 @Composable
 private fun Body(text: String) = Text(text, style = MaterialTheme.typography.bodyMedium)
 
 @Composable
-private fun Waiting() = Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) {
-    CircularProgressIndicator()
+private fun Waiting() = Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+    HeroAnimation(Hero.LOADING, size = 120.dp)
 }
 
 @Composable
-private fun SubmitButton(text: String, enabled: Boolean, onClick: () -> Unit) =
-    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text(text) }
+private fun SubmitButton(text: String, enabled: Boolean, onClick: () -> Unit) = PillButton(text, onClick, enabled = enabled)
 
 @Composable
 private fun StartOverButton(busy: Boolean, onStartOver: () -> Unit) =

@@ -31,8 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -43,6 +45,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.esdex.coffer.core.crypto.bip39.Bip39
 import me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException
+import me.esdex.coffer.core.ui.components.Hero
+import me.esdex.coffer.core.ui.components.HeroAnimation
+import me.esdex.coffer.core.ui.components.PillButton
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.PasswordPolicy
 import me.esdex.coffer.core.vault.RecoveryQuiz
@@ -82,19 +87,24 @@ fun VaultGate(modifier: Modifier = Modifier, viewModel: VaultViewModel = hiltVie
 }
 
 @Composable
-private fun Title(text: String) = Text(text, style = MaterialTheme.typography.headlineSmall)
+private fun Title(text: String) = Text(text, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+
+/** The animation at the head of a step, centred. */
+@Composable
+private fun HeroHeader(hero: Hero) = Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    HeroAnimation(hero, size = 140.dp)
+}
 
 @Composable
 private fun Body(text: String) = Text(text, style = MaterialTheme.typography.bodyMedium)
 
 @Composable
-private fun Progress() = Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-    CircularProgressIndicator()
+private fun Progress() = Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    HeroAnimation(Hero.LOADING, size = 96.dp)
 }
 
 @Composable
-private fun WideButton(text: String, enabled: Boolean, onClick: () -> Unit) =
-    Button(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text(text) }
+private fun WideButton(text: String, enabled: Boolean, onClick: () -> Unit) = PillButton(text, onClick, enabled = enabled)
 
 @Composable
 private fun PasswordField(value: String, label: String, onChange: (String) -> Unit) = OutlinedTextField(
@@ -112,7 +122,7 @@ private fun Searching(scanned: Int?) {
     Title(stringResource(R.string.vault_searching_title))
     Body(stringResource(R.string.vault_searching_explanation))
     Progress()
-    if (scanned != null && scanned > 0) Body(stringResource(R.string.vault_searching_scanned, scanned))
+    if (scanned != null && scanned > 0) Body(pluralStringResource(R.plurals.vault_searching_scanned, scanned, scanned))
 }
 
 // Unlock
@@ -160,6 +170,7 @@ private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean) {
     LaunchedEffect(Unit) { if (viewModel.deviceUnlockEnabled) promptDevice() }
 
     var password by remember { mutableStateOf("") }
+    HeroHeader(Hero.VAULT)
     Title(stringResource(R.string.vault_unlock_title))
     Body(stringResource(R.string.vault_unlock_explanation))
     PasswordField(password, stringResource(R.string.vault_password)) { password = it }
@@ -246,6 +257,7 @@ private fun NewPassword(viewModel: VaultViewModel, busy: Boolean) {
     var password by remember { mutableStateOf("") }
     var repeated by remember { mutableStateOf("") }
     val check = remember(password) { PasswordPolicy.check(password) }
+    HeroHeader(Hero.SHIELD)
     Title(stringResource(R.string.vault_create_title))
     Body(stringResource(R.string.vault_create_explanation))
     PasswordField(password, stringResource(R.string.vault_password)) { password = it }
@@ -270,7 +282,7 @@ private fun StrengthMeter(check: PasswordPolicy.Check) {
         modifier = Modifier.fillMaxWidth(),
     )
     Text(stringResource(labels[check.score]), color = color, style = MaterialTheme.typography.labelLarge)
-    if (!check.longEnough) Body(stringResource(R.string.vault_strength_too_short, PasswordPolicy.MIN_LENGTH))
+    if (!check.longEnough) Body(pluralStringResource(R.plurals.vault_strength_too_short, PasswordPolicy.MIN_LENGTH, PasswordPolicy.MIN_LENGTH))
     check.warning?.let { Body(it) }
     check.suggestions.forEach { Body("- $it") }
 }
