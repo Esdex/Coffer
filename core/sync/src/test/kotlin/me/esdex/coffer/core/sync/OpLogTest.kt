@@ -37,29 +37,12 @@ class OpLogTest {
 
     private fun bytes(text: String) = BytesSource(text.toByteArray())
 
-    /**
-     * What the user sees, by name: each folder with the folder it shows in, each file with its folder and
-     * status. Names in these tests are unique, so names identify objects.
-     */
-    private data class View(val folders: Set<Pair<String, String?>>, val files: Set<Triple<String, String?, FileStatus>>)
-
-    private suspend fun Device.view(): View {
-        val tree = tree()
-        fun nameOf(id: Id?) = id?.let { tree.folders.getValue(it).name }
-        return View(
-            folders = tree.folders.map { (id, folder) -> folder.name to nameOf(tree.parentOf(id)) }.toSet(),
-            files = tree.files.map { (id, meta) -> Triple(meta.name, nameOf(tree.folderOf(id)), index.file(id)!!.status) }.toSet(),
-        )
-    }
-
     /** A device that reads the whole history from scratch must see the same (SPEC §11: rescan). */
     private suspend fun assertRescanAgrees(expected: View) {
         val fresh = device()
         fresh.indexer.catchUp()
         assertEquals(expected, fresh.view())
     }
-
-    private suspend fun Device.sendOp(op: Op) = storage.sendText(keys.meta.encodeOp(op))
 
     private fun newId() = Id.random(sodium)
 

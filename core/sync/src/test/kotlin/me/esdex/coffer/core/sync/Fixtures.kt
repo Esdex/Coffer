@@ -17,6 +17,7 @@ import me.esdex.coffer.core.crypto.SecretKey
 import me.esdex.coffer.core.crypto.format.BlobPayload
 import me.esdex.coffer.core.crypto.format.FileMeta
 import me.esdex.coffer.core.crypto.format.LocalUpload
+import me.esdex.coffer.core.crypto.format.Op
 import me.esdex.coffer.core.crypto.sodium.LazySodiumAdapter
 import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.index.InMemoryVaultIndex
@@ -24,8 +25,11 @@ import me.esdex.coffer.core.index.IndexedFile
 import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.FakeCloud
-import me.esdex.coffer.core.storage.FakeStorageBackend
 import me.esdex.coffer.core.storage.MessageContent
+import me.esdex.coffer.core.storage.MessageId
+import me.esdex.coffer.core.storage.Progress
+import me.esdex.coffer.core.storage.StorageBackend
+import me.esdex.coffer.core.storage.StoredMessage
 import me.esdex.coffer.core.storage.StorageException
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -38,7 +42,7 @@ internal val sodium = LazySodiumAdapter(LazySodiumJava(SodiumJava()))
 
 internal fun keysOf(master: SecretKey): VaultKeys {
     val ring = KeyRing.derive(sodium, master)
-    return VaultKeys(sodium, ring.metaKey, ring.wrapKey, LocalKeys.derive(sodium, master))
+    return VaultKeys(sodium, ring.metaKey, ring.indexKey, ring.wrapKey, LocalKeys.derive(sodium, master))
 }
 
 internal class BytesSource(private val bytes: ByteArray) : UploadSource {
@@ -79,11 +83,32 @@ internal class HashingSink : OutputStream() {
     fun hex() = digest.digest().joinToString("") { "%02x".format(it) }
 }
 
+/** Counts what a device reads, to tell a snapshot load from a full pass over the history. */
+internal class CountingStorage(private val inner: StorageBackend) : StorageBackend by inner {
+    @Volatile var messagesRead = 0
+    @Volatile var blobsOpened = 0
+
+    /** Runs before each blob is opened: lets a test change the cloud at exactly that moment. */
+    @Volatile var beforeOpen: suspend (MessageId) -> Unit = {}
+
+    override suspend fun historyBefore(before: MessageId?, limit: Int): List<StoredMessage> =
+        inner.historyBefore(before, limit).also { messagesRead += it.size }
+
+    override suspend fun historyAfter(after: MessageId, limit: Int): List<StoredMessage> =
+        inner.historyAfter(after, limit).also { messagesRead += it.size }
+
+    override suspend fun openBlob(id: MessageId, offset: Long, length: Long, onProgress: (Progress) -> Unit): InputStream {
+        beforeOpen(id)
+        return inner.openBlob(id, offset, length, onProgress).also { blobsOpened++ }
+    }
+}
+
 /** One device: its storage handle, its own index, the shared vault keys. */
 internal class Device(cloud: FakeCloud, val keys: VaultKeys, temp: java.io.File) {
-    val storage: FakeStorageBackend = cloud.device()
+    val storage = CountingStorage(cloud.device())
     val index = InMemoryVaultIndex()
     val indexer = Indexer(storage, index, keys)
+    val snapshotter = Snapshotter(storage, index, indexer, keys, java.io.File(temp, "snapshots")) { 1_762_531_200_000 }
     val preparer = UploadPreparer(keys, index) { 1_762_531_200_000 }
     val runner = UploadRunner(sodium, storage, index, temp)
     val downloader = DownloadRunner(sodium, storage, index)
@@ -109,6 +134,21 @@ internal class Device(cloud: FakeCloud, val keys: VaultKeys, temp: java.io.File)
 
     suspend fun tree(): VaultTree = VaultTree.of(index, keys)
 
+    suspend fun sendOp(op: Op) = storage.sendText(keys.meta.encodeOp(op))
+
+    /**
+     * What the user sees, by name: each folder with the folder it shows in, each file with its folder and
+     * status. Names in these tests are unique, so names identify objects.
+     */
+    suspend fun view(): View {
+        val tree = tree()
+        fun nameOf(id: Id?) = id?.let { tree.folders.getValue(it).name }
+        return View(
+            folders = tree.folders.map { (id, folder) -> folder.name to nameOf(tree.parentOf(id)) }.toSet(),
+            files = tree.files.map { (id, meta) -> Triple(meta.name, nameOf(tree.folderOf(id)), index.file(id)!!.status) }.toSet(),
+        )
+    }
+
     fun meta(file: IndexedFile): FileMeta = keys.local.openFileMeta(file.fileId, file.sealedMeta)!!
 
     suspend fun download(fileId: Id, output: OutputStream) {
@@ -116,6 +156,8 @@ internal class Device(cloud: FakeCloud, val keys: VaultKeys, temp: java.io.File)
         downloader.run(fileId, keys.transferKeys(fileId, file.sealedMeta)!!, output)
     }
 }
+
+internal data class View(val folders: Set<Pair<String, String?>>, val files: Set<Triple<String, String?, FileStatus>>)
 
 /** Runs the device's indexer live in the background for [block]. */
 internal fun <T> following(device: Device, block: suspend () -> T): T = runBlocking {

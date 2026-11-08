@@ -7,14 +7,16 @@ import me.esdex.coffer.core.crypto.SecretKey
 import me.esdex.coffer.core.crypto.format.FileMeta
 import me.esdex.coffer.core.crypto.format.LocalSealer
 import me.esdex.coffer.core.crypto.format.MetaCodec
+import me.esdex.coffer.core.crypto.format.SnapshotCodec
 import me.esdex.coffer.core.crypto.sodium.Sodium
 
 /**
  * What sync needs from the unlocked vault. Borrowed, not owned: the vault closes the keys on lock,
  * and anything still holding this fails instead of using wiped keys.
  */
-class VaultKeys(val sodium: Sodium, metaKey: SecretKey, private val wrapKey: SecretKey, localKey: SecretKey) {
+class VaultKeys(val sodium: Sodium, metaKey: SecretKey, indexKey: SecretKey, private val wrapKey: SecretKey, localKey: SecretKey) {
     val meta = MetaCodec(sodium, metaKey)
+    val snapshots = SnapshotCodec(sodium, indexKey)
     val local = LocalSealer(sodium, localKey)
 
     fun wrapDek(dek: SecretKey, fileId: Id): Bytes = FileKeys.wrapDek(sodium, wrapKey, dek, fileId)

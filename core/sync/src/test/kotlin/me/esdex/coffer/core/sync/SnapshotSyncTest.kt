@@ -1,0 +1,396 @@
+package me.esdex.coffer.core.sync
+
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.MasterKeys
+import me.esdex.coffer.core.crypto.format.BlobPayload
+import me.esdex.coffer.core.crypto.format.IndexPayload
+import me.esdex.coffer.core.index.FileStatus
+import me.esdex.coffer.core.storage.FakeCloud
+import me.esdex.coffer.core.storage.MessageContent
+import me.esdex.coffer.core.storage.MessageId
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Rule
+import org.junit.Test
+import org.junit.rules.TemporaryFolder
+import kotlin.random.Random
+
+/** Index snapshots (SPEC §4.4, §5.4) and the full rescan (§5.5), between devices on one Saved Messages. */
+class SnapshotSyncTest {
+    @get:Rule
+    val temp = TemporaryFolder()
+
+    private val master = MasterKeys.generate(sodium)
+    private val cloud = FakeCloud(pageCap = 5)
+
+    private fun device() = Device(cloud, keysOf(master), temp.newFolder())
+
+    private fun bytes(text: String) = BytesSource(text.toByteArray())
+
+    private fun indexBlobs() = cloud.allMessages().filter { (it.content as? MessageContent.Blob)?.caption?.startsWith("coffer:v1:index:") == true }
+
+    /** A device that reads everything from scratch, snapshots aside: the reference (SPEC §11). */
+    private suspend fun rescanned(): View {
+        val fresh = device()
+        fresh.indexer.rescan()
+        return fresh.view()
+    }
+
+    private class Built(val damaged: Id, val orphan: Id)
+
+    /**
+     * A history with every kind of state in it: nested folders, renames and moves, a deleted file and
+     * folder, a file damaged outside the app, and a part whose part 0 never came.
+     */
+    private suspend fun Device.buildHistory(): Built {
+        val docs = ops.createFolder("Docs", null)
+        val tax = ops.createFolder("Tax", docs)
+        val old = ops.createFolder("Old", null)
+        indexer.catchUp()
+        val scan = upload("scan.pdf", bytes("scan"), folderId = tax)
+        ops.renameFile(scan, "scan-2025.pdf")
+        ops.moveFile(scan, docs)
+        ops.renameFolder(tax, "Taxes")
+        upload("notes.txt", bytes("notes"))
+        val doomed = upload("doomed.txt", bytes("bye"))
+        deleter.delete(keys, doomed, now = 5)
+        ops.deleteFolder(VaultTree.of(index, keys), old) { error("empty") }
+        val hurt = upload("hurt.bin", bytes("hurt"))
+        indexer.catchUp()
+        val part = index.parts(hurt).getValue(0)
+        cloud.deleteFromOutside(listOf(part))
+        indexer.applyDeletion(setOf(part))
+        val orphan = Id.random(sodium)
+        val size = 512L * 1024 * 1024 + 1
+        storage.sendBlob(
+            temp.newFile("cfr_bbbbbbbbbbbb.bin").apply { writeBytes(ByteArray(8)) },
+            keys.meta.encodeBlob(BlobPayload(orphan, 1, 2, size, null)),
+        )
+        indexer.catchUp()
+        return Built(hurt, orphan)
+    }
+
+    private val expectedView = View(
+        folders = setOf("Docs" to null, "Taxes" to "Docs"),
+        files = setOf(
+            Triple("scan-2025.pdf", "Docs", FileStatus.READY),
+            Triple("notes.txt", null, FileStatus.READY),
+            Triple("hurt.bin", null, FileStatus.DAMAGED),
+        ),
+    )
+
+    /**
+     * The same without the damaged file: its only part is gone, so a fresh history holds nothing of it.
+     * Only a snapshot remembers it.
+     */
+    private val historyOnlyView = expectedView.copy(files = expectedView.files.filterNot { it.first == "hurt.bin" }.toSet())
+
+    @Test
+    fun aSnapshotRestoresWhatTheWholeHistoryGives() = runBlocking {
+        val here = device()
+        val built = here.buildHistory()
+        assertEquals(expectedView, here.view())
+        assertTrue(here.snapshotter.snapshotIfNeeded())
+
+        val there = device()
+        val report = there.indexer.catchUp()
+        assertEquals(1, there.storage.blobsOpened)
+        // The snapshot is the newest message: one page to find it, nothing after it to apply.
+        assertTrue("read ${there.storage.messagesRead} of ${cloud.allMessages().size}", there.storage.messagesRead <= 6)
+        assertEquals(Indexer.CatchUpReport(there.storage.messagesRead, snapshotUsed = true), report)
+        assertEquals(expectedView, there.view())
+        here.indexer.catchUp()
+        assertEquals(here.index.lastApplied(), there.index.lastApplied())
+        assertEquals(setOf(1), there.index.allParts().getValue(built.orphan).keys)
+        assertTrue(there.index.isDeleted(here.index.deletedFiles().single()))
+        assertEquals(here.index.deletedFolders(), there.index.deletedFolders())
+        // Damage, which no full pass can see, came with the snapshot.
+        assertEquals(FileStatus.DAMAGED, there.index.file(built.damaged)!!.status)
+        // A rescan leaves snapshots aside even when there are some; a reload, like a new device, does not.
+        assertEquals(historyOnlyView, rescanned())
+        val reloaded = there.indexer.reload()
+        assertTrue(reloaded.snapshotUsed)
+        assertEquals(expectedView, there.view())
+        assertEquals(Indexer.CatchUpReport(cloud.allMessages().size, snapshotUsed = false), device().indexer.rescan())
+    }
+
+    @Test
+    fun aSnapshotWhoseCaptionDisagreesWithItsContentIsNotUsed() = runBlocking {
+        val here = device()
+        here.upload("a.txt", bytes("a"))
+        here.indexer.catchUp()
+        val state = here.indexer.pendingSnapshot()!!.state
+        // Sound content and a sound caption, but the caption claims more than the content covers.
+        val snapshotId = Id.random(sodium)
+        val sealed = here.keys.snapshots.encode(snapshotId, state)
+        here.storage.sendBlob(
+            temp.newFile("cfr_dddddddddddd.bin").apply { writeBytes(sealed.bytes) },
+            here.keys.meta.encodeIndex(IndexPayload(snapshotId, state.lastAppliedMessageId + 1, 1, sealed.plainSize)),
+        )
+        here.upload("b.txt", bytes("b"))
+
+        val there = device()
+        there.indexer.catchUp()
+        assertEquals(1, there.storage.blobsOpened)
+        assertEquals(View(emptySet(), setOf(Triple("a.txt", null, FileStatus.READY), Triple("b.txt", null, FileStatus.READY))), there.view())
+        // Read in full: every message, not just those after the snapshot.
+        assertEquals(cloud.allMessages().size, there.storage.messagesRead)
+    }
+
+    @Test
+    fun withoutSnapshotsAFullPassAgreesExceptForDamage() = runBlocking {
+        val here = device()
+        here.buildHistory()
+        assertEquals(historyOnlyView, rescanned())
+    }
+
+    @Test
+    fun changesAfterTheSnapshotAreAppliedOnTop() = runBlocking {
+        val here = device()
+        here.buildHistory()
+        here.snapshotter.snapshotIfNeeded()
+        val later = here.upload("later.txt", bytes("later"))
+        here.ops.renameFolder(here.tree().folders.entries.single { it.value.name == "Docs" }.key, "Documents")
+        here.ops.moveFile(later, here.tree().folders.entries.single { it.value.name == "Taxes" }.key)
+        here.indexer.catchUp()
+
+        val there = device()
+        there.indexer.catchUp()
+        assertEquals(1, there.storage.blobsOpened)
+        assertEquals(here.view(), there.view())
+        assertTrue(Triple("later.txt", "Taxes", FileStatus.READY) in there.view().files)
+    }
+
+    @Test
+    fun anIndexOlderThanTheSnapshotIsReplacedANewerOneIsNot() = runBlocking {
+        val here = device()
+        val there = device()
+        here.upload("first.txt", bytes("1"))
+        there.indexer.catchUp()
+        here.buildHistory()
+        here.snapshotter.snapshotIfNeeded()
+
+        there.indexer.catchUp()
+        assertEquals(1, there.storage.blobsOpened)
+        assertEquals(here.view(), there.view())
+
+        // Now level with the snapshot: catching up again reads only what is new.
+        here.upload("second.txt", bytes("2"))
+        there.indexer.catchUp()
+        assertEquals(1, there.storage.blobsOpened)
+        assertEquals(here.view().also { here.indexer.catchUp() }.files + Triple("second.txt", null, FileStatus.READY), there.view().files)
+    }
+
+    @Test
+    fun aSnapshotThatDoesNotOpenFallsBackToAnOlderOneOrTheFullHistory() = runBlocking {
+        val here = device()
+        here.buildHistory()
+        here.snapshotter.snapshotIfNeeded()
+        here.upload("after.txt", bytes("a"))
+        here.indexer.catchUp()
+        val reference = here.view()
+        // A caption that opens, over a document that does not.
+        val last = here.index.lastApplied()!!.value
+        here.storage.sendBlob(
+            temp.newFile("cfr_cccccccccccc.bin").apply { writeBytes(Random(1).nextBytes(500)) },
+            here.keys.meta.encodeIndex(IndexPayload(Id.random(sodium), last, 1, 460)),
+        )
+
+        val there = device()
+        there.indexer.catchUp()
+        assertEquals(2, there.storage.blobsOpened)
+        assertEquals(reference, there.view())
+
+        // With the good one gone too, the whole history is read.
+        cloud.deleteFromOutside(indexBlobs().filter { it.content.let { c -> c is MessageContent.Blob && c.size != 500L } }.map { it.id })
+        val third = device()
+        third.indexer.catchUp()
+        assertEquals(1, third.storage.blobsOpened)
+        assertEquals(reference.copy(files = reference.files.filterNot { it.first == "hurt.bin" }.toSet()), third.view())
+    }
+
+    @Test
+    fun aSnapshotDeletedWhileBeingLoadedFallsBackToAnOlderOne() = runBlocking {
+        val here = device()
+        here.buildHistory()
+        here.snapshotter.snapshotIfNeeded()
+        here.upload("after.txt", bytes("a"))
+        here.indexer.catchUp()
+        here.snapshotter.snapshotIfNeeded()
+        here.indexer.catchUp()
+        val reference = here.view()
+
+        // Another device prunes the newest snapshot just as this one is about to read it.
+        val there = device()
+        var first = true
+        there.storage.beforeOpen = { id ->
+            if (first) {
+                first = false
+                cloud.deleteFromOutside(listOf(id))
+            }
+        }
+        val report = there.indexer.catchUp()
+        assertTrue(report.snapshotUsed)
+        assertEquals(1, there.storage.blobsOpened)
+        assertEquals(reference, there.view())
+    }
+
+    @Test
+    fun aSnapshotThatCannotBeFetchedForOtherReasonsStopsTheCatchUp() = runBlocking {
+        val here = device()
+        here.upload("a.txt", bytes("a"))
+        here.indexer.catchUp()
+        here.snapshotter.snapshotIfNeeded()
+        val there = device()
+        there.storage.beforeOpen = { throw me.esdex.coffer.core.storage.StorageException("connection lost") }
+        try {
+            there.indexer.catchUp()
+            error("a network failure must not pass for a damaged snapshot")
+        } catch (_: me.esdex.coffer.core.storage.StorageException) {
+        }
+        // Nothing half done: the next attempt starts from scratch and works.
+        there.storage.beforeOpen = {}
+        there.indexer.catchUp()
+        assertEquals(here.view(), there.view())
+    }
+
+    @Test
+    fun anotherVaultsSnapshotIsNotOpened() = runBlocking {
+        val here = device()
+        here.upload("mine.txt", bytes("m"))
+        val stranger = Device(cloud, keysOf(MasterKeys.generate(sodium)), temp.newFolder())
+        stranger.upload("theirs.txt", bytes("t"))
+        stranger.indexer.catchUp()
+        assertTrue(stranger.snapshotter.snapshotIfNeeded())
+
+        val there = device()
+        there.indexer.catchUp()
+        assertEquals(0, there.storage.blobsOpened)
+        assertEquals(View(emptySet(), setOf(Triple("mine.txt", null, FileStatus.READY))), there.view())
+    }
+
+    @Test
+    fun noSnapshotWithoutChangesAndNoneInReplyToAnotherDevicesSnapshot() = runBlocking {
+        val here = device()
+        val there = device()
+        assertFalse(here.snapshotter.snapshotIfNeeded())
+        here.upload("a.txt", bytes("a"))
+        here.indexer.catchUp()
+        assertTrue(here.snapshotter.snapshotIfNeeded())
+        assertFalse(here.snapshotter.snapshotIfNeeded())
+        // There sees the change and the snapshot covering it.
+        there.indexer.catchUp()
+        assertFalse(there.snapshotter.snapshotIfNeeded())
+        // A change of its own does call for one, and here, seeing it, does not answer.
+        there.upload("b.txt", bytes("b"))
+        there.indexer.catchUp()
+        assertTrue(there.snapshotter.snapshotIfNeeded())
+        here.indexer.catchUp()
+        assertFalse(here.snapshotter.snapshotIfNeeded())
+        assertEquals(2, indexBlobs().size)
+    }
+
+    @Test
+    fun damageCallsForANewSnapshot() = runBlocking {
+        val here = device()
+        val fileId = here.upload("fragile.bin", bytes("f"))
+        here.indexer.catchUp()
+        assertTrue(here.snapshotter.snapshotIfNeeded())
+        assertNull(here.indexer.pendingSnapshot())
+        val part = here.index.parts(fileId).getValue(0)
+        cloud.deleteFromOutside(listOf(part))
+        here.indexer.applyDeletion(setOf(part))
+        assertNotNull(here.indexer.pendingSnapshot())
+        assertTrue(here.snapshotter.snapshotIfNeeded())
+        assertNull(here.indexer.pendingSnapshot())
+
+        val there = device()
+        there.indexer.catchUp()
+        assertEquals(FileStatus.DAMAGED, there.index.file(fileId)!!.status)
+    }
+
+    @Test
+    fun onlyTheLastThreeAreKept() = runBlocking {
+        val here = device()
+        val sent = mutableListOf<MessageId>()
+        repeat(5) {
+            here.upload("f$it.txt", bytes("$it"))
+            here.indexer.catchUp()
+            assertTrue(here.snapshotter.snapshotIfNeeded())
+            sent += here.index.snapshots().maxOf { s -> s.messageId }
+        }
+        assertEquals(sent.takeLast(3).toSet(), indexBlobs().map { it.id }.toSet())
+        assertEquals(sent.takeLast(3).toSet(), here.index.snapshots().map { it.messageId }.toSet())
+    }
+
+    @Test
+    fun aFollowingDeviceForgetsSnapshotsDeletedElsewhere() = runBlocking {
+        val here = device()
+        val there = device()
+        // Following from before the first snapshot: a device that catches up later loads the newest
+        // snapshot and never hears of older ones (SPEC §4.4), which is not what this test is about.
+        val caughtUp = CompletableDeferred<Unit>()
+        val job = launch(Dispatchers.Default) { there.indexer.run(onCaughtUp = { caughtUp.complete(Unit) }) }
+        try {
+            caughtUp.await()
+            repeat(5) {
+                here.upload("f$it.txt", bytes("$it"))
+                here.indexer.catchUp()
+                here.snapshotter.snapshotIfNeeded()
+            }
+            val kept = indexBlobs().map { it.id }.toSet()
+            assertEquals(3, kept.size)
+            withTimeout(10_000) {
+                while (there.index.snapshots().map { it.messageId }.toSet() != kept) delay(20)
+            }
+        } finally {
+            job.cancel()
+        }
+    }
+
+    @Test
+    fun rescanRebuildsTheSameIndexAndKeepsOwnUploads() = runBlocking {
+        val here = device()
+        here.buildHistory()
+        val source = bytes("pending")
+        val prepared = here.prepare("pending.txt", source)
+        val fileId = prepared.upload.fileId!!
+        here.indexer.rescan()
+        assertEquals(FileStatus.UPLOADING, here.index.file(fileId)!!.status)
+        here.runner.run(prepared.upload, prepared.keys, source)
+        here.indexer.catchUp()
+        val view = here.view()
+        assertTrue(Triple("pending.txt", null, FileStatus.READY) in view.files)
+        // Damage is the one thing a rescan cannot know: the file whose only part was deleted is gone.
+        assertTrue(view.files.none { it.first == "hurt.bin" })
+        assertEquals(view, rescanned())
+    }
+
+    @Test
+    fun loadingASnapshotKeepsOwnUploads() = runBlocking {
+        val here = device()
+        val there = device()
+        there.upload("early.txt", bytes("e"))
+        there.indexer.catchUp()
+        here.buildHistory()
+        here.snapshotter.snapshotIfNeeded()
+        // There has an upload prepared but not sent while its index falls behind the snapshot.
+        val source = bytes("mine")
+        val prepared = there.prepare("mine.txt", source)
+        there.indexer.catchUp()
+        assertEquals(1, there.storage.blobsOpened)
+        assertEquals(FileStatus.UPLOADING, there.index.file(prepared.upload.fileId!!)!!.status)
+        there.runner.run(prepared.upload, prepared.keys, source)
+        there.indexer.catchUp()
+        assertTrue(Triple("mine.txt", null, FileStatus.READY) in there.view().files)
+    }
+}
