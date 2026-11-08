@@ -365,42 +365,49 @@ private fun MoveDialog(tree: VaultTree, target: Target, onMove: (Id?) -> Unit, o
     }
     var at by remember { mutableStateOf(from) }
     val here = at
-    val choices = tree.childFolders(here)
-        .filter { movingFolder == null || !tree.isWithin(it, movingFolder) }
-        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { tree.folders.getValue(it).name })
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.browser_move_title, target.name), maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    here?.let { tree.folders[it]?.name } ?: stringResource(R.string.browser_root),
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (here != null) TextButton(onClick = { at = tree.parentOf(here) }) { Text(stringResource(R.string.browser_up)) }
-                if (choices.isEmpty()) {
-                    Text(stringResource(R.string.browser_no_subfolders), style = MaterialTheme.typography.bodySmall)
-                } else {
-                    LazyColumn(Modifier.heightIn(max = 280.dp)) {
-                        items(choices, key = { it.toByteArray().contentHashCode() }) { id ->
-                            Text(
-                                tree.folders.getValue(id).name,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.fillMaxWidth().clickable { at = id }.padding(vertical = 12.dp),
-                            )
-                        }
-                    }
-                }
-            }
-        },
+        text = { FolderPicker(tree, here, onAt = { at = it }, excluding = movingFolder) },
         confirmButton = {
             TextButton(onClick = { onMove(here) }, enabled = here != from) { Text(stringResource(R.string.browser_move_here)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.browser_cancel)) } },
     )
+}
+
+/**
+ * Walks the folder tree from [at]: where it is, one level up, and the folders inside. [excluding] and
+ * everything below it are not offered, so a folder cannot be put inside itself.
+ */
+@Composable
+fun FolderPicker(tree: VaultTree, at: Id?, onAt: (Id?) -> Unit, excluding: Id? = null) {
+    val choices = tree.childFolders(at)
+        .filter { excluding == null || !tree.isWithin(it, excluding) }
+        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { tree.folders.getValue(it).name })
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            at?.let { tree.folders[it]?.name } ?: stringResource(R.string.browser_root),
+            style = MaterialTheme.typography.titleSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (at != null) TextButton(onClick = { onAt(tree.parentOf(at)) }) { Text(stringResource(R.string.browser_up)) }
+        if (choices.isEmpty()) {
+            Text(stringResource(R.string.browser_no_subfolders), style = MaterialTheme.typography.bodySmall)
+        } else {
+            LazyColumn(Modifier.heightIn(max = 280.dp)) {
+                items(choices, key = { it.toByteArray().contentHashCode() }) { id ->
+                    Text(
+                        tree.folders.getValue(id).name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth().clickable { onAt(id) }.padding(vertical = 12.dp),
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
