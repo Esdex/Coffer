@@ -28,6 +28,7 @@ import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
+import me.esdex.coffer.feature.browser.transfer.VaultContent
 import java.io.File
 import javax.inject.Inject
 
@@ -37,8 +38,27 @@ class DebugToolsViewModel @Inject constructor(
     private val vault: VaultManager,
     private val store: VaultStore,
     private val device: DeviceUnlock,
+    private val content: VaultContent,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
+
+    private val reloadFlow = MutableStateFlow<String?>(null)
+
+    /** The result of the last reload, for checking snapshots by hand (SPEC §5.4). */
+    val reload = reloadFlow.asStateFlow()
+
+    fun reloadAsNewDevice() {
+        reloadFlow.value = "Reading..."
+        viewModelScope.launch {
+            reloadFlow.value = runCatching { content.reloadAsNewDevice() }.fold(
+                { report ->
+                    if (report == null) "Vault is locked"
+                    else "Snapshot used: ${if (report.snapshotUsed) "yes" else "no"}, messages read: ${report.messagesRead}"
+                },
+                { "Failed: ${it::class.simpleName}" },
+            )
+        }
+    }
 
     /** For calibrating Argon2id on real phones (SPEC §3.3). */
     val lastKdfMillis: Long? get() = vault.lastKdfMillis
@@ -105,6 +125,9 @@ fun DebugTools(modifier: Modifier = Modifier, viewModel: DebugToolsViewModel = h
         Text("Screen-lock unlock: ${if (viewModel.deviceUnlockEnabled) "on" else "off"}")
         OutlinedButton(onClick = viewModel::offerDeviceUnlockAgain) { Text("Offer screen-lock unlock again") }
         Text("Events from Telegram: new ${events.newMessages}, deletions ${events.deletions}  ${events.last}")
+        val reload by viewModel.reload.collectAsStateWithLifecycle()
+        OutlinedButton(onClick = viewModel::reloadAsNewDevice) { Text("Forget index, catch up as a new device") }
+        reload?.let { Text(it) }
         Button(onClick = viewModel::runSelfCheck, enabled = check != DebugToolsViewModel.CheckState.Running) {
             Text("Run storage self-check")
         }

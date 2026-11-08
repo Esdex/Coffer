@@ -210,6 +210,8 @@ class BrowserViewModel @Inject constructor(
 
     fun deleteFolder(folderId: Id) = act { content.deleteFolder(folderId) }
 
+    fun rescan() = act { content.rescan() }
+
     // Cancelling an upload deletes what it sent, so it talks to Telegram too.
     fun cancel(item: TransferItem) = act { if (item.isUpload) content.cancelUpload(item.id) else content.cancelDownload(item.id) }
 

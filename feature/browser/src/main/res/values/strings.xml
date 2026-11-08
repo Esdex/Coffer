@@ -40,6 +40,11 @@
     <string name="browser_delete_folder_empty">The empty folder %1$s will be deleted on all your devices.</string>
     <string name="browser_delete_folder_text">%1$s and everything in it (files: %2$d, folders: %3$d) will be deleted from Saved Messages on all your devices.</string>
 
+    <string name="browser_rescan">Rescan Saved Messages</string>
+    <string name="browser_rescan_title">Rescan Saved Messages?</string>
+    <string name="browser_rescan_text">Coffer will read all of Saved Messages again and rebuild its list of files and folders. Nothing in Saved Messages changes. With many files this takes a while.</string>
+    <string name="browser_rescan_start">Rescan</string>
+
     <string name="browser_error_network">Could not reach Telegram. Try again.</string>
     <string name="browser_error_flood">Telegram asks to slow down. Try again in a little while.</string>
 

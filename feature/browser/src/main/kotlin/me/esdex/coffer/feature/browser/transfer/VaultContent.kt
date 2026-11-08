@@ -11,14 +11,18 @@ import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.LocalUpload
@@ -27,8 +31,10 @@ import me.esdex.coffer.core.index.PendingDownload
 import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.StorageBackend
+import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.FileDeleter
 import me.esdex.coffer.core.sync.Indexer
+import me.esdex.coffer.core.sync.Snapshotter
 import me.esdex.coffer.core.sync.UploadPreparer
 import me.esdex.coffer.core.sync.UploadRunner
 import me.esdex.coffer.core.sync.VaultKeys
@@ -64,6 +70,7 @@ object OpenFiles {
  * handing keys to transfers. Starts on unlock and stops on lock, when the keys it borrowed are wiped;
  * running transfers keep going with their own DEK (SPEC §6).
  */
+@OptIn(FlowPreview::class)
 @Singleton
 class VaultContent @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -75,6 +82,13 @@ class VaultContent @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var session: Job? = null
+
+    /** The open session's indexer and snapshotter; null while locked or not yet signed in. */
+    private class Live(val indexer: Indexer, val snapshotter: Snapshotter)
+
+    @Volatile
+    private var live: Live? = null
+    private val snapshotLock = Mutex()
     private val pendingWork = Channel<Unit>(Channel.CONFLATED)
 
     private val keysFlow = MutableStateFlow<VaultKeys?>(null)
@@ -93,7 +107,7 @@ class VaultContent @Inject constructor(
             vault.state.collect { state ->
                 if (state is VaultManager.State.Unlocked) {
                     val unlocked = state.vault
-                    open(VaultKeys(sodium, unlocked.keys.metaKey, unlocked.keys.wrapKey, unlocked.localKey))
+                    open(VaultKeys(sodium, unlocked.keys.metaKey, unlocked.keys.indexKey, unlocked.keys.wrapKey, unlocked.localKey))
                 } else {
                     close()
                 }
@@ -106,13 +120,17 @@ class VaultContent @Inject constructor(
         keysFlow.value = keys
         session = scope.launch {
             val storage = telegram.readyStorage(Long.MAX_VALUE) ?: return@launch
+            val indexer = Indexer(storage, index, keys)
+            live = Live(indexer, Snapshotter(storage, index, indexer, keys, File(context.cacheDir, "snapshot"), System::currentTimeMillis))
             launch {
                 catchUpFlow.value = 0
-                Indexer(storage, index, keys).run(
+                indexer.run(
                     onCatchUpProgress = { catchUpFlow.value = it },
                     onCaughtUp = { catchUpFlow.value = null },
                 )
             }
+            // SPEC §4.4: a while after the last change, so a burst of changes makes one snapshot.
+            launch { indexer.changes.debounce(SNAPSHOT_DELAY_MS).collect { snapshot() } }
             pendingWork.trySend(Unit)
             for (signal in pendingWork) resume(keys)
         }
@@ -121,6 +139,7 @@ class VaultContent @Inject constructor(
     private fun close() {
         session?.cancel()
         session = null
+        live = null
         keysFlow.value = null
         catchUpFlow.value = null
         OpenFiles.clear(context)
@@ -165,6 +184,45 @@ class VaultContent @Inject constructor(
                 registry.put(download.fileId, TransferRegistry.Entry(transferKeys, target = target, open = open, displayName = meta.name))
             }
             enqueue(TransferWorker.download(download.downloadId))
+        }
+    }
+
+    /** Sends a snapshot if anything changed since the newest one; a failure waits for the next change. */
+    private suspend fun snapshot() {
+        val current = live ?: return
+        snapshotLock.withLock {
+            try {
+                current.snapshotter.snapshotIfNeeded()
+            } catch (_: StorageException) {
+            } catch (_: IOException) {
+            }
+        }
+    }
+
+    /** The app went to the background: snapshot now rather than after the delay (SPEC §4.4). */
+    fun onBackground() {
+        scope.launch { snapshot() }
+    }
+
+    /** Reads the whole of Saved Messages again (SPEC §5.5), with progress like a catch-up. */
+    suspend fun rescan() {
+        val current = live ?: return
+        catchUpFlow.value = 0
+        try {
+            current.indexer.rescan { catchUpFlow.value = it }
+        } finally {
+            catchUpFlow.value = null
+        }
+    }
+
+    /** Debug: forgets the index and catches up the way a new device would. Null while locked. */
+    suspend fun reloadAsNewDevice(): Indexer.CatchUpReport? {
+        val current = live ?: return null
+        catchUpFlow.value = 0
+        try {
+            return current.indexer.reload { catchUpFlow.value = it }
+        } finally {
+            catchUpFlow.value = null
         }
     }
 
@@ -255,6 +313,8 @@ class VaultContent @Inject constructor(
         index.clear()
     }
 }
+
+private const val SNAPSHOT_DELAY_MS = 90_000L
 
 internal fun transferConstraints() = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 

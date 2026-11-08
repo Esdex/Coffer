@@ -109,6 +109,7 @@ fun BrowserScreen(
     var renaming by remember { mutableStateOf<Target?>(null) }
     var moving by remember { mutableStateOf<Target?>(null) }
     var deletingFolder by remember { mutableStateOf<FolderItem?>(null) }
+    var confirmRescan by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
 
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -186,6 +187,11 @@ fun BrowserScreen(
                     TextButton(onClick = { menuOpen = true }) { Text("...") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.browser_transfers)) }, onClick = { showTransfers = true; menuOpen = false })
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.browser_rescan)) },
+                            enabled = catchingUp == null,
+                            onClick = { menuOpen = false; confirmRescan = true },
+                        )
                         DropdownMenuItem(text = { Text(stringResource(R.string.browser_log_out)) }, onClick = { menuOpen = false; onLogOut() })
                         extraMenu?.invoke { menuOpen = false }
                     }
@@ -292,6 +298,15 @@ fun BrowserScreen(
                 }
             },
             onDismiss = { moving = null },
+        )
+    }
+    if (confirmRescan) {
+        AlertDialog(
+            onDismissRequest = { confirmRescan = false },
+            title = { Text(stringResource(R.string.browser_rescan_title)) },
+            text = { Text(stringResource(R.string.browser_rescan_text)) },
+            confirmButton = { TextButton(onClick = { confirmRescan = false; viewModel.rescan() }) { Text(stringResource(R.string.browser_rescan_start)) } },
+            dismissButton = { TextButton(onClick = { confirmRescan = false }) { Text(stringResource(R.string.browser_cancel)) } },
         )
     }
     deletingFolder?.let { folder ->

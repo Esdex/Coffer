@@ -55,6 +55,7 @@ class VaultLifecycle @Inject constructor(
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        content.onBackground()
         val minutes = store.autoLockMinutes ?: return
         backgroundSince = SystemClock.elapsedRealtime()
         lockTimer = scope.launch {
