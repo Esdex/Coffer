@@ -145,8 +145,10 @@ class VaultKeysTest {
     fun closingWipesTheKeys() {
         val vault = newVault("to be wiped").vault
         val meta = vault.keys.metaKey
+        val local = vault.localKey
         vault.close()
         assertTrue(meta.isClosed)
+        assertTrue(local.isClosed)
         assertThrows(IllegalStateException::class.java) { vault.withMasterKey { it.withBytes { } } }
     }
 }

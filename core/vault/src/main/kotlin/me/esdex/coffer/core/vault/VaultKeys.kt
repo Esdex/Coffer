@@ -4,6 +4,7 @@ import me.esdex.coffer.core.crypto.Argon2Params
 import me.esdex.coffer.core.crypto.AuthenticationException
 import me.esdex.coffer.core.crypto.Bytes
 import me.esdex.coffer.core.crypto.KeyRing
+import me.esdex.coffer.core.crypto.LocalKeys
 import me.esdex.coffer.core.crypto.MasterKeys
 import me.esdex.coffer.core.crypto.PasswordKdf
 import me.esdex.coffer.core.crypto.SecretKey
@@ -30,23 +31,33 @@ data class FoundHeader(val messageId: MessageId, val header: VaultHeader) {
 }
 
 /**
- * The master key and its subkeys while the vault is unlocked (SPEC §3.1). [close] wipes them all.
+ * The master key and its subkeys while the vault is unlocked (SPEC §3.1), plus the device-only key that
+ * seals the local index (SPEC §8). [close] wipes them all.
  */
-class UnlockedVault internal constructor(private val master: SecretKey, val masterId: Bytes, val keys: KeyRing) :
-    AutoCloseable {
+class UnlockedVault private constructor(
+    private val master: SecretKey,
+    val masterId: Bytes,
+    val keys: KeyRing,
+    val localKey: SecretKey,
+) : AutoCloseable {
 
     /** For wrapping into the Keystore (SPEC §3.8) and showing the recovery key. */
     fun <R> withMasterKey(block: (SecretKey) -> R): R = block(master)
 
     override fun close() {
         keys.close()
+        localKey.close()
         master.close()
     }
 
     companion object {
         /** Takes ownership of [master]. */
-        fun open(sodium: Sodium, master: SecretKey): UnlockedVault =
-            UnlockedVault(master, MasterKeys.masterId(sodium, master), KeyRing.derive(sodium, master))
+        fun open(sodium: Sodium, master: SecretKey): UnlockedVault = UnlockedVault(
+            master,
+            MasterKeys.masterId(sodium, master),
+            KeyRing.derive(sodium, master),
+            LocalKeys.derive(sodium, master),
+        )
     }
 }
 
@@ -104,7 +115,7 @@ object VaultUnlock {
             master.close()
             return MnemonicResult.OtherVault
         }
-        return MnemonicResult.Unlocked(UnlockedVault(master, masterId, KeyRing.derive(sodium, master)))
+        return MnemonicResult.Unlocked(UnlockedVault.open(sodium, master))
     }
 }
 
