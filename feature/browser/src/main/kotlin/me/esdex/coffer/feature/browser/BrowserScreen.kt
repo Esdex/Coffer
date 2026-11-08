@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,6 +75,7 @@ fun BrowserScreen(
     viewModel: BrowserViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val files by viewModel.files.collectAsStateWithLifecycle()
     val transfers by viewModel.transfers.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
@@ -108,7 +110,7 @@ fun BrowserScreen(
     }
 
     LaunchedEffect(Unit) {
-        viewModel.messages.collect { snackbar.showSnackbar(context.getString(it)) }
+        viewModel.messages.collect { snackbar.showSnackbar(resources.getString(it)) }
     }
 
     if (showTransfers) {
