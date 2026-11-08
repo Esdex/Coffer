@@ -1,6 +1,7 @@
 package me.esdex.coffer.core.index
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -38,6 +39,12 @@ internal class PartRow(val fileId: String, val partIndex: Int, val messageId: Lo
 
 @Entity(tableName = "deleted_files")
 internal class DeletedRow(@PrimaryKey val fileId: String)
+
+@Entity(tableName = "folders")
+internal class FolderRow(@PrimaryKey val folderId: String, val sealedMeta: ByteArray)
+
+@Entity(tableName = "deleted_folders")
+internal class DeletedFolderRow(@PrimaryKey val folderId: String)
 
 @Entity(tableName = "sync_state")
 internal class SyncRow(@PrimaryKey val key: String, val value: Long)
@@ -77,6 +84,14 @@ internal interface IndexDao {
     @Query("SELECT COUNT(*) FROM deleted_files WHERE fileId = :fileId") suspend fun deletedCount(fileId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun markDeleted(row: DeletedRow)
 
+    @Query("SELECT * FROM folders") fun observeFolders(): Flow<List<FolderRow>>
+    @Query("SELECT * FROM folders") suspend fun folders(): List<FolderRow>
+    @Query("SELECT * FROM folders WHERE folderId = :folderId") suspend fun folder(folderId: String): FolderRow?
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putFolder(row: FolderRow)
+    @Query("DELETE FROM folders WHERE folderId = :folderId") suspend fun deleteFolder(folderId: String)
+    @Query("SELECT COUNT(*) FROM deleted_folders WHERE folderId = :folderId") suspend fun deletedFolderCount(folderId: String): Int
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun markFolderDeleted(row: DeletedFolderRow)
+
     @Query("SELECT value FROM sync_state WHERE `key` = :key") suspend fun syncValue(key: String): Long?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSync(row: SyncRow)
 
@@ -92,8 +107,13 @@ internal interface IndexDao {
 }
 
 @Database(
-    entities = [FileRow::class, PartRow::class, DeletedRow::class, SyncRow::class, UploadRow::class, DownloadRow::class],
-    version = 1,
+    entities = [
+        FileRow::class, PartRow::class, DeletedRow::class, FolderRow::class, DeletedFolderRow::class,
+        SyncRow::class, UploadRow::class, DownloadRow::class,
+    ],
+    version = 2,
+    // Only new tables so far: the queue of transfers survives the update.
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
 )
 internal abstract class IndexDatabase : RoomDatabase() {
     abstract fun dao(): IndexDao
@@ -153,6 +173,16 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
 
     override suspend fun isDeleted(fileId: Id): Boolean = dao.deletedCount(fileId.hex()) > 0
     override suspend fun markDeleted(fileId: Id) = dao.markDeleted(DeletedRow(fileId.hex()))
+
+    private fun FolderRow.indexed() = IndexedFolder(idOf(folderId), sealedMeta)
+
+    override fun observeFolders(): Flow<List<IndexedFolder>> = dao.observeFolders().map { rows -> rows.map { it.indexed() } }
+    override suspend fun folders(): List<IndexedFolder> = dao.folders().map { it.indexed() }
+    override suspend fun folder(folderId: Id): IndexedFolder? = dao.folder(folderId.hex())?.indexed()
+    override suspend fun putFolder(folderId: Id, sealedMeta: ByteArray) = dao.putFolder(FolderRow(folderId.hex(), sealedMeta))
+    override suspend fun removeFolder(folderId: Id) = dao.deleteFolder(folderId.hex())
+    override suspend fun isFolderDeleted(folderId: Id): Boolean = dao.deletedFolderCount(folderId.hex()) > 0
+    override suspend fun markFolderDeleted(folderId: Id) = dao.markFolderDeleted(DeletedFolderRow(folderId.hex()))
 
     override suspend fun lastApplied(): MessageId? = dao.syncValue(LAST_APPLIED)?.let(::MessageId)
     override suspend fun setLastApplied(messageId: MessageId) = dao.putSync(SyncRow(LAST_APPLIED, messageId.value))

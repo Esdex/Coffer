@@ -16,6 +16,8 @@ class InMemoryVaultIndex : VaultIndex {
         val files: Map<Id, Row> = emptyMap(),
         val parts: Map<Pair<Id, Int>, MessageId> = emptyMap(),
         val deleted: Set<Id> = emptySet(),
+        val folders: Map<Id, ByteArray> = emptyMap(),
+        val deletedFolders: Set<Id> = emptySet(),
         val lastApplied: MessageId? = null,
         val uploads: Map<String, PendingUpload> = emptyMap(),
         val downloads: Map<String, PendingDownload> = emptyMap(),
@@ -30,6 +32,8 @@ class InMemoryVaultIndex : VaultIndex {
         val own = parts.filterKeys { it.first == id }.mapKeys { it.key.second }
         IndexedFile(id, row.plainSize, row.partCount, row.sealedMeta, row.status, own)
     }
+
+    private fun State.indexedFolders(): List<IndexedFolder> = folders.map { (id, sealed) -> IndexedFolder(id, sealed.copyOf()) }
 
     override fun observeFiles(): Flow<List<IndexedFile>> = state.map { it.indexed() }
     override suspend fun files(): List<IndexedFile> = state.value.indexed()
@@ -68,6 +72,16 @@ class InMemoryVaultIndex : VaultIndex {
 
     override suspend fun isDeleted(fileId: Id): Boolean = fileId in state.value.deleted
     override suspend fun markDeleted(fileId: Id) = update { it.copy(deleted = it.deleted + fileId) }
+
+    override fun observeFolders(): Flow<List<IndexedFolder>> = state.map { it.indexedFolders() }
+    override suspend fun folders(): List<IndexedFolder> = state.value.indexedFolders()
+    override suspend fun folder(folderId: Id): IndexedFolder? =
+        state.value.folders[folderId]?.let { IndexedFolder(folderId, it.copyOf()) }
+    override suspend fun putFolder(folderId: Id, sealedMeta: ByteArray) =
+        update { it.copy(folders = it.folders + (folderId to sealedMeta.copyOf())) }
+    override suspend fun removeFolder(folderId: Id) = update { it.copy(folders = it.folders - folderId) }
+    override suspend fun isFolderDeleted(folderId: Id): Boolean = folderId in state.value.deletedFolders
+    override suspend fun markFolderDeleted(folderId: Id) = update { it.copy(deletedFolders = it.deletedFolders + folderId) }
 
     override suspend fun lastApplied(): MessageId? = state.value.lastApplied
     override suspend fun setLastApplied(messageId: MessageId) = update { it.copy(lastApplied = messageId) }

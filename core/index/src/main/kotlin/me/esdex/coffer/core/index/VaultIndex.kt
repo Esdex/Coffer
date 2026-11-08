@@ -30,6 +30,9 @@ class IndexedFile(
     val parts: Map<Int, MessageId>,
 )
 
+/** A folder in the local index: name and parent are in [sealedMeta] (SPEC §8). */
+class IndexedFolder(val folderId: Id, val sealedMeta: ByteArray)
+
 /** An upload this device owes: queued until prepared, then the captions it will send (SPEC §6). */
 class PendingUpload(
     val uploadId: String,
@@ -75,6 +78,15 @@ interface VaultIndex {
 
     suspend fun isDeleted(fileId: Id): Boolean
     suspend fun markDeleted(fileId: Id)
+
+    fun observeFolders(): Flow<List<IndexedFolder>>
+    suspend fun folders(): List<IndexedFolder>
+    suspend fun folder(folderId: Id): IndexedFolder?
+    /** Inserts or replaces. */
+    suspend fun putFolder(folderId: Id, sealedMeta: ByteArray)
+    suspend fun removeFolder(folderId: Id)
+    suspend fun isFolderDeleted(folderId: Id): Boolean
+    suspend fun markFolderDeleted(folderId: Id)
 
     suspend fun lastApplied(): MessageId?
     suspend fun setLastApplied(messageId: MessageId)
