@@ -74,7 +74,7 @@ class UploadPreparer(private val keys: VaultKeys, private val index: VaultIndex,
         val dek = FileKeys.generateDek(sodium)
         val now = clock()
         val name = FileNames.fitForImport(request.name).takeIf(FileNames::isValid) ?: FALLBACK_NAME
-        val meta = FileMeta(name, null, MimeTypes.normalize(request.mime), now, now, hash, keys.wrapDek(dek, fileId))
+        val meta = FileMeta(name, request.folderId, MimeTypes.normalize(request.mime), now, now, hash, keys.wrapDek(dek, fileId))
         val partCount = ContentLayout.partCount(size)
         val captions = (0 until partCount).map { part ->
             keys.meta.encodeBlob(BlobPayload(fileId, part, partCount, size, if (part == 0) meta else null))

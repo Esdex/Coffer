@@ -42,86 +42,6 @@ import java.io.OutputStream
 import java.security.MessageDigest
 import kotlin.random.Random
 
-private val sodium = LazySodiumAdapter(LazySodiumJava(SodiumJava()))
-
-private fun keysOf(master: SecretKey): VaultKeys {
-    val ring = KeyRing.derive(sodium, master)
-    return VaultKeys(sodium, ring.metaKey, ring.wrapKey, LocalKeys.derive(sodium, master))
-}
-
-private class BytesSource(private val bytes: ByteArray) : UploadSource {
-    override fun open(): InputStream = ByteArrayInputStream(bytes)
-}
-
-/** A large source generated on the fly, so a multi-part file needs no 512 MiB array of its own. */
-private class PatternSource(private val size: Long) : UploadSource {
-    override fun open(): InputStream = object : InputStream() {
-        var position = 0L
-        override fun read(): Int = if (position >= size) -1 else ((position++ % 251).toInt())
-        override fun read(b: ByteArray, off: Int, len: Int): Int {
-            if (position >= size) return -1
-            val n = minOf(len.toLong(), size - position).toInt()
-            for (i in 0 until n) b[off + i] = ((position + i) % 251).toByte()
-            position += n
-            return n
-        }
-    }
-}
-
-/** Independent of the code under test: SHA-256 from the JDK. */
-private fun sha256(input: InputStream): String {
-    val digest = MessageDigest.getInstance("SHA-256")
-    val buffer = ByteArray(1 shl 16)
-    while (true) {
-        val n = input.read(buffer)
-        if (n < 0) break
-        digest.update(buffer, 0, n)
-    }
-    return digest.digest().joinToString("") { "%02x".format(it) }
-}
-
-private class HashingSink : OutputStream() {
-    val digest: MessageDigest = MessageDigest.getInstance("SHA-256")
-    override fun write(b: Int) = digest.update(b.toByte())
-    override fun write(b: ByteArray, off: Int, len: Int) = digest.update(b, off, len)
-    fun hex() = digest.digest().joinToString("") { "%02x".format(it) }
-}
-
-/** One device: its storage handle, its own index, the shared vault keys. */
-private class Device(cloud: FakeCloud, val keys: VaultKeys, temp: java.io.File) {
-    val storage: FakeStorageBackend = cloud.device()
-    val index = InMemoryVaultIndex()
-    val indexer = Indexer(storage, index, keys)
-    val preparer = UploadPreparer(keys, index) { 1_762_531_200_000 }
-    val runner = UploadRunner(sodium, storage, index, temp)
-    val downloader = DownloadRunner(sodium, storage, index)
-    val deleter = FileDeleter(storage, index)
-
-    fun queued(name: String, mime: String? = null): Pair<PendingUpload, LocalUpload> {
-        val id = Random.nextLong().toString()
-        val request = LocalUpload("content://test/$name", name, mime)
-        return PendingUpload(id, keys.local.sealUpload(id, request), null, emptyList(), null) to request
-    }
-
-    suspend fun prepare(name: String, source: UploadSource, mime: String? = null): UploadPreparer.Prepared {
-        val (queued, request) = queued(name, mime)
-        return preparer.prepare(queued, request, source)
-    }
-
-    suspend fun upload(name: String, source: UploadSource, mime: String? = "application/octet-stream"): Id {
-        val prepared = prepare(name, source, mime)
-        runner.run(prepared.upload, prepared.keys, source)
-        return prepared.upload.fileId!!
-    }
-
-    fun meta(file: IndexedFile): FileMeta = keys.local.openFileMeta(file.fileId, file.sealedMeta)!!
-
-    suspend fun download(fileId: Id, output: OutputStream) {
-        val file = index.file(fileId)!!
-        downloader.run(fileId, keys.transferKeys(fileId, file.sealedMeta)!!, output)
-    }
-}
-
 class SyncTest {
     @get:Rule
     val temp = TemporaryFolder()
@@ -130,19 +50,6 @@ class SyncTest {
     private val cloud = FakeCloud(pageCap = 5)
 
     private fun device() = Device(cloud, keysOf(master), temp.newFolder())
-
-    /** Runs the device's indexer live in the background for [block]. */
-    private fun <T> following(device: Device, block: suspend () -> T): T = runBlocking {
-        val job: Job = CoroutineScope(Dispatchers.Default).launch { device.indexer.run() }
-        try {
-            block()
-        } finally {
-            job.cancel()
-        }
-    }
-
-    private suspend fun Device.awaitFiles(timeout: Long = 10_000, predicate: (List<IndexedFile>) -> Boolean) =
-        withTimeout(timeout) { index.observeFiles().first(predicate) }
 
     @Test
     fun filesRoundTripToAnotherDevice() = runBlocking {
