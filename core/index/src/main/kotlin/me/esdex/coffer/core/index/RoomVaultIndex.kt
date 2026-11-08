@@ -100,7 +100,7 @@ internal interface IndexDao {
     @Query("DELETE FROM folders") suspend fun deleteAllFolders()
     @Query("DELETE FROM deleted_folders") suspend fun deleteAllDeletedFolders()
     @Query("DELETE FROM snapshots") suspend fun deleteAllSnapshots()
-    @Query("DELETE FROM sync_state") suspend fun deleteAllSync()
+    @Query("DELETE FROM sync_state WHERE `key` = :key") suspend fun deleteSync(key: String)
     @Insert suspend fun insertFiles(rows: List<FileRow>)
     @Insert suspend fun insertParts(rows: List<PartRow>)
     @Insert suspend fun insertDeletedFiles(rows: List<DeletedRow>)
@@ -229,6 +229,9 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         dao.putSnapshot(SnapshotRow(snapshot.messageId.value, snapshot.lastApplied.value))
     override suspend fun removeSnapshot(messageId: MessageId): Boolean = dao.deleteSnapshot(messageId.value) > 0
 
+    override suspend fun maintainedAt(): Long? = dao.syncValue(MAINTAINED_AT)
+    override suspend fun setMaintainedAt(millis: Long) = dao.putSync(SyncRow(MAINTAINED_AT, millis))
+
     override suspend fun replaceContent(content: IndexContent): Unit = db.withTransactionCompat {
         dao.deleteAllFiles()
         dao.deleteAllParts()
@@ -236,7 +239,8 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         dao.deleteAllFolders()
         dao.deleteAllDeletedFolders()
         dao.deleteAllSnapshots()
-        dao.deleteAllSync()
+        dao.deleteSync(LAST_APPLIED)
+        dao.deleteSync(CONTENT_VERSION)
         dao.insertFiles(content.files.map { FileRow(it.fileId.hex(), it.plainSize, it.partCount, it.sealedMeta, it.status.name) })
         val parts = content.files.associate { it.fileId to it.parts } + content.orphanParts
         dao.insertParts(parts.flatMap { (id, byIndex) -> byIndex.map { (i, m) -> PartRow(id.hex(), i, m.value) } })
@@ -270,6 +274,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
     private companion object {
         const val LAST_APPLIED = "lastAppliedMessageId"
         const val CONTENT_VERSION = "contentVersion"
+        const val MAINTAINED_AT = "maintainedAt"
     }
 }
 

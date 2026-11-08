@@ -20,6 +20,7 @@ class InMemoryVaultIndex : VaultIndex {
         val deletedFolders: Set<Id> = emptySet(),
         val lastApplied: MessageId? = null,
         val contentVersion: MessageId? = null,
+        val maintainedAt: Long? = null,
         val snapshots: Map<MessageId, KnownSnapshot> = emptyMap(),
         val uploads: Map<String, PendingUpload> = emptyMap(),
         val downloads: Map<String, PendingDownload> = emptyMap(),
@@ -105,6 +106,9 @@ class InMemoryVaultIndex : VaultIndex {
         true
     }
 
+    override suspend fun maintainedAt(): Long? = state.value.maintainedAt
+    override suspend fun setMaintainedAt(millis: Long) = update { it.copy(maintainedAt = millis) }
+
     override suspend fun replaceContent(content: IndexContent) = update { s ->
         val parts = content.files.flatMap { f -> f.parts.map { (i, m) -> (f.fileId to i) to m } } +
             content.orphanParts.flatMap { (id, parts) -> parts.map { (i, m) -> (id to i) to m } }
@@ -119,6 +123,7 @@ class InMemoryVaultIndex : VaultIndex {
             snapshots = content.snapshots.associateBy { it.messageId },
             uploads = s.uploads,
             downloads = s.downloads,
+            maintainedAt = s.maintainedAt,
         )
     }
 

@@ -125,7 +125,11 @@ interface VaultIndex {
     /** False if [messageId] was not a known snapshot. */
     suspend fun removeSnapshot(messageId: MessageId): Boolean
 
-    /** Replaces everything except uploads and downloads, atomically. */
+    /** When the integrity check and compaction last ran (SPEC §5.8), unix millis; kept by [replaceContent]. */
+    suspend fun maintainedAt(): Long?
+    suspend fun setMaintainedAt(millis: Long)
+
+    /** Replaces everything except uploads, downloads and [maintainedAt], atomically. */
     suspend fun replaceContent(content: IndexContent)
 
     fun observeUploads(): Flow<List<PendingUpload>>
