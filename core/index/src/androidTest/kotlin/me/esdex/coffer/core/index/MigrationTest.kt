@@ -11,7 +11,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** The index is rebuildable, but the transfer queue in it is not: updates keep it (schema 1 to 2). */
+/** The index is rebuildable, but the transfer queue in it is not: updates keep it (schema 1 to the current one). */
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
     private val name = "migration-test.db"
@@ -20,7 +20,7 @@ class MigrationTest {
     val helper = MigrationTestHelper(InstrumentationRegistry.getInstrumentation(), IndexDatabase::class.java)
 
     @Test
-    fun version1KeepsItsRowsInVersion2() {
+    fun version1KeepsItsRowsInTheCurrentVersion() {
         val fileId = "a0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         // App storage opens only after the first unlock since boot: unlock the emulator before running this.
@@ -31,8 +31,8 @@ class MigrationTest {
             db.execSQL("INSERT INTO uploads VALUES ('u1', ?, NULL, '', NULL)", arrayOf(byteArrayOf(4, 5)))
             db.execSQL("INSERT INTO sync_state VALUES ('lastAppliedMessageId', 1048576)")
         }
-        // Validates the migrated schema against 2.json.
-        helper.runMigrationsAndValidate(name, 2, true).close()
+        // Validates the migrated schema against 3.json.
+        helper.runMigrationsAndValidate(name, 3, true).close()
 
         val index = RoomVaultIndex(context, name)
         runBlocking {
@@ -43,6 +43,7 @@ class MigrationTest {
             assertArrayEquals(byteArrayOf(4, 5), index.uploads().single().sealedRequest)
             assertEquals(1048576L, index.lastApplied()?.value)
             assertTrue(index.folders().isEmpty())
+            assertTrue(index.snapshots().isEmpty())
         }
         context.deleteDatabase(name)
     }

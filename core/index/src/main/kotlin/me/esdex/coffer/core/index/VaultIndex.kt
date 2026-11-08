@@ -33,6 +33,26 @@ class IndexedFile(
 /** A folder in the local index: name and parent are in [sealedMeta] (SPEC §8). */
 class IndexedFolder(val folderId: Id, val sealedMeta: ByteArray)
 
+/** A snapshot message in Saved Messages and the last message id it covers (SPEC §4.4). */
+data class KnownSnapshot(val messageId: MessageId, val lastApplied: MessageId)
+
+/** Everything but the transfer queue, for loading a snapshot or starting a rescan in one step. */
+class IndexContent(
+    val lastApplied: MessageId?,
+    val contentVersion: MessageId?,
+    val files: List<IndexedFile>,
+    /** Parts whose part 0 has not been seen, by file. */
+    val orphanParts: Map<Id, Map<Int, MessageId>>,
+    val folders: List<IndexedFolder>,
+    val deletedFiles: Set<Id>,
+    val deletedFolders: Set<Id>,
+    val snapshots: List<KnownSnapshot>,
+) {
+    companion object {
+        val EMPTY = IndexContent(null, null, emptyList(), emptyMap(), emptyList(), emptySet(), emptySet(), emptyList())
+    }
+}
+
 /** An upload this device owes: queued until prepared, then the captions it will send (SPEC §6). */
 class PendingUpload(
     val uploadId: String,
@@ -90,6 +110,23 @@ interface VaultIndex {
 
     suspend fun lastApplied(): MessageId?
     suspend fun setLastApplied(messageId: MessageId)
+
+    /** Every part by file, including parts of files whose part 0 has not come yet. */
+    suspend fun allParts(): Map<Id, Map<Int, MessageId>>
+    suspend fun deletedFiles(): Set<Id>
+    suspend fun deletedFolders(): Set<Id>
+
+    /** The message id of the last message that changed files or folders, as opposed to snapshots or foreign ones. */
+    suspend fun contentVersion(): MessageId?
+    suspend fun setContentVersion(messageId: MessageId)
+
+    suspend fun snapshots(): List<KnownSnapshot>
+    suspend fun putSnapshot(snapshot: KnownSnapshot)
+    /** False if [messageId] was not a known snapshot. */
+    suspend fun removeSnapshot(messageId: MessageId): Boolean
+
+    /** Replaces everything except uploads and downloads, atomically. */
+    suspend fun replaceContent(content: IndexContent)
 
     fun observeUploads(): Flow<List<PendingUpload>>
     suspend fun uploads(): List<PendingUpload>

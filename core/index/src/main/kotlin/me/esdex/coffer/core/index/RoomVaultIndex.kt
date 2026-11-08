@@ -46,6 +46,9 @@ internal class FolderRow(@PrimaryKey val folderId: String, val sealedMeta: ByteA
 @Entity(tableName = "deleted_folders")
 internal class DeletedFolderRow(@PrimaryKey val folderId: String)
 
+@Entity(tableName = "snapshots")
+internal class SnapshotRow(@PrimaryKey val messageId: Long, val lastApplied: Long)
+
 @Entity(tableName = "sync_state")
 internal class SyncRow(@PrimaryKey val key: String, val value: Long)
 
@@ -83,6 +86,27 @@ internal interface IndexDao {
 
     @Query("SELECT COUNT(*) FROM deleted_files WHERE fileId = :fileId") suspend fun deletedCount(fileId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun markDeleted(row: DeletedRow)
+    @Query("SELECT * FROM deleted_files") suspend fun deletedFiles(): List<DeletedRow>
+    @Query("SELECT * FROM deleted_folders") suspend fun deletedFolders(): List<DeletedFolderRow>
+
+    @Query("SELECT * FROM snapshots") suspend fun snapshots(): List<SnapshotRow>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSnapshot(row: SnapshotRow)
+    @Query("DELETE FROM snapshots WHERE messageId = :messageId") suspend fun deleteSnapshot(messageId: Long): Int
+
+    // Bulk writes for replaceContent.
+    @Query("DELETE FROM files") suspend fun deleteAllFiles()
+    @Query("DELETE FROM parts") suspend fun deleteAllParts()
+    @Query("DELETE FROM deleted_files") suspend fun deleteAllDeletedFiles()
+    @Query("DELETE FROM folders") suspend fun deleteAllFolders()
+    @Query("DELETE FROM deleted_folders") suspend fun deleteAllDeletedFolders()
+    @Query("DELETE FROM snapshots") suspend fun deleteAllSnapshots()
+    @Query("DELETE FROM sync_state") suspend fun deleteAllSync()
+    @Insert suspend fun insertFiles(rows: List<FileRow>)
+    @Insert suspend fun insertParts(rows: List<PartRow>)
+    @Insert suspend fun insertDeletedFiles(rows: List<DeletedRow>)
+    @Insert suspend fun insertFolders(rows: List<FolderRow>)
+    @Insert suspend fun insertDeletedFolders(rows: List<DeletedFolderRow>)
+    @Insert suspend fun insertSnapshots(rows: List<SnapshotRow>)
 
     @Query("SELECT * FROM folders") fun observeFolders(): Flow<List<FolderRow>>
     @Query("SELECT * FROM folders") suspend fun folders(): List<FolderRow>
@@ -109,11 +133,11 @@ internal interface IndexDao {
 @Database(
     entities = [
         FileRow::class, PartRow::class, DeletedRow::class, FolderRow::class, DeletedFolderRow::class,
-        SyncRow::class, UploadRow::class, DownloadRow::class,
+        SnapshotRow::class, SyncRow::class, UploadRow::class, DownloadRow::class,
     ],
-    version = 2,
+    version = 3,
     // Only new tables so far: the queue of transfers survives the update.
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 internal abstract class IndexDatabase : RoomDatabase() {
     abstract fun dao(): IndexDao
@@ -191,6 +215,40 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         uploadId, sealedRequest, fileId?.let(::idOf), captions.split('\n').filter { it.isNotEmpty() }, abandonOp,
     )
 
+    override suspend fun allParts(): Map<Id, Map<Int, MessageId>> =
+        dao.allParts().groupBy { idOf(it.fileId) }.mapValues { (_, rows) -> rows.associate { it.partIndex to MessageId(it.messageId) } }
+    override suspend fun deletedFiles(): Set<Id> = dao.deletedFiles().mapTo(mutableSetOf()) { idOf(it.fileId) }
+    override suspend fun deletedFolders(): Set<Id> = dao.deletedFolders().mapTo(mutableSetOf()) { idOf(it.folderId) }
+
+    override suspend fun contentVersion(): MessageId? = dao.syncValue(CONTENT_VERSION)?.let(::MessageId)
+    override suspend fun setContentVersion(messageId: MessageId) = dao.putSync(SyncRow(CONTENT_VERSION, messageId.value))
+
+    override suspend fun snapshots(): List<KnownSnapshot> =
+        dao.snapshots().map { KnownSnapshot(MessageId(it.messageId), MessageId(it.lastApplied)) }
+    override suspend fun putSnapshot(snapshot: KnownSnapshot) =
+        dao.putSnapshot(SnapshotRow(snapshot.messageId.value, snapshot.lastApplied.value))
+    override suspend fun removeSnapshot(messageId: MessageId): Boolean = dao.deleteSnapshot(messageId.value) > 0
+
+    override suspend fun replaceContent(content: IndexContent): Unit = db.withTransactionCompat {
+        dao.deleteAllFiles()
+        dao.deleteAllParts()
+        dao.deleteAllDeletedFiles()
+        dao.deleteAllFolders()
+        dao.deleteAllDeletedFolders()
+        dao.deleteAllSnapshots()
+        dao.deleteAllSync()
+        dao.insertFiles(content.files.map { FileRow(it.fileId.hex(), it.plainSize, it.partCount, it.sealedMeta, it.status.name) })
+        val parts = content.files.associate { it.fileId to it.parts } + content.orphanParts
+        dao.insertParts(parts.flatMap { (id, byIndex) -> byIndex.map { (i, m) -> PartRow(id.hex(), i, m.value) } })
+        dao.insertDeletedFiles(content.deletedFiles.map { DeletedRow(it.hex()) })
+        dao.insertFolders(content.folders.map { FolderRow(it.folderId.hex(), it.sealedMeta) })
+        dao.insertDeletedFolders(content.deletedFolders.map { DeletedFolderRow(it.hex()) })
+        dao.insertSnapshots(content.snapshots.map { SnapshotRow(it.messageId.value, it.lastApplied.value) })
+        content.lastApplied?.let { dao.putSync(SyncRow(LAST_APPLIED, it.value)) }
+        content.contentVersion?.let { dao.putSync(SyncRow(CONTENT_VERSION, it.value)) }
+        Unit
+    }
+
     override fun observeUploads(): Flow<List<PendingUpload>> = dao.observeUploads().map { rows -> rows.map { it.pending() } }
     override suspend fun uploads(): List<PendingUpload> = dao.uploads().map { it.pending() }
     override suspend fun putUpload(upload: PendingUpload) = dao.putUpload(
@@ -211,6 +269,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
 
     private companion object {
         const val LAST_APPLIED = "lastAppliedMessageId"
+        const val CONTENT_VERSION = "contentVersion"
     }
 }
 

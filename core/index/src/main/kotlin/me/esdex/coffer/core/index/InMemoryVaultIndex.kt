@@ -19,6 +19,8 @@ class InMemoryVaultIndex : VaultIndex {
         val folders: Map<Id, ByteArray> = emptyMap(),
         val deletedFolders: Set<Id> = emptySet(),
         val lastApplied: MessageId? = null,
+        val contentVersion: MessageId? = null,
+        val snapshots: Map<MessageId, KnownSnapshot> = emptyMap(),
         val uploads: Map<String, PendingUpload> = emptyMap(),
         val downloads: Map<String, PendingDownload> = emptyMap(),
     )
@@ -85,6 +87,40 @@ class InMemoryVaultIndex : VaultIndex {
 
     override suspend fun lastApplied(): MessageId? = state.value.lastApplied
     override suspend fun setLastApplied(messageId: MessageId) = update { it.copy(lastApplied = messageId) }
+
+    override suspend fun allParts(): Map<Id, Map<Int, MessageId>> =
+        state.value.parts.entries.groupBy({ it.key.first }, { it.key.second to it.value }).mapValues { it.value.toMap() }
+    override suspend fun deletedFiles(): Set<Id> = state.value.deleted
+    override suspend fun deletedFolders(): Set<Id> = state.value.deletedFolders
+
+    override suspend fun contentVersion(): MessageId? = state.value.contentVersion
+    override suspend fun setContentVersion(messageId: MessageId) = update { it.copy(contentVersion = messageId) }
+
+    override suspend fun snapshots(): List<KnownSnapshot> = state.value.snapshots.values.toList()
+    override suspend fun putSnapshot(snapshot: KnownSnapshot) =
+        update { it.copy(snapshots = it.snapshots + (snapshot.messageId to snapshot)) }
+    override suspend fun removeSnapshot(messageId: MessageId): Boolean = lock.withLock {
+        if (messageId !in state.value.snapshots) return false
+        state.value = state.value.copy(snapshots = state.value.snapshots - messageId)
+        true
+    }
+
+    override suspend fun replaceContent(content: IndexContent) = update { s ->
+        val parts = content.files.flatMap { f -> f.parts.map { (i, m) -> (f.fileId to i) to m } } +
+            content.orphanParts.flatMap { (id, parts) -> parts.map { (i, m) -> (id to i) to m } }
+        State(
+            files = content.files.associate { it.fileId to Row(it.plainSize, it.partCount, it.sealedMeta.copyOf(), it.status) },
+            parts = parts.toMap(),
+            deleted = content.deletedFiles,
+            folders = content.folders.associate { it.folderId to it.sealedMeta.copyOf() },
+            deletedFolders = content.deletedFolders,
+            lastApplied = content.lastApplied,
+            contentVersion = content.contentVersion,
+            snapshots = content.snapshots.associateBy { it.messageId },
+            uploads = s.uploads,
+            downloads = s.downloads,
+        )
+    }
 
     override fun observeUploads(): Flow<List<PendingUpload>> = state.map { it.uploads.values.toList() }
     override suspend fun uploads(): List<PendingUpload> = state.value.uploads.values.toList()
