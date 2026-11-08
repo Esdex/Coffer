@@ -13,6 +13,7 @@
     <string name="browser_back">Back</string>
     <string name="browser_empty">No files yet. Add some with the button below.</string>
     <string name="browser_no_match">No file name matches.</string>
+    <string name="browser_folder_empty">This folder is empty.</string>
     <string name="browser_catching_up">Reading Saved Messages: %1$d messages</string>
 
     <string name="browser_open">Open</string>
@@ -22,6 +23,22 @@
     <string name="browser_retry">Try again</string>
     <string name="browser_delete_title">Delete file?</string>
     <string name="browser_delete_text">%1$s will be deleted from Saved Messages on all your devices.</string>
+
+    <string name="browser_new_folder">New folder</string>
+    <string name="browser_new_folder_title">New folder</string>
+    <string name="browser_create">Create</string>
+    <string name="browser_rename">Rename</string>
+    <string name="browser_rename_title">Rename</string>
+    <string name="browser_name_too_long">The name is too long (at most 255 bytes).</string>
+    <string name="browser_move">Move</string>
+    <string name="browser_move_title">Move %1$s to</string>
+    <string name="browser_move_here">Move here</string>
+    <string name="browser_root">Top level</string>
+    <string name="browser_up">Up one level</string>
+    <string name="browser_no_subfolders">No folders here.</string>
+    <string name="browser_delete_folder_title">Delete folder?</string>
+    <string name="browser_delete_folder_empty">The empty folder %1$s will be deleted on all your devices.</string>
+    <string name="browser_delete_folder_text">%1$s and everything in it (files: %2$d, folders: %3$d) will be deleted from Saved Messages on all your devices.</string>
 
     <string name="browser_error_network">Could not reach Telegram. Try again.</string>
     <string name="browser_error_flood">Telegram asks to slow down. Try again in a little while.</string>

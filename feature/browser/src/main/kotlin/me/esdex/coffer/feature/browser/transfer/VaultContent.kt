@@ -32,6 +32,8 @@ import me.esdex.coffer.core.sync.Indexer
 import me.esdex.coffer.core.sync.UploadPreparer
 import me.esdex.coffer.core.sync.UploadRunner
 import me.esdex.coffer.core.sync.VaultKeys
+import me.esdex.coffer.core.sync.VaultOps
+import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.sync.transferKeys
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
@@ -170,13 +172,13 @@ class VaultContent @Inject constructor(
         WorkManager.getInstance(context).enqueueUniqueWork(request.first, ExistingWorkPolicy.KEEP, request.second)
     }
 
-    class UploadRequest(val uri: Uri, val displayName: String, val mime: String?)
+    class UploadRequest(val uri: Uri, val displayName: String, val mime: String?, val folderId: Id?)
 
     suspend fun upload(requests: List<UploadRequest>) {
         val keys = keysFlow.value ?: return
         for (request in requests) {
             val id = UUID.randomUUID().toString()
-            val sealed = keys.local.sealUpload(id, LocalUpload(request.uri.toString(), request.displayName, request.mime))
+            val sealed = keys.local.sealUpload(id, LocalUpload(request.uri.toString(), request.displayName, request.mime, request.folderId))
             index.putUpload(PendingUpload(id, sealed, null, emptyList(), null))
         }
         pendingWork.trySend(Unit)
@@ -194,6 +196,32 @@ class VaultContent @Inject constructor(
         val keys = keysFlow.value ?: return
         val storage = telegram.readyStorage() ?: return
         FileDeleter(storage, index).delete(keys, fileId, System.currentTimeMillis())
+    }
+
+    /** Runs [block] with the operation log of the open vault; does nothing while locked or signed out. */
+    private suspend fun <T> withOps(block: suspend (VaultOps, VaultKeys, StorageBackend) -> T): T? {
+        val keys = keysFlow.value ?: return null
+        val storage = telegram.readyStorage() ?: return null
+        return block(VaultOps(storage, keys, System::currentTimeMillis), keys, storage)
+    }
+
+    suspend fun createFolder(name: String, parentId: Id?) = withOps { ops, _, _ -> ops.createFolder(name, parentId) }
+
+    suspend fun renameFolder(folderId: Id, name: String) = withOps { ops, _, _ -> ops.renameFolder(folderId, name) }
+
+    suspend fun moveFolder(folderId: Id, parentId: Id?) =
+        withOps { ops, keys, _ -> ops.moveFolder(VaultTree.of(index, keys), folderId, parentId) }
+
+    suspend fun renameFile(fileId: Id, name: String) = withOps { ops, _, _ -> ops.renameFile(fileId, name) }
+
+    suspend fun moveFile(fileId: Id, folderId: Id?) = withOps { ops, _, _ -> ops.moveFile(fileId, folderId) }
+
+    /** The folder and everything in it; uploads into it are cancelled, which takes back what they sent. */
+    suspend fun deleteFolder(folderId: Id) = withOps { ops, keys, storage ->
+        ops.deleteFolder(VaultTree.of(index, keys), folderId) { fileId ->
+            val upload = index.uploads().find { it.fileId == fileId }
+            if (upload != null) cancelUpload(upload.uploadId) else FileDeleter(storage, index).delete(keys, fileId, System.currentTimeMillis())
+        }
     }
 
     suspend fun cancelUpload(uploadId: String) {

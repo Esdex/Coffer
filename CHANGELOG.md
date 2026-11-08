@@ -13,3 +13,4 @@
 - Files list with search by name and sorting by name, date or size; files added from other devices show up too.
 - Open a file in another app, or save a decrypted copy anywhere; the copy is checked against its checksum.
 - Delete a file from all devices.
+- Folders: create, rename, move and delete them (a folder is deleted with everything in it, after a confirmation); rename and move files; new files go into the folder on screen. Changes made on one device show up on the others.
