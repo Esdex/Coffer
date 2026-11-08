@@ -9,3 +9,7 @@
 - Create a vault: a password checked for strength, a 24-word recovery key, and a check that it was written down.
 - Unlock the vault with its password, the recovery key, or fingerprint and screen lock.
 - The vault locks after 5 minutes in the background.
+- Add files to the vault: they are encrypted on the phone and sent to Saved Messages, with progress in a notification and a Transfers screen; interrupted uploads resume.
+- Files list with search by name and sorting by name, date or size; files added from other devices show up too.
+- Open a file in another app, or save a decrypted copy anywhere; the copy is checked against its checksum.
+- Delete a file from all devices.

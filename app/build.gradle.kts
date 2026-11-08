@@ -124,6 +124,8 @@ dependencies {
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.fragment)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.hilt.work)
 
     // libsodium for Android. Its POM pulls the plain JNA jar, which has no Android native library;
     // the AAR of the same JNA version does.

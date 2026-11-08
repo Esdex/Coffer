@@ -23,11 +23,6 @@ class MainViewModel @Inject constructor(
         .map { it == AuthState.Ready }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    /** Shown on the account screen; null until known. */
-    val accountName: StateFlow<String?> = telegram.state
-        .map { if (it == AuthState.Ready) runCatching { telegram.accountName() }.getOrNull() else null }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
-
     init {
         telegram.start()
     }

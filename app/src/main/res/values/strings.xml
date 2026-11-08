@@ -1,7 +1,3 @@
 <resources>
     <string name="app_name">Coffer</string>
-    <string name="home_unlocked">Vault unlocked</string>
-    <string name="home_account">Telegram: %1$s</string>
-    <string name="home_lock">Lock</string>
-    <string name="account_log_out">Log out</string>
 </resources>

@@ -15,6 +15,7 @@ import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
+import me.esdex.coffer.feature.browser.transfer.VaultContent
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,6 +29,7 @@ class VaultLifecycle @Inject constructor(
     private val vault: VaultManager,
     private val store: VaultStore,
     private val device: DeviceUnlock,
+    private val content: VaultContent,
 ) : DefaultLifecycleObserver {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lockTimer: Job? = null
@@ -35,12 +37,14 @@ class VaultLifecycle @Inject constructor(
 
     fun start() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
+        content.start()
         scope.launch {
             telegram.state.collect { state ->
                 when (state) {
                     AuthState.Ready -> launch { runCatching { vault.locate(telegram.storage()) } }
                     // Closed only follows a log out or a reset of Telegram's data.
                     AuthState.Closed -> {
+                        content.forget()
                         device.disable()
                         vault.forget()
                     }

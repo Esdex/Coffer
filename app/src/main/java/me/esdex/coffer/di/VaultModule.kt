@@ -7,6 +7,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import me.esdex.coffer.core.crypto.sodium.Sodium
+import me.esdex.coffer.core.index.RoomVaultIndex
+import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
@@ -24,6 +26,10 @@ object VaultModule {
     @Provides
     @Singleton
     fun vaultManager(sodium: Sodium, store: VaultStore) = VaultManager(sodium, store)
+
+    @Provides
+    @Singleton
+    fun vaultIndex(@ApplicationContext context: Context): VaultIndex = RoomVaultIndex(context)
 
     @Provides
     @Singleton

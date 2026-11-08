@@ -1,0 +1,46 @@
+<resources>
+    <string name="browser_title">Coffer</string>
+    <string name="browser_add">Add files</string>
+    <string name="browser_search">Search by name</string>
+    <string name="browser_sort">Sort</string>
+    <string name="browser_sort_name">Name</string>
+    <string name="browser_sort_date">Date</string>
+    <string name="browser_sort_size">Size</string>
+    <string name="browser_lock">Lock</string>
+    <string name="browser_log_out">Log out</string>
+    <string name="browser_transfers">Transfers</string>
+    <string name="browser_transfers_count">Transfers (%1$d)</string>
+    <string name="browser_back">Back</string>
+    <string name="browser_empty">No files yet. Add some with the button below.</string>
+    <string name="browser_no_match">No file name matches.</string>
+    <string name="browser_catching_up">Reading Saved Messages: %1$d messages</string>
+
+    <string name="browser_open">Open</string>
+    <string name="browser_export">Save a copy</string>
+    <string name="browser_delete">Delete</string>
+    <string name="browser_cancel">Cancel</string>
+    <string name="browser_retry">Try again</string>
+    <string name="browser_delete_title">Delete file?</string>
+    <string name="browser_delete_text">%1$s will be deleted from Saved Messages on all your devices.</string>
+
+    <string name="browser_status_uploading">Uploading</string>
+    <string name="browser_status_incomplete">Incomplete: some parts are still on their way</string>
+    <string name="browser_status_damaged">Damaged: a part was deleted outside Coffer</string>
+
+    <string name="browser_no_transfers">No transfers.</string>
+    <string name="browser_transfer_upload">Upload: %1$s</string>
+    <string name="browser_transfer_download">Download: %1$s</string>
+    <string name="browser_transfer_unnamed">a file (unlock to see its name)</string>
+    <string name="browser_transfer_preparing">Preparing: reading the file and encrypting its details</string>
+    <string name="browser_transfer_waiting">Waiting</string>
+    <string name="browser_failure_no_space">Not enough free space on this phone.</string>
+    <string name="browser_failure_source_changed">The file changed while it was being uploaded. Nothing was kept; add it again.</string>
+    <string name="browser_failure_source_gone">The file can no longer be read. It may have been moved or deleted.</string>
+    <string name="browser_failure_mismatch">The downloaded file did not match its checksum and was discarded.</string>
+    <string name="browser_failure_missing_part">A part of this file is missing from Saved Messages.</string>
+    <string name="browser_failure_target">Could not write to the chosen place.</string>
+
+    <string name="transfers_channel">Transfers</string>
+    <string name="transfers_uploading">Coffer is uploading a file</string>
+    <string name="transfers_downloading">Coffer is downloading a file</string>
+</resources>
