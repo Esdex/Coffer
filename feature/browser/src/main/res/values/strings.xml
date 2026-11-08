@@ -40,6 +40,10 @@
     <string name="browser_delete_folder_empty">The empty folder %1$s will be deleted on all your devices.</string>
     <string name="browser_delete_folder_text">%1$s and everything in it (files: %2$d, folders: %3$d) will be deleted from Saved Messages on all your devices.</string>
 
+    <string name="browser_check">Check integrity</string>
+    <string name="browser_check_title">Integrity check</string>
+    <string name="browser_check_result">Messages read: %1$d\nNewly damaged files: %2$d\nRepaired: %3$d\nLeftover parts removed: %4$d\nOld snapshots removed: %5$d\nOld operations removed: %6$d</string>
+    <string name="browser_ok">OK</string>
     <string name="browser_rescan">Rescan Saved Messages</string>
     <string name="browser_rescan_title">Rescan Saved Messages?</string>
     <string name="browser_rescan_text">Coffer will read all of Saved Messages again and rebuild its list of files and folders. Nothing in Saved Messages changes. With many files this takes a while.</string>
@@ -50,7 +54,7 @@
 
     <string name="browser_status_uploading">Uploading</string>
     <string name="browser_status_incomplete">Incomplete: some parts are still on their way</string>
-    <string name="browser_status_damaged">Damaged: a part was deleted outside Coffer</string>
+    <string name="browser_status_damaged">Damaged: a part is missing from Saved Messages (deleted outside Coffer, or the upload never finished)</string>
 
     <string name="browser_no_transfers">No transfers.</string>
     <string name="browser_transfer_upload">Upload: %1$s</string>

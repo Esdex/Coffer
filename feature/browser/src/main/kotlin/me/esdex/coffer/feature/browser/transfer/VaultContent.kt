@@ -34,6 +34,7 @@ import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.FileDeleter
 import me.esdex.coffer.core.sync.Indexer
+import me.esdex.coffer.core.sync.Maintenance
 import me.esdex.coffer.core.sync.Snapshotter
 import me.esdex.coffer.core.sync.UploadPreparer
 import me.esdex.coffer.core.sync.UploadRunner
@@ -84,7 +85,7 @@ class VaultContent @Inject constructor(
     private var session: Job? = null
 
     /** The open session's indexer and snapshotter; null while locked or not yet signed in. */
-    private class Live(val indexer: Indexer, val snapshotter: Snapshotter)
+    private class Live(val indexer: Indexer, val snapshotter: Snapshotter, val maintenance: Maintenance)
 
     @Volatile
     private var live: Live? = null
@@ -121,12 +122,18 @@ class VaultContent @Inject constructor(
         session = scope.launch {
             val storage = telegram.readyStorage(Long.MAX_VALUE) ?: return@launch
             val indexer = Indexer(storage, index, keys)
-            live = Live(indexer, Snapshotter(storage, index, indexer, keys, File(context.cacheDir, "snapshot"), System::currentTimeMillis))
+            val snapshotter = Snapshotter(storage, index, indexer, keys, File(context.cacheDir, "snapshot"), System::currentTimeMillis)
+            val current = Live(indexer, snapshotter, Maintenance(storage, index, indexer, snapshotter, keys, System::currentTimeMillis))
+            live = current
             launch {
                 catchUpFlow.value = 0
                 indexer.run(
                     onCatchUpProgress = { catchUpFlow.value = it },
-                    onCaughtUp = { catchUpFlow.value = null },
+                    onCaughtUp = {
+                        catchUpFlow.value = null
+                        // SPEC §5.8: weekly, quietly; a failure waits for the next unlock.
+                        launch { if (current.maintenance.isDue()) runCatchingStorage { maintain(current) } }
+                    },
                 )
             }
             // SPEC §4.4: a while after the last change, so a burst of changes makes one snapshot.
@@ -196,6 +203,29 @@ class VaultContent @Inject constructor(
             } catch (_: StorageException) {
             } catch (_: IOException) {
             }
+        }
+    }
+
+    /** One maintenance run at a time, and never alongside a snapshot: both may send one. */
+    private suspend fun maintain(current: Live, onProgress: (Int) -> Unit = {}): Maintenance.Report =
+        snapshotLock.withLock { current.maintenance.run(onProgress) }
+
+    /** The integrity check and compaction on demand (SPEC §5.8), with progress like a catch-up. */
+    suspend fun checkIntegrity(): Maintenance.Report? {
+        val current = live ?: return null
+        catchUpFlow.value = 0
+        try {
+            return maintain(current) { catchUpFlow.value = it }
+        } finally {
+            catchUpFlow.value = null
+        }
+    }
+
+    private suspend fun runCatchingStorage(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (_: StorageException) {
+        } catch (_: IOException) {
         }
     }
 

@@ -24,6 +24,7 @@ import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.StorageException
+import me.esdex.coffer.core.sync.Maintenance
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.VaultContent
@@ -211,6 +212,17 @@ class BrowserViewModel @Inject constructor(
     fun deleteFolder(folderId: Id) = act { content.deleteFolder(folderId) }
 
     fun rescan() = act { content.rescan() }
+
+    private val integrityFlow = MutableStateFlow<Maintenance.Report?>(null)
+
+    /** The last integrity check started from the menu, until its result is dismissed. */
+    val integrity: StateFlow<Maintenance.Report?> = integrityFlow.asStateFlow()
+
+    fun checkIntegrity() = act { integrityFlow.value = content.checkIntegrity() }
+
+    fun dismissIntegrity() {
+        integrityFlow.value = null
+    }
 
     // Cancelling an upload deletes what it sent, so it talks to Telegram too.
     fun cancel(item: TransferItem) = act { if (item.isUpload) content.cancelUpload(item.id) else content.cancelDownload(item.id) }

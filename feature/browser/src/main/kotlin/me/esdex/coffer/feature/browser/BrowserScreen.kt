@@ -110,6 +110,7 @@ fun BrowserScreen(
     var moving by remember { mutableStateOf<Target?>(null) }
     var deletingFolder by remember { mutableStateOf<FolderItem?>(null) }
     var confirmRescan by remember { mutableStateOf(false) }
+    val integrity by viewModel.integrity.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
 
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -187,6 +188,11 @@ fun BrowserScreen(
                     TextButton(onClick = { menuOpen = true }) { Text("...") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text(stringResource(R.string.browser_transfers)) }, onClick = { showTransfers = true; menuOpen = false })
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.browser_check)) },
+                            enabled = catchingUp == null,
+                            onClick = { menuOpen = false; viewModel.checkIntegrity() },
+                        )
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.browser_rescan)) },
                             enabled = catchingUp == null,
@@ -298,6 +304,26 @@ fun BrowserScreen(
                 }
             },
             onDismiss = { moving = null },
+        )
+    }
+    integrity?.let { report ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissIntegrity,
+            title = { Text(stringResource(R.string.browser_check_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.browser_check_result,
+                        report.messagesRead,
+                        report.damaged,
+                        report.repaired,
+                        report.garbageDeleted,
+                        report.snapshotsDeleted,
+                        report.operationsCompacted,
+                    ),
+                )
+            },
+            confirmButton = { TextButton(onClick = viewModel::dismissIntegrity) { Text(stringResource(R.string.browser_ok)) } },
         )
     }
     if (confirmRescan) {

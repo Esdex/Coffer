@@ -16,3 +16,4 @@
 - Folders: create, rename, move and delete them (a folder is deleted with everything in it, after a confirmation); rename and move files; new files go into the folder on screen. Changes made on one device show up on the others.
 - Index snapshots in Saved Messages: a new device, or one long offline, loads the latest snapshot instead of reading the whole history. The last 3 are kept.
 - Rescan Saved Messages from the menu, to rebuild the list of files and folders from scratch.
+- Integrity check, weekly and from the menu: finds files with missing parts, brings back files the list missed, removes leftovers of unfinished uploads and deletions, and clears out old operations that are no longer needed.
