@@ -87,7 +87,8 @@ value class MessageId(val value: Long) : Comparable<MessageId> {
     override fun toString(): String = value.toString()
 }
 
-data class StoredMessage(val id: MessageId, val content: MessageContent, val isPinned: Boolean)
+/** [date] is when the server took the message, unix time in seconds (SPEC §5.6, §5.7 count ages with it). */
+data class StoredMessage(val id: MessageId, val content: MessageContent, val isPinned: Boolean, val date: Long)
 
 sealed interface MessageContent {
     data class Text(val text: String) : MessageContent

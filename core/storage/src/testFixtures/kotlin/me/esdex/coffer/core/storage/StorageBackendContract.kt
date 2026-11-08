@@ -102,6 +102,17 @@ abstract class StorageBackendContract {
     }
 
     @Test
+    fun messagesCarryTheServerDate() = contract {
+        val before = System.currentTimeMillis() / 1000
+        val sent = device.sendText(token())
+        val after = System.currentTimeMillis() / 1000
+        // Unix seconds from the server: within a few minutes of this clock, whatever their skew.
+        assertTrue("date ${sent.date} not near $before..$after", sent.date in before - CLOCK_SKEW..after + CLOCK_SKEW)
+        assertEquals(sent.date, otherDevice.message(sent.id)!!.date)
+        assertEquals(sent.date, otherDevice.historyBefore(null, 1).single { it.id == sent.id }.date)
+    }
+
+    @Test
     fun idsGrowInSendOrder() = contract {
         val ids = List(3) { device.sendText(token()).id }
         assertEquals(ids.sorted(), ids)
@@ -262,5 +273,9 @@ abstract class StorageBackendContract {
     fun missingMessageIsNull() = contract {
         val sent = device.sendText(token())
         assertNull(device.message(MessageId(sent.id.value + (1000L shl 20))))
+    }
+
+    private companion object {
+        const val CLOCK_SKEW = 600L
     }
 }

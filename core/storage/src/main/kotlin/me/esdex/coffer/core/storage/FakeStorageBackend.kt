@@ -23,6 +23,10 @@ class FakeCloud(private val pageCap: Int = Int.MAX_VALUE) {
     private var lastServerId = 0L
     private var nextFailure: StorageException? = null
 
+    /** The server clock, unix seconds: tests move it to age messages. */
+    @Volatile
+    var now: () -> Long = { System.currentTimeMillis() / 1000 }
+
     private class Entry(val message: StoredMessage, val bytes: ByteArray?)
 
     /** Runs inside every upload and download while it holds its transfer slot. Tests suspend here. */
@@ -68,7 +72,7 @@ class FakeCloud(private val pageCap: Int = Int.MAX_VALUE) {
 
     internal fun commit(content: MessageContent, bytes: ByteArray?): StoredMessage = synchronized(lock) {
         // Real ids are server ids shifted left by 20 bits; gaps keep callers from assuming id + 1.
-        val message = StoredMessage(MessageId(++lastServerId shl 20), content, isPinned = false)
+        val message = StoredMessage(MessageId(++lastServerId shl 20), content, isPinned = false, date = now())
         messages[message.id] = Entry(message, bytes)
         broadcast(StorageEvent.NewMessage(message))
         message

@@ -18,7 +18,7 @@ internal fun TdApi.Message.toStored(): StoredMessage {
         is TdApi.MessageDocument -> MessageContent.Blob(c.caption.text, c.document.fileName, c.document.document.size)
         else -> MessageContent.Other
     }
-    return StoredMessage(MessageId(id), content, isPinned)
+    return StoredMessage(MessageId(id), content, isPinned, date.toLong())
 }
 
 /** A message that belongs in the log: in [chatId], sent, on the server, not scheduled. */
