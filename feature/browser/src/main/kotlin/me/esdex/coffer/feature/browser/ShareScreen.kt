@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -43,6 +44,14 @@ import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.sync.VaultTree
+import me.esdex.coffer.core.ui.components.CofferScaffold
+import me.esdex.coffer.core.ui.components.EmptyStateView
+import me.esdex.coffer.core.ui.components.GroupedBox
+import me.esdex.coffer.core.ui.components.GroupedRow
+import me.esdex.coffer.core.ui.components.OperationLoading
+import me.esdex.coffer.core.ui.components.SettingsGroup
+import me.esdex.coffer.core.ui.components.TypeTile
+import me.esdex.coffer.core.ui.components.fileTypeIcon
 import me.esdex.coffer.feature.browser.transfer.ShareInbox
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import javax.inject.Inject
@@ -74,7 +83,6 @@ class ShareViewModel @Inject constructor(
 }
 
 /** Files shared to Coffer from another app: where to put them, then Add or Cancel. */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShareScreen(onDone: (added: Int) -> Unit, modifier: Modifier = Modifier, viewModel: ShareViewModel = hiltViewModel()) {
     val context = LocalContext.current
@@ -86,48 +94,57 @@ fun ShareScreen(onDone: (added: Int) -> Unit, modifier: Modifier = Modifier, vie
     val cancel = { viewModel.cancel(); onDone(0) }
     BackHandler(onBack = cancel)
 
-    Scaffold(
-        modifier = modifier,
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.share_title)) }) },
-    ) { padding ->
+    CofferScaffold(title = stringResource(R.string.share_title), onBack = cancel, modifier = modifier) { padding ->
         Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            Modifier
+                .fillMaxSize()
+                .padding(top = padding.calculateTopPadding())
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = padding.calculateBottomPadding() + 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             when (val s = state) {
-                ShareInbox.State.Empty -> Text(stringResource(R.string.share_nothing))
+                ShareInbox.State.Empty -> EmptyStateView(stringResource(R.string.share_nothing), Modifier.fillMaxWidth().padding(vertical = 48.dp))
                 is ShareInbox.State.Copying -> {
-                    Text(stringResource(R.string.share_copying))
+                    OperationLoading(stringResource(R.string.share_copying), Modifier.height(320.dp))
                     val total = s.total
                     if (total != null && total > 0) {
                         LinearProgressIndicator(progress = { s.done.toFloat() / total }, modifier = Modifier.fillMaxWidth())
-                    } else {
-                        LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
                 }
-                is ShareInbox.State.Failed -> Text(
+                is ShareInbox.State.Failed -> EmptyStateView(
                     stringResource(if (s.reason == ShareInbox.Reason.NO_SPACE) R.string.share_no_space else R.string.share_unreadable),
-                    color = MaterialTheme.colorScheme.error,
+                    Modifier.fillMaxWidth().padding(vertical = 48.dp),
                 )
                 is ShareInbox.State.Ready -> {
-                    Text(pluralStringResource(R.plurals.share_count, s.items.size, s.items.size), style = MaterialTheme.typography.titleMedium)
-                    for (item in s.items.take(SHOWN)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(item.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                            Text(Formatter.formatShortFileSize(context, item.size), style = MaterialTheme.typography.bodySmall)
+                    val shown = s.items.take(SHOWN)
+                    SettingsGroup(pluralStringResource(R.plurals.share_count, s.items.size, s.items.size)) {
+                        for (item in shown) {
+                            row { shape ->
+                                GroupedRow(
+                                    shape,
+                                    title = item.name,
+                                    subtitle = Formatter.formatShortFileSize(context, item.size),
+                                    leading = { TypeTile(fileTypeIcon(item.name)) },
+                                )
+                            }
+                        }
+                        if (s.items.size > SHOWN) {
+                            row { shape -> GroupedRow(shape, title = pluralStringResource(R.plurals.share_more, s.items.size - SHOWN, s.items.size - SHOWN)) }
                         }
                     }
-                    if (s.items.size > SHOWN) Text(pluralStringResource(R.plurals.share_more, s.items.size - SHOWN, s.items.size - SHOWN))
-                    HorizontalDivider()
-                    Text(stringResource(R.string.share_where), style = MaterialTheme.typography.titleSmall)
-                    tree?.let { FolderPicker(it, at, onAt = { id -> atBytes = id?.toByteArray() }) }
+                    SettingsGroup(stringResource(R.string.share_where)) {
+                        row { shape -> GroupedBox(shape) { tree?.let { FolderPicker(it, at, onAt = { id -> atBytes = id?.toByteArray() }) } } }
+                    }
                 }
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = cancel) { Text(stringResource(R.string.browser_cancel)) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = cancel, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.browser_cancel)) }
                 Button(
                     onClick = { viewModel.add(at, onDone) },
                     enabled = state is ShareInbox.State.Ready && tree != null,
+                    modifier = Modifier.weight(1f),
                 ) { Text(stringResource(R.string.share_add)) }
             }
         }

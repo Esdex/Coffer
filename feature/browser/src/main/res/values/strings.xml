@@ -3,6 +3,9 @@
     <string name="browser_add">Add files</string>
     <string name="browser_search">Search by name</string>
     <string name="browser_sort">Sort</string>
+    <string name="browser_sort_title">Sort by</string>
+    <string name="browser_sort_ascending">Ascending, tap for descending</string>
+    <string name="browser_sort_descending">Descending, tap for ascending</string>
     <string name="browser_sort_name">Name</string>
     <string name="browser_sort_date">Date</string>
     <string name="browser_sort_size">Size</string>
@@ -11,9 +14,15 @@
     <string name="browser_transfers">Transfers</string>
     <string name="browser_transfers_count">Transfers (%1$d)</string>
     <string name="browser_back">Back</string>
-    <string name="browser_empty">No files yet. Add some with the button below.</string>
+    <string name="browser_empty">No files yet</string>
     <string name="browser_no_match">No file name matches.</string>
-    <string name="browser_folder_empty">This folder is empty.</string>
+    <string name="browser_folder_empty">This folder is empty</string>
+    <string name="browser_empty_hint">Tap + to add files or a folder.</string>
+    <string name="browser_cd_close_search">Close the search</string>
+    <string name="browser_cd_more">More</string>
+    <string name="browser_type_folder">Folder</string>
+    <string name="browser_add_files_sub">Pick files on this phone; they are encrypted before they leave it</string>
+    <string name="browser_new_folder_sub">Inside the folder on screen</string>
     <plurals name="browser_catching_up">
         <item quantity="one">Reading Saved Messages: %1$d message</item>
         <item quantity="other">Reading Saved Messages: %1$d messages</item>

@@ -161,6 +161,11 @@ class BrowserViewModel @Inject constructor(
         folderFlow.value = folderId
     }
 
+    fun goToRoot() {
+        queryFlow.value = ""
+        folderFlow.value = null
+    }
+
     /** One level up. False in the root, where there is nowhere to go. */
     fun up(): Boolean {
         val current = listing.value.folderId ?: return false
