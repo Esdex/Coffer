@@ -132,11 +132,7 @@ private fun FragmentActivity.authenticate(cipher: Cipher, title: String, onDone:
             }
         },
     )
-    val info = BiometricPrompt.PromptInfo.Builder()
-        .setTitle(title)
-        .setAllowedAuthenticators(DeviceUnlock.AUTHENTICATORS)
-        .build()
-    prompt.authenticate(info, BiometricPrompt.CryptoObject(cipher))
+    prompt.authenticate(DeviceUnlock.promptInfo(title), BiometricPrompt.CryptoObject(cipher))
 }
 
 private tailrec fun Context.fragmentActivity(): FragmentActivity? = when (this) {

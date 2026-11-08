@@ -5,6 +5,7 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.biometric.BiometricManager.Authenticators.BIOMETRIC_STRONG
 import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import me.esdex.coffer.core.crypto.Bytes
@@ -129,6 +130,12 @@ class DeviceUnlock(private val context: Context, private val dir: File) {
 
     companion object {
         const val AUTHENTICATORS = BIOMETRIC_STRONG or DEVICE_CREDENTIAL
+
+        /** The system prompt for this key: the same authenticators the key was made for (SPEC §3.8). */
+        fun promptInfo(title: String): BiometricPrompt.PromptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle(title)
+            .setAllowedAuthenticators(AUTHENTICATORS)
+            .build()
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "coffer.master"
         private const val TRANSFORMATION = "AES/GCM/NoPadding"

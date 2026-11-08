@@ -11,13 +11,20 @@ import kotlinx.coroutines.launch
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.VaultManager
+import me.esdex.coffer.core.vault.VaultStore
 import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val telegram: Telegram,
     private val vault: VaultManager,
+    store: VaultStore,
 ) : ViewModel() {
+
+    /** FLAG_SECURE for the whole window (SPEC §9), following the setting as it changes. */
+    val blockScreenshots: StateFlow<Boolean> = store.changes
+        .map { store.blockScreenshots }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, store.blockScreenshots)
 
     val signedIn: StateFlow<Boolean> = telegram.state
         .map { it == AuthState.Ready }
@@ -29,9 +36,5 @@ class MainViewModel @Inject constructor(
 
     fun lock() {
         viewModelScope.launch { vault.lockVault() }
-    }
-
-    fun logOut() {
-        viewModelScope.launch { runCatching { telegram.logOut() } }
     }
 }

@@ -7,14 +7,17 @@
     <string name="browser_sort_date">Date</string>
     <string name="browser_sort_size">Size</string>
     <string name="browser_lock">Lock</string>
-    <string name="browser_log_out">Log out</string>
+    <string name="browser_settings">Settings</string>
     <string name="browser_transfers">Transfers</string>
     <string name="browser_transfers_count">Transfers (%1$d)</string>
     <string name="browser_back">Back</string>
     <string name="browser_empty">No files yet. Add some with the button below.</string>
     <string name="browser_no_match">No file name matches.</string>
     <string name="browser_folder_empty">This folder is empty.</string>
-    <string name="browser_catching_up">Reading Saved Messages: %1$d messages</string>
+    <plurals name="browser_catching_up">
+        <item quantity="one">Reading Saved Messages: %1$d message</item>
+        <item quantity="other">Reading Saved Messages: %1$d messages</item>
+    </plurals>
 
     <string name="browser_open">Open</string>
     <string name="browser_export">Save a copy</string>
@@ -40,14 +43,6 @@
     <string name="browser_delete_folder_empty">The empty folder %1$s will be deleted on all your devices.</string>
     <string name="browser_delete_folder_text">%1$s and everything in it (files: %2$d, folders: %3$d) will be deleted from Saved Messages on all your devices.</string>
 
-    <string name="browser_check">Check integrity</string>
-    <string name="browser_check_title">Integrity check</string>
-    <string name="browser_check_result">Messages read: %1$d\nNewly damaged files: %2$d\nRepaired: %3$d\nLeftover parts removed: %4$d\nOld snapshots removed: %5$d\nOld operations removed: %6$d</string>
-    <string name="browser_ok">OK</string>
-    <string name="browser_rescan">Rescan Saved Messages</string>
-    <string name="browser_rescan_title">Rescan Saved Messages?</string>
-    <string name="browser_rescan_text">Coffer will read all of Saved Messages again and rebuild its list of files and folders. Nothing in Saved Messages changes. With many files this takes a while.</string>
-    <string name="browser_rescan_start">Rescan</string>
 
     <string name="browser_error_network">Could not reach Telegram. Try again.</string>
     <string name="browser_error_flood">Telegram asks to slow down. Try again in a little while.</string>

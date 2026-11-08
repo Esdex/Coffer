@@ -1,0 +1,46 @@
+<resources>
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back</string>
+    <string name="settings_cancel">Cancel</string>
+    <string name="settings_ok">OK</string>
+
+    <string name="settings_section_security">Security</string>
+    <string name="settings_auto_lock">Auto-lock</string>
+    <string name="settings_auto_lock_off">Off: the vault stays open until you lock it</string>
+    <plurals name="settings_auto_lock_after">
+        <item quantity="one">After %1$d minute in the background</item>
+        <item quantity="other">After %1$d minutes in the background</item>
+    </plurals>
+    <string name="settings_device_unlock">Unlock with screen lock</string>
+    <string name="settings_device_unlock_summary">Fingerprint, face or the phone\'s PIN instead of the password</string>
+    <string name="settings_device_unlock_unavailable">Set up a screen lock on this phone to use this</string>
+    <string name="settings_device_prompt">Unlock Coffer with your screen lock</string>
+    <string name="settings_screenshots">Block screenshots</string>
+    <string name="settings_screenshots_summary">No screenshots or screen recording, and the app looks blank in recent apps</string>
+
+    <string name="settings_section_vault">Vault</string>
+    <string name="settings_check">Check integrity</string>
+    <string name="settings_check_summary">Compare the file list with Saved Messages and tidy up</string>
+    <string name="settings_check_title">Integrity check</string>
+    <string name="settings_check_result">Messages read: %1$d\nNewly damaged files: %2$d\nRepaired: %3$d\nLeftover parts removed: %4$d\nOld snapshots removed: %5$d\nOld operations removed: %6$d</string>
+    <string name="settings_weekly">Weekly integrity check</string>
+    <string name="settings_weekly_summary">Runs by itself after unlocking, once a week</string>
+    <string name="settings_rescan">Rescan Saved Messages</string>
+    <string name="settings_rescan_summary">Rebuild the file list from scratch</string>
+    <string name="settings_rescan_title">Rescan Saved Messages?</string>
+    <string name="settings_rescan_text">Coffer will read all of Saved Messages again and rebuild its list of files and folders. Nothing in Saved Messages changes. With many files this takes a while.</string>
+    <string name="settings_rescan_start">Rescan</string>
+    <plurals name="settings_reading">
+        <item quantity="one">Reading Saved Messages: %1$d message</item>
+        <item quantity="other">Reading Saved Messages: %1$d messages</item>
+    </plurals>
+
+    <string name="settings_section_account">Account</string>
+    <string name="settings_log_out">Log out</string>
+    <string name="settings_log_out_summary">Sign out of Telegram on this phone</string>
+    <string name="settings_log_out_title">Log out?</string>
+    <string name="settings_log_out_text">Coffer forgets the vault and its file list on this phone. Your files stay in Saved Messages, and you can unlock them again after signing in.</string>
+
+    <string name="settings_error_network">Could not reach Telegram. Try again.</string>
+    <string name="settings_error_flood">Telegram asks to slow down. Try again in a little while.</string>
+</resources>
