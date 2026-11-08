@@ -33,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,13 @@ fun SettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel:
     var choosingAutoLock by remember { mutableStateOf(false) }
     var confirmRescan by remember { mutableStateOf(false) }
     var confirmLogOut by remember { mutableStateOf(false) }
+    var page by rememberSaveable { mutableStateOf(Page.MAIN) }
+
+    when (page) {
+        Page.MAIN -> Unit
+        Page.PASSWORD -> return ChangePasswordPage(onBack = { page = Page.MAIN }, modifier = modifier, viewModel = viewModel)
+        Page.RECOVERY -> return RecoveryKeyPage(onBack = { page = Page.MAIN }, modifier = modifier, viewModel = viewModel)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.messages.collect { snackbar.showSnackbar(resources.getString(it)) }
@@ -111,6 +119,16 @@ fun SettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel:
             )
 
             Section(stringResource(R.string.settings_section_vault))
+            Item(
+                title = stringResource(R.string.settings_password),
+                summary = stringResource(R.string.settings_password_summary),
+                onClick = { page = Page.PASSWORD },
+            )
+            Item(
+                title = stringResource(R.string.settings_recovery),
+                summary = stringResource(R.string.settings_recovery_summary),
+                onClick = { page = Page.RECOVERY },
+            )
             Item(
                 title = stringResource(R.string.settings_check),
                 summary = stringResource(R.string.settings_check_summary),
@@ -209,6 +227,8 @@ fun SettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel:
         )
     }
 }
+
+private enum class Page { MAIN, PASSWORD, RECOVERY }
 
 @Composable
 private fun autoLockLabel(minutes: Int?): String =

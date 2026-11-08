@@ -19,3 +19,4 @@
 - Integrity check, weekly and from the menu: finds files with missing parts, brings back files the list missed, removes leftovers of unfinished uploads and deletions, and clears out old operations that are no longer needed.
 - Settings: auto-lock after 1 to 60 minutes or off, unlock with screen lock on or off, block screenshots, weekly integrity check on or off. Integrity check, rescan and log out moved here; log out asks first.
 - Decrypted copies opened in another app are removed from the phone 10 minutes after opening.
+- Change the vault password, and show the recovery key again; both ask for the current password first.

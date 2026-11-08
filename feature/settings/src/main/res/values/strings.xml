@@ -19,6 +19,31 @@
     <string name="settings_screenshots_summary">No screenshots or screen recording, and the app looks blank in recent apps</string>
 
     <string name="settings_section_vault">Vault</string>
+    <string name="settings_password">Change password</string>
+    <string name="settings_password_summary">Asks for the current password first</string>
+    <string name="settings_password_explanation">The new password replaces the old one on all your devices. Your files and recovery key stay the same.</string>
+    <string name="settings_password_current">Current password</string>
+    <string name="settings_password_new">New password</string>
+    <string name="settings_password_repeat">Repeat the new password</string>
+    <string name="settings_password_mismatch">The two new passwords are not the same.</string>
+    <string name="settings_password_wrong">That is not the current password.</string>
+    <string name="settings_password_change">Change password</string>
+    <string name="settings_password_changed">Password changed</string>
+    <string name="settings_strength_0">Very weak</string>
+    <string name="settings_strength_1">Weak</string>
+    <string name="settings_strength_2">Fair</string>
+    <string name="settings_strength_3">Good</string>
+    <string name="settings_strength_4">Strong</string>
+    <plurals name="settings_strength_too_short">
+        <item quantity="one">At least %1$d character.</item>
+        <item quantity="other">At least %1$d characters.</item>
+    </plurals>
+    <string name="settings_recovery">Show recovery key</string>
+    <string name="settings_recovery_summary">The 24 words, after the current password</string>
+    <string name="settings_recovery_explanation">Enter the vault password to see the recovery key. Make sure nobody is looking at the screen.</string>
+    <string name="settings_recovery_show">Show</string>
+    <string name="settings_recovery_shown">Anyone with these words can open your vault. Screenshots are blocked while they are on screen.</string>
+    <string name="settings_recovery_done">Done</string>
     <string name="settings_check">Check integrity</string>
     <string name="settings_check_summary">Compare the file list with Saved Messages and tidy up</string>
     <string name="settings_check_title">Integrity check</string>
