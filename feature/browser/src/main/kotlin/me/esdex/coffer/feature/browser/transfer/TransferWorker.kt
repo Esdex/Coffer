@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.net.Uri
+import android.os.SystemClock
 import android.provider.DocumentsContract
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
@@ -133,12 +134,16 @@ class TransferWorker @AssistedInject constructor(
     }
 
     private var lastPercent = -1
+    private var lastNotified = 0L
 
     private fun report(done: Long, total: Long) {
         registry.progress(id, done, total)
         val percent = if (total > 0) (done * 100 / total).toInt() else 100
-        if (percent != lastPercent) {
+        // Android drops updates beyond about 5 a second, and on a fast network the percent moves faster.
+        val now = SystemClock.elapsedRealtime()
+        if (percent != lastPercent && (percent == 100 || now - lastNotified >= NOTIFY_INTERVAL_MS)) {
             lastPercent = percent
+            lastNotified = now
             setForegroundAsync(foregroundInfo(percent))
         }
     }
@@ -165,6 +170,7 @@ class TransferWorker @AssistedInject constructor(
         private const val KIND_UPLOAD = "upload"
         private const val KIND_DOWNLOAD = "download"
         private const val CHANNEL = "transfers"
+        private const val NOTIFY_INTERVAL_MS = 1_000L
 
         fun uploadName(id: String) = "upload-$id"
         fun downloadName(id: String) = "download-$id"
