@@ -9,6 +9,7 @@ import dagger.hilt.components.SingletonComponent
 import me.esdex.coffer.core.crypto.sodium.Sodium
 import me.esdex.coffer.core.index.RoomVaultIndex
 import me.esdex.coffer.core.index.VaultIndex
+import me.esdex.coffer.core.ui.theme.AppearanceStore
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
@@ -30,6 +31,11 @@ object VaultModule {
     @Provides
     @Singleton
     fun vaultIndex(@ApplicationContext context: Context): VaultIndex = RoomVaultIndex(context)
+
+    // Outside the vault folder: signing out forgets the vault, not how the app looks.
+    @Provides
+    @Singleton
+    fun appearanceStore(@ApplicationContext context: Context) = AppearanceStore(File(context.noBackupFilesDir, "appearance.properties"))
 
     @Provides
     @Singleton

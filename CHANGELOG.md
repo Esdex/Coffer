@@ -21,3 +21,5 @@
 - Decrypted copies opened in another app are removed from the phone 10 minutes after opening.
 - Change the vault password, and show the recovery key again; both ask for the current password first.
 - Share to Coffer from any app: one file or several, into a folder you pick; Coffer returns to the app you shared from.
+- A new look, shared with Arcanum: grouped settings, large collapsing titles, file type icons, a path bar, search in the top bar, one + button for files and folders, sliding transitions, animated progress and results, and a paged welcome.
+- Appearance settings: theme (system, light or dark), pure black for AMOLED screens, and wallpaper colours.

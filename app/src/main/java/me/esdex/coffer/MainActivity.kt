@@ -10,15 +10,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.EaseInOutCubic
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,7 +41,7 @@ import me.esdex.coffer.feature.browser.BrowserScreen
 import me.esdex.coffer.feature.browser.R as BrowserR
 import me.esdex.coffer.feature.browser.ShareScreen
 import me.esdex.coffer.feature.settings.SettingsScreen
-import me.esdex.coffer.ui.theme.CofferTheme
+import me.esdex.coffer.core.ui.theme.CofferTheme
 
 // A FragmentActivity, because BiometricPrompt needs one.
 @AndroidEntryPoint
@@ -63,47 +64,53 @@ class MainActivity : FragmentActivity() {
             }
         }
         setContent {
-            CofferTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    val content = Modifier.padding(innerPadding)
-                    WelcomeGate(content) {
+            val appearance by viewModel.appearance.collectAsStateWithLifecycle()
+            CofferTheme(appearance) {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    // Screens with a bar of their own handle the window edges themselves; the plain ones get them here.
+                    val plain = Modifier.safeDrawingPadding()
+                    WelcomeGate(plain) {
                         val signedIn by viewModel.signedIn.collectAsStateWithLifecycle()
                         if (!signedIn) {
-                            LoginScreen(content)
+                            LoginScreen(plain)
                         } else {
-                            VaultGate(content) {
-                                var debugOpen by remember { mutableStateOf(false) }
-                                var settingsOpen by rememberSaveable { mutableStateOf(false) }
-                                val sharing by viewModel.sharing.collectAsStateWithLifecycle()
-                                if (sharing) {
-                                    ShareScreen(onDone = ::shareDone, modifier = content)
-                                    return@VaultGate
-                                }
-                                if (settingsOpen) {
-                                    SettingsScreen(onBack = { settingsOpen = false }, modifier = content)
-                                    return@VaultGate
-                                }
-                                BrowserScreen(
-                                    onLock = viewModel::lock,
-                                    onSettings = { settingsOpen = true },
-                                    modifier = content,
-                                    extraMenu = if (BuildConfig.DEBUG) {
-                                        { close -> DropdownMenuItem(text = { Text("Debug") }, onClick = { close(); debugOpen = true }) }
-                                    } else {
-                                        null
-                                    },
-                                )
-                                if (debugOpen) {
-                                    AlertDialog(
-                                        onDismissRequest = { debugOpen = false },
-                                        confirmButton = { TextButton(onClick = { debugOpen = false }) { Text("Close") } },
-                                        text = { Column(Modifier.verticalScroll(rememberScrollState())) { DebugTools() } },
-                                    )
-                                }
-                            }
+                            VaultGate(plain) { UnlockedApp() }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    private enum class Page { BROWSER, SETTINGS, SHARE }
+
+    @Composable
+    private fun UnlockedApp() {
+        var settingsOpen by rememberSaveable { mutableStateOf(false) }
+        val sharing by viewModel.sharing.collectAsStateWithLifecycle()
+        val page = when {
+            sharing -> Page.SHARE
+            settingsOpen -> Page.SETTINGS
+            else -> Page.BROWSER
+        }
+        // Deeper pages come in from the right and leave the way they came, as in Arcanum.
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                val deeper = targetState.ordinal > initialState.ordinal
+                slideInHorizontally(tween(SLIDE_MILLIS, easing = EaseInOutCubic)) { if (deeper) it else -it } togetherWith
+                    slideOutHorizontally(tween(SLIDE_MILLIS, easing = EaseInOutCubic)) { if (deeper) -it else it }
+            },
+            label = "page",
+        ) { shown ->
+            when (shown) {
+                Page.SHARE -> ShareScreen(onDone = ::shareDone)
+                // Debug builds get a Debug section in Settings, as in Arcanum; release builds have none.
+                Page.SETTINGS -> SettingsScreen(
+                    onBack = { settingsOpen = false },
+                    debugTools = if (BuildConfig.DEBUG) ({ DebugTools() }) else null,
+                )
+                Page.BROWSER -> BrowserScreen(onLock = viewModel::lock, onSettings = { settingsOpen = true })
             }
         }
     }
@@ -140,5 +147,6 @@ class MainActivity : FragmentActivity() {
 
     private companion object {
         const val OPENED_TO_SHARE = "openedToShare"
+        const val SLIDE_MILLIS = 350
     }
 }

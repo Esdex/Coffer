@@ -112,6 +112,7 @@ dependencies {
     implementation(project(":core:vault"))
     implementation(project(":core:index"))
     implementation(project(":core:sync"))
+    implementation(project(":core:ui"))
     implementation(project(":feature:onboarding"))
     implementation(project(":feature:browser"))
     implementation(project(":feature:settings"))

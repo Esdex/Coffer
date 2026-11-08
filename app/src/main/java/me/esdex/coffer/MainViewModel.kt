@@ -13,6 +13,8 @@ import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
+import me.esdex.coffer.core.ui.theme.Appearance
+import me.esdex.coffer.core.ui.theme.AppearanceStore
 import me.esdex.coffer.feature.browser.transfer.ShareInbox
 import javax.inject.Inject
 
@@ -22,7 +24,10 @@ class MainViewModel @Inject constructor(
     private val vault: VaultManager,
     store: VaultStore,
     private val inbox: ShareInbox,
+    appearanceStore: AppearanceStore,
 ) : ViewModel() {
+
+    val appearance: StateFlow<Appearance> = appearanceStore.appearance
 
     /** Files shared from another app are waiting for a folder (SPEC §6, step 1). */
     val sharing: StateFlow<Boolean> = inbox.state
