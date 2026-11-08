@@ -4,6 +4,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import me.esdex.coffer.core.crypto.format.FileMeta
+import me.esdex.coffer.core.crypto.format.LocalFolder
 import me.esdex.coffer.core.crypto.format.LocalSealer
 import me.esdex.coffer.core.crypto.format.LocalUpload
 import org.junit.Assert.assertFalse
@@ -32,6 +33,39 @@ class LocalSealTest {
         assertEquals(local.str("sealed"), LocalSealer(sodium, localKey).sealFileMeta(fileId, meta).toHex())
         sodium.assertUsedUp()
         assertEquals(meta, LocalSealer(realSodium, localKey).openFileMeta(fileId, hex(local.str("sealed"))))
+    }
+
+    @Test
+    fun folderAndUploadSealsMatchTheOracle() {
+        val localKey = LocalKeys.derive(realSodium, key(master))
+        val folderId = Id.of(hex(ids.str("folderId")))
+        // The oracle seals the folder under the file id vector: any 16-byte id will do for the AD.
+        val folder = LocalFolder("Налоги", folderId)
+        val fv = local.getValue("folder").jsonObject
+        val folderSodium = ScriptedSodium(hex(fv.str("nonce")))
+        assertEquals(fv.str("sealed"), LocalSealer(folderSodium, localKey).sealFolder(fileId, folder).toHex())
+        folderSodium.assertUsedUp()
+        assertEquals(folder, LocalSealer(realSodium, localKey).openFolder(fileId, hex(fv.str("sealed"))))
+
+        val upload = LocalUpload("content://x/1", "a.txt", null, folderId)
+        val uv = local.getValue("upload").jsonObject
+        val uploadSodium = ScriptedSodium(hex(uv.str("nonce")))
+        assertEquals(uv.str("sealed"), LocalSealer(uploadSodium, localKey).sealUpload("u1", upload).toHex())
+        uploadSodium.assertUsedUp()
+        assertEquals(upload, LocalSealer(realSodium, localKey).openUpload("u1", hex(uv.str("sealed"))))
+    }
+
+    @Test
+    fun sealedFolderOpensOnlyForItsRow() {
+        val sealer = LocalSealer(realSodium, LocalKeys.derive(realSodium, key(master)))
+        val root = LocalFolder("Root level", null)
+        val sealed = sealer.sealFolder(fileId, root)
+        assertEquals(root, sealer.openFolder(fileId, sealed))
+        assertNull(sealer.openFolder(Id.random(realSodium), sealed))
+        assertNull(sealer.openFolder(fileId, sealed.flipped(sealed.size - 1)))
+        // Same id, other kind of row: a file's sealed metadata is not a folder and the other way round.
+        assertNull(sealer.openFileMeta(fileId, sealed))
+        assertNull(sealer.openFolder(fileId, sealer.sealFileMeta(fileId, meta)))
     }
 
     @Test

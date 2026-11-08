@@ -168,6 +168,17 @@ def main(out_path):
     n_local = nonce(0x70)
     v["local"] = {"key": local_key.hex(), "nonce": n_local.hex(), "cbor": local_body.hex(),
                   "sealed": (n_local + xchacha_seal(local_key, n_local, local_body, b"coffer/local/v1/file" + file_id)).hex()}
+    # A folder (name, parent) and a queued upload with its target folder.
+    folder_body = cbor({1: "Налоги", 2: folder_id})
+    n_folder = nonce(0x78)
+    v["local"]["folder"] = {"nonce": n_folder.hex(), "cbor": folder_body.hex(),
+                            "sealed": (n_folder + xchacha_seal(local_key, n_folder, folder_body,
+                                                               b"coffer/local/v1/folder" + file_id)).hex()}
+    upload_body = cbor({1: "content://x/1", 2: "a.txt", 3: None, 4: folder_id})
+    n_upload = nonce(0x80)
+    v["local"]["upload"] = {"nonce": n_upload.hex(), "cbor": upload_body.hex(),
+                            "sealed": (n_upload + xchacha_seal(local_key, n_upload, upload_body,
+                                                               b"coffer/local/v1/upload" + b"u1")).hex()}
 
     v["ids"] = {"fileId": file_id.hex(), "folderId": folder_id.hex(), "opId": op_id.hex(), "contentHash": content_hash.hex()}
 

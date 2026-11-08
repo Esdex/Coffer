@@ -13,8 +13,8 @@ import me.esdex.coffer.core.crypto.sodium.Sodium
  * and folder names cannot be read while the vault is locked. Not part of the Telegram format and never
  * sent anywhere; it can change with a database migration.
  *
- * `nonce(24) || XChaCha20-Poly1305(LocalKey, CBOR, AD = "coffer/local/v1/file" || file_id)`.
- * The file id in the AD keeps one row's sealed metadata from being moved to another row.
+ * `nonce(24) || XChaCha20-Poly1305(LocalKey, CBOR, AD = "coffer/local/v1/<file|folder|upload|target>" || id)`.
+ * The id in the AD keeps one row's sealed metadata from being moved to another row.
  */
 class LocalSealer(private val sodium: Sodium, private val localKey: SecretKey) {
 
@@ -51,16 +51,31 @@ class LocalSealer(private val sodium: Sodium, private val localKey: SecretKey) {
         }
     }
 
+    /** A folder's name and parent, as the operation log left them (SPEC §5.2). */
+    fun sealFolder(folderId: Id, folder: LocalFolder): ByteArray = seal(
+        CanonicalCbor.encode(LocalFolderCbor.serializer(), LocalFolderCbor(folder.name, folder.parentId?.toByteArray())),
+        FOLDER_AD + folderId.toByteArray(),
+    )
+
+    fun openFolder(folderId: Id, sealed: ByteArray): LocalFolder? {
+        val cbor = open(sealed, FOLDER_AD + folderId.toByteArray()) ?: return null
+        val c = CanonicalCbor.decode(LocalFolderCbor.serializer(), cbor) ?: return null
+        return validated { LocalFolder(c.name, c.parentId?.let(Id::of)) }
+    }
+
     /** A queued upload: where to read and under which name, sealed like file metadata (picked URIs carry paths). */
     fun sealUpload(uploadId: String, upload: LocalUpload): ByteArray = seal(
-        CanonicalCbor.encode(LocalUploadCbor.serializer(), LocalUploadCbor(upload.source, upload.name, upload.mime)),
+        CanonicalCbor.encode(
+            LocalUploadCbor.serializer(),
+            LocalUploadCbor(upload.source, upload.name, upload.mime, upload.folderId?.toByteArray()),
+        ),
         UPLOAD_AD + uploadId.toByteArray(Charsets.UTF_8),
     )
 
     fun openUpload(uploadId: String, sealed: ByteArray): LocalUpload? {
         val cbor = open(sealed, UPLOAD_AD + uploadId.toByteArray(Charsets.UTF_8)) ?: return null
         val c = CanonicalCbor.decode(LocalUploadCbor.serializer(), cbor) ?: return null
-        return LocalUpload(c.source, c.name, c.mime)
+        return validated { LocalUpload(c.source, c.name, c.mime, c.folderId?.let(Id::of)) }
     }
 
     /** Where an export writes to. */
@@ -86,19 +101,34 @@ class LocalSealer(private val sodium: Sodium, private val localKey: SecretKey) {
 
     private companion object {
         val FILE_AD = "coffer/local/v1/file".toByteArray(Charsets.US_ASCII)
+        val FOLDER_AD = "coffer/local/v1/folder".toByteArray(Charsets.US_ASCII)
         val UPLOAD_AD = "coffer/local/v1/upload".toByteArray(Charsets.US_ASCII)
         val TARGET_AD = "coffer/local/v1/target".toByteArray(Charsets.US_ASCII)
     }
 }
 
-/** A file the user asked to upload: a content URI, its display name and type. */
-data class LocalUpload(val source: String, val name: String, val mime: String?)
+/** A file the user asked to upload: a content URI, its display name and type, and the folder to put it in. */
+data class LocalUpload(val source: String, val name: String, val mime: String?, val folderId: Id? = null)
+
+/** A folder in the local index. [parentId] is null for the root, or may name a folder that is gone (an orphan). */
+data class LocalFolder(val name: String, val parentId: Id?) {
+    init {
+        require(FileNames.isValid(name)) { "invalid name" }
+    }
+}
 
 @Serializable
 private class LocalUploadCbor(
     @CborLabel(1) val source: String,
     @CborLabel(2) val name: String,
     @CborLabel(3) val mime: String?,
+    @CborLabel(4) val folderId: ByteArray?,
+)
+
+@Serializable
+private class LocalFolderCbor(
+    @CborLabel(1) val name: String,
+    @CborLabel(2) val parentId: ByteArray?,
 )
 
 @Serializable
