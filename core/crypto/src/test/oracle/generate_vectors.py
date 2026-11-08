@@ -19,6 +19,7 @@ import json
 import struct
 import sys
 import unicodedata
+import zlib
 
 import cbor2
 from argon2.low_level import Type, hash_secret_raw
@@ -179,6 +180,76 @@ def main(out_path):
     v["local"]["upload"] = {"nonce": n_upload.hex(), "cbor": upload_body.hex(),
                             "sealed": (n_upload + xchacha_seal(local_key, n_upload, upload_body,
                                                                b"coffer/local/v1/upload" + b"u1")).hex()}
+
+    # Index snapshot (SPEC §4.4): state labels, raw deflate, content encryption with IndexKey.
+    snapshot_id = bytes(range(0xE0, 0xF0))
+    sub_folder = bytes(range(0x10, 0x20))
+    empty_file = bytes(range(0x30, 0x40))
+    orphan_file = bytes(range(0x50, 0x60))
+    gone_a, gone_b, gone_folder = bytes(range(0x60, 0x70)), bytes(range(0x70, 0x80)), bytes(range(0x80, 0x90))
+    last_applied = 7 << 20
+
+    def state_file(fid, size, name, folder, damaged=False, parts=None):
+        chunks = max(1, -(-size // 1048576))  # SPEC §3.4: ceil, at least one chunk
+        entry = {1: fid, 3: -(-chunks // 512), 4: 1048576, 5: size, 6: name, 7: folder,
+                 8: "application/pdf", 9: 1762531200123, 10: 1762531200456, 11: content_hash, 12: wrapped_dek,
+                 13: parts if parts is not None else {}}
+        if damaged:
+            entry[14] = True
+        return entry
+
+    def state(override=None):
+        st = {
+            1: last_applied,
+            2: [{1: sub_folder, 2: folder_id, 3: "2025"}, {1: folder_id, 2: None, 3: "Налоги"}],
+            3: [state_file(empty_file, 0, "empty.txt", None, damaged=True),
+                state_file(file_id, 1048577, "Отчёт.pdf", folder_id, parts={0: 1 << 20})],
+            4: [{1: orphan_file, 13: {1: 3 << 20}}],
+            5: [gone_a, gone_b],
+            6: [gone_folder],
+        }
+        st.update(override or {})
+        return st
+
+    state_cbor = cbor(state())
+    squeezer = zlib.compressobj(9, zlib.DEFLATED, -15)
+    deflated = squeezer.compress(state_cbor) + squeezer.flush()
+    assert zlib.decompress(deflated, -15) == state_cbor
+    n_snap = nonce(0x90)
+    snap_ad = b"coffer/v1/chunk" + snapshot_id + struct.pack(">Q", 0) + bytes([1])
+    document = n_snap + xchacha_seal(index_key, n_snap, deflated, snap_ad)
+    created = 1762531200999
+    v["snapshot"] = {
+        "snapshotId": snapshot_id.hex(), "lastApplied": last_applied, "createdAt": created,
+        "cbor": state_cbor.hex(), "deflated": deflated.hex(), "nonce": n_snap.hex(), "document": document.hex(),
+        "caption": sealed_caption("index", {1: snapshot_id, 2: last_applied, 3: created, 4: len(deflated)}, 0x91),
+        "ids": {"subFolder": sub_folder.hex(), "emptyFile": empty_file.hex(), "orphanFile": orphan_file.hex(),
+                "goneA": gone_a.hex(), "goneB": gone_b.hex(), "goneFolder": gone_folder.hex()},
+    }
+
+    # Each breaks exactly one rule of the strict reading; the good state above must decode.
+    good = state()
+    unsorted_parts = state_file(file_id, 3 * 512 * 1048576, "Отчёт.pdf", folder_id, parts={2: 3 << 20, 0: 1 << 20})
+    bad = {
+        "folders out of order": cbor(state({2: good[2][::-1]})),
+        "files out of order": cbor(state({3: good[3][::-1]})),
+        "deleted ids out of order": cbor(state({5: [gone_b, gone_a]})),
+        "duplicate deleted id": cbor(state({5: [gone_a, gone_a]})),
+        "damaged written as false": cbor(state({3: [{**good[3][0], **{14: False}}, good[3][1]]})),
+        "part index past part count": cbor(state({3: [good[3][0], state_file(file_id, 1048577, "Отчёт.pdf", folder_id, parts={1: 1 << 20})]})),
+        "part count does not match size": cbor(state({3: [good[3][0], {**good[3][1], **{3: 2}}]})),
+        "wrong chunk size": cbor(state({3: [good[3][0], {**good[3][1], **{4: 65536}}]})),
+        "orphan of a known file": cbor(state({4: [{1: file_id, 13: {1: 3 << 20}}]})),
+        "orphan of a deleted file": cbor(state({4: [{1: gone_a, 13: {1: 3 << 20}}]})),
+        "folder parent missing": cbor(state({2: [{1: sub_folder, 3: "2025"}, good[2][1]]})),
+        "unknown label": cbor(state({7: 1})),
+        "empty name": cbor(state({2: [{1: sub_folder, 2: folder_id, 3: ""}, good[2][1]]})),
+        # Map keys out of order: written by hand, since canonical mode would sort them.
+        "parts out of order": cbor2.dumps({1: last_applied, 2: good[2], 3: [good[3][0], unsorted_parts], 4: good[4], 5: good[5], 6: good[6]}),
+    }
+    assert cbor2.loads(bad["parts out of order"])[3][1][13] == {2: 3 << 20, 0: 1 << 20}
+    assert cbor(cbor2.loads(bad["parts out of order"])) != bad["parts out of order"]
+    v["snapshot"]["bad"] = [{"why": why, "cbor": body.hex()} for why, body in bad.items()]
 
     v["ids"] = {"fileId": file_id.hex(), "folderId": folder_id.hex(), "opId": op_id.hex(), "contentHash": content_hash.hex()}
 
