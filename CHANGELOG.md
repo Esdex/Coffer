@@ -4,7 +4,7 @@
 
 ### Added
 - Sign in to Telegram with a QR code or a phone number, including two-step verification and email codes.
-- Public build: enter your own Telegram API keys (api_id and api_hash) on first start.
+- Built-in Telegram API keys, so signing in needs nothing from my.telegram.org; your own keys (api_id and api_hash) remain an option on the sign-in screen.
 - A first-start screen explaining what Coffer does and that its files in Saved Messages must not be deleted there.
 - Create a vault: a password checked for strength, a 24-word recovery key, and a check that it was written down.
 - The vault password is stretched with Argon2id at 128 MiB and 4 passes, about half a second on a recent phone; an existing vault takes the new strength at its next password change.

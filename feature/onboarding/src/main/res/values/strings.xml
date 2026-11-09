@@ -7,6 +7,9 @@
     <string name="login_api_keys_explanation">Coffer talks to Telegram with your own API keys, so no one else\'s app stands between you and your files.</string>
     <string name="login_api_keys_steps">1. Open my.telegram.org and sign in with your phone number.\n2. Go to API development tools.\n3. Create an application (any title and short name).\n4. Copy App api_id and App api_hash here.</string>
     <string name="login_api_keys_open_site">Open my.telegram.org</string>
+    <string name="login_api_keys_optional">Coffer has API keys of its own built in, and most people use those. Keys of your own make you independent of them: if Telegram ever blocks the built-in keys, yours keep working.</string>
+    <string name="login_use_own_keys">Use my own API keys</string>
+    <string name="login_use_built_in_keys">Use the built-in API keys</string>
     <string name="login_api_id">api_id</string>
     <string name="login_api_hash">api_hash</string>
 

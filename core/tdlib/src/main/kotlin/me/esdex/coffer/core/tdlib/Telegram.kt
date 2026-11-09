@@ -22,11 +22,13 @@ import java.util.Locale
  * The app's Telegram connection. Starts TDLib with the right keys and starts a fresh session after
  * every log out, so [state] goes on after [AuthState.Closed].
  *
- * @param bundledCredentials the personal build's keys from local.properties; null in the public build.
+ * @param bundledCredentials keys built into the app from local.properties; null when there are none.
+ * @param allowsOwnKeys a user may bring API keys of their own (public build); they win over built-in ones.
  */
 class Telegram(
     context: Context,
     private val bundledCredentials: ApiCredentials?,
+    private val allowsOwnKeys: Boolean,
     private val applicationVersion: String,
 ) {
     private val root = File(context.noBackupFilesDir, "tdlib")
@@ -63,8 +65,13 @@ class Telegram(
         scope.launch { lock.withLock { session }?.networkChanged() }
     }
 
-    /** Only the public build lets the user enter or change API keys. */
-    val usesBundledCredentials: Boolean get() = bundledCredentials != null
+    /** The user may pick API keys of their own before signing in. */
+    val canChooseKeys: Boolean get() = allowsOwnKeys
+
+    val hasBuiltInKeys: Boolean get() = bundledCredentials != null
+
+    /** Signed in, or signing in, with keys the user entered rather than the built-in ones. */
+    val usesOwnKeys: Boolean get() = allowsOwnKeys && secrets.apiCredentials() != null
 
     /** Starts TDLib unless it runs already. */
     fun start() {
@@ -72,7 +79,7 @@ class Telegram(
     }
 
     private fun startLocked() {
-        val credentials = bundledCredentials ?: secrets.apiCredentials()
+        val credentials = (if (allowsOwnKeys) secrets.apiCredentials() else null) ?: bundledCredentials
         if (credentials == null) {
             stateFlow.value = AuthState.NeedApiCredentials
             return
@@ -128,18 +135,32 @@ class Telegram(
     private fun current(): TelegramSession = session ?: throw TdlibException(0, "Telegram is not started")
 
     suspend fun submitApiCredentials(credentials: ApiCredentials) = lock.withLock {
-        check(bundledCredentials == null) { "this build has its own keys" }
+        check(allowsOwnKeys) { "this build takes no keys of its own" }
         secrets.saveApiCredentials(credentials)
         if (session == null) startLocked()
     }
 
-    /** Public build, before sign-in: drop the entered keys and TDLib's (still empty) data. */
-    suspend fun forgetApiCredentials() = lock.withLock {
-        check(bundledCredentials == null) { "this build has its own keys" }
+    /**
+     * Before sign-in: drop whatever keys are in use and TDLib's (still empty) data, and ask for keys.
+     * Keys cannot change under a signed-in session: Telegram ties a session to the app that made it.
+     */
+    suspend fun chooseOwnKeys() = lock.withLock {
+        check(allowsOwnKeys) { "this build takes no keys of its own" }
+        check(stateFlow.value != AuthState.Ready) { "signed in: keys change only with a new sign-in" }
         stopLocked()
         root.deleteRecursively()
         secrets.clearApiCredentials()
         stateFlow.value = AuthState.NeedApiCredentials
+    }
+
+    /** From the keys step: back to the built-in keys, when there are some. */
+    suspend fun useBuiltInKeys() = lock.withLock {
+        checkNotNull(bundledCredentials) { "no built-in keys" }
+        check(stateFlow.value != AuthState.Ready) { "signed in: keys change only with a new sign-in" }
+        stopLocked()
+        root.deleteRecursively()
+        secrets.clearApiCredentials()
+        startLocked()
     }
 
     /** After [AuthState.Failed]: wipe TDLib's data and key and start over. */

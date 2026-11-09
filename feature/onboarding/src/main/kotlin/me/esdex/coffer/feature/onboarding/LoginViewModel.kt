@@ -34,7 +34,9 @@ class LoginViewModel @Inject constructor(private val telegram: Telegram) : ViewM
     private val errorFlow = MutableStateFlow<LoginError?>(null)
     val error: StateFlow<LoginError?> = errorFlow.asStateFlow()
 
-    val canChangeApiKeys: Boolean get() = !telegram.usesBundledCredentials
+    val canChooseKeys: Boolean get() = telegram.canChooseKeys
+    val hasBuiltInKeys: Boolean get() = telegram.hasBuiltInKeys
+    val usesOwnKeys: Boolean get() = telegram.usesOwnKeys
 
     init {
         telegram.start()
@@ -67,7 +69,9 @@ class LoginViewModel @Inject constructor(private val telegram: Telegram) : ViewM
     /** Abandons the sign-in in progress; Telegram comes back at the phone number step. */
     fun startOver() = perform { telegram.logOut() }
 
-    fun changeApiKeys() = perform { telegram.forgetApiCredentials() }
+    fun chooseOwnKeys() = perform { telegram.chooseOwnKeys() }
+
+    fun useBuiltInKeys() = perform { telegram.useBuiltInKeys() }
 
     fun resetTelegramData() = perform { telegram.resetTelegramData() }
 

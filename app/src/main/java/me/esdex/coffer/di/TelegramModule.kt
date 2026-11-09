@@ -18,8 +18,8 @@ object TelegramModule {
     @Provides
     @Singleton
     fun telegram(@ApplicationContext context: Context): Telegram {
-        // The personal build carries the keys from local.properties; the public one asks the user.
+        // Built-in keys come from local.properties; the public build also takes a user's own.
         val bundled = if (BuildConfig.HAS_BUNDLED_API_KEYS) ApiCredentials(BuildConfig.API_ID, BuildConfig.API_HASH) else null
-        return Telegram(context, bundled, BuildConfig.VERSION_NAME)
+        return Telegram(context, bundled, BuildConfig.ALLOWS_OWN_API_KEYS, BuildConfig.VERSION_NAME)
     }
 }

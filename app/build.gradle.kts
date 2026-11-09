@@ -69,6 +69,27 @@ val apiHash: String = localProperties.getProperty("COFFER_API_HASH").orEmpty().t
 val apiIdValid = apiId.toIntOrNull()?.let { it > 0 } == true
 val apiHashValid = apiHash.matches(Regex("[0-9a-fA-F]{32}"))
 
+// The public build's built-in keys: a developer key of their own, so the personal one stays personal.
+// Without them the public build asks every user for keys, as before.
+val publicApiId: String = localProperties.getProperty("COFFER_PUBLIC_API_ID").orEmpty().trim()
+val publicApiHash: String = localProperties.getProperty("COFFER_PUBLIC_API_HASH").orEmpty().trim()
+val publicKeysGiven = publicApiId.isNotEmpty() || publicApiHash.isNotEmpty()
+val publicApiKeysValid = publicApiId.toIntOrNull()?.let { it > 0 } == true && publicApiHash.matches(Regex("[0-9a-fA-F]{32}"))
+
+// Half or malformed public keys would quietly build an app that asks every user for keys.
+val validatePublicApiKeys = tasks.register("validatePublicApiKeys") {
+    val given = publicKeysGiven
+    val valid = publicApiKeysValid
+    doLast {
+        if (given && !valid) {
+            throw GradleException(
+                "COFFER_PUBLIC_API_ID must be a positive integer and COFFER_PUBLIC_API_HASH 32 hex characters " +
+                    "in local.properties (or leave both out to have users enter their own).",
+            )
+        }
+    }
+}
+
 // Fails only the personal variants, so public builds and CI work without keys.
 // Never prints the values themselves.
 val validatePersonalApiKeys = tasks.register("validatePersonalApiKeys") {
@@ -92,16 +113,19 @@ val validatePersonalApiKeys = tasks.register("validatePersonalApiKeys") {
 androidComponents {
     onVariants { variant ->
         val personal = variant.productFlavors.contains("distribution" to "personal")
-        val bundled = personal && apiIdValid && apiHashValid
+        val (bundled, id, hash) = when {
+            personal -> Triple(apiIdValid && apiHashValid, apiId, apiHash)
+            else -> Triple(publicApiKeysValid, publicApiId, publicApiHash)
+        }
         variant.buildConfigFields?.apply {
             put("HAS_BUNDLED_API_KEYS", com.android.build.api.variant.BuildConfigField("boolean", bundled.toString(), null))
-            put("API_ID", com.android.build.api.variant.BuildConfigField("int", if (bundled) apiId else "0", null))
-            put("API_HASH", com.android.build.api.variant.BuildConfigField("String", if (bundled) "\"$apiHash\"" else "\"\"", null))
+            put("API_ID", com.android.build.api.variant.BuildConfigField("int", if (bundled) id else "0", null))
+            put("API_HASH", com.android.build.api.variant.BuildConfigField("String", if (bundled) "\"$hash\"" else "\"\"", null))
+            // The public build lets a user bring keys of their own, with built-in ones or without.
+            put("ALLOWS_OWN_API_KEYS", com.android.build.api.variant.BuildConfigField("boolean", (!personal).toString(), null))
         }
-        if (personal) {
-            val preBuild = "pre${variant.name.replaceFirstChar(Char::titlecase)}Build"
-            tasks.named { it == preBuild }.configureEach { dependsOn(validatePersonalApiKeys) }
-        }
+        val preBuild = "pre${variant.name.replaceFirstChar(Char::titlecase)}Build"
+        tasks.named { it == preBuild }.configureEach { dependsOn(if (personal) validatePersonalApiKeys else validatePublicApiKeys) }
     }
 }
 

@@ -55,8 +55,15 @@ fun LoginScreen(modifier: Modifier = Modifier, viewModel: LoginViewModel = hiltV
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             when (val s = state) {
-                AuthState.NeedApiCredentials -> ApiKeysStep(busy, viewModel::submitApiKeys)
-                AuthState.WaitPhoneNumber -> PhoneStep(busy, viewModel::submitPhoneNumber, viewModel::useQrCode)
+                AuthState.NeedApiCredentials -> ApiKeysStep(
+                    busy,
+                    viewModel::submitApiKeys,
+                    onBuiltIn = viewModel::useBuiltInKeys.takeIf { viewModel.hasBuiltInKeys },
+                )
+                AuthState.WaitPhoneNumber -> {
+                    PhoneStep(busy, viewModel::submitPhoneNumber, viewModel::useQrCode)
+                    KeysChoice(viewModel, busy)
+                }
                 is AuthState.WaitQrConfirmation -> QrStep(s.link, busy, viewModel::startOver)
                 is AuthState.WaitCode -> CodeStep(s, busy, viewModel::submitCode, viewModel::resendCode, viewModel::useQrCode, viewModel::startOver)
                 AuthState.WaitEmailAddress -> EmailStep(busy, viewModel::submitEmailAddress, viewModel::startOver)
@@ -70,15 +77,16 @@ fun LoginScreen(modifier: Modifier = Modifier, viewModel: LoginViewModel = hiltV
                     error = s.error.message.orEmpty(),
                     busy = busy,
                     onReset = viewModel::resetTelegramData,
-                    onChangeKeys = viewModel::changeApiKeys.takeIf { viewModel.canChangeApiKeys },
+                    onChangeKeys = viewModel::chooseOwnKeys.takeIf { viewModel.canChooseKeys },
                 )
                 AuthState.Starting, AuthState.LoggingOut, AuthState.Closed, AuthState.Ready -> Waiting()
             }
             error?.let { ErrorText(it) }
-            // API_ID_INVALID and the like only show up once the phone number is sent.
-            if (viewModel.canChangeApiKeys && error.isApiKeyProblem()) {
-                TextButton(onClick = viewModel::changeApiKeys, enabled = !busy) {
-                    Text(stringResource(R.string.login_change_api_keys))
+            // API_ID_INVALID and the like only show up once the phone number is sent. With the built-in
+            // keys blocked by Telegram, a user's own keys are the way back in.
+            if (viewModel.canChooseKeys && error.isApiKeyProblem()) {
+                TextButton(onClick = viewModel::chooseOwnKeys, enabled = !busy) {
+                    Text(stringResource(if (viewModel.usesOwnKeys) R.string.login_change_api_keys else R.string.login_use_own_keys))
                 }
             }
         }
@@ -105,13 +113,27 @@ private fun SubmitButton(text: String, enabled: Boolean, onClick: () -> Unit) = 
 private fun StartOverButton(busy: Boolean, onStartOver: () -> Unit) =
     TextButton(onClick = onStartOver, enabled = !busy) { Text(stringResource(R.string.login_start_over)) }
 
+/**
+ * Under the sign-in steps: switch to keys of one's own, or back to the built-in ones. Quiet on purpose:
+ * the built-in keys are the way most people go, and own keys are for those who want them.
+ */
 @Composable
-private fun ApiKeysStep(busy: Boolean, onSubmit: (String, String) -> Unit) {
+private fun KeysChoice(viewModel: LoginViewModel, busy: Boolean) {
+    if (!viewModel.canChooseKeys || !viewModel.hasBuiltInKeys) return
+    if (viewModel.usesOwnKeys) {
+        TextButton(onClick = viewModel::useBuiltInKeys, enabled = !busy) { Text(stringResource(R.string.login_use_built_in_keys)) }
+    } else {
+        TextButton(onClick = viewModel::chooseOwnKeys, enabled = !busy) { Text(stringResource(R.string.login_use_own_keys)) }
+    }
+}
+
+@Composable
+private fun ApiKeysStep(busy: Boolean, onSubmit: (String, String) -> Unit, onBuiltIn: (() -> Unit)?) {
     var apiId by rememberSaveable { mutableStateOf("") }
     var apiHash by rememberSaveable { mutableStateOf("") }
     val uriHandler = LocalUriHandler.current
     Title(stringResource(R.string.login_api_keys_title))
-    Body(stringResource(R.string.login_api_keys_explanation))
+    Body(stringResource(if (onBuiltIn != null) R.string.login_api_keys_optional else R.string.login_api_keys_explanation))
     Body(stringResource(R.string.login_api_keys_steps))
     TextButton(onClick = { uriHandler.openUri("https://my.telegram.org") }) {
         Text(stringResource(R.string.login_api_keys_open_site))
@@ -135,6 +157,7 @@ private fun ApiKeysStep(busy: Boolean, onSubmit: (String, String) -> Unit) {
     SubmitButton(stringResource(R.string.login_continue), !busy && apiId.isNotEmpty() && apiHash.isNotEmpty()) {
         onSubmit(apiId, apiHash)
     }
+    onBuiltIn?.let { TextButton(onClick = it, enabled = !busy) { Text(stringResource(R.string.login_use_built_in_keys)) } }
 }
 
 @Composable
