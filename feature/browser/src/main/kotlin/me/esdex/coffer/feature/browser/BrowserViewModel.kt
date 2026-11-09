@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -151,7 +152,35 @@ class BrowserViewModel @Inject constructor(
 
     fun deleteSelected() {
         val (folders, files) = takeSelection()
-        act { content.deleteMany(folders, files) }
+        deleteLater(folders, files)
+    }
+
+    init {
+        viewModelScope.launch { content.deleteFailures.collect { messagesFlow.emit(R.string.browser_delete_failed) } }
+    }
+
+    private val undoableFlow = MutableSharedFlow<Int>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** How many items a delete just took out of sight, for the snackbar that offers to undo it. */
+    val undoable: SharedFlow<Int> = undoableFlow.asSharedFlow()
+
+    private fun deleteLater(folders: List<Id>, files: List<Id>) {
+        viewModelScope.launch {
+            content.deleteLater(folders, files)
+            undoableFlow.emit(folders.size + files.size)
+        }
+    }
+
+    fun undoDelete() {
+        viewModelScope.launch { if (!content.undoDelete()) messagesFlow.emit(R.string.browser_undo_too_late) }
+    }
+
+    /** A delete waiting for its undo goes out first: it needs the keys the lock takes away. */
+    fun lock(onLock: () -> Unit) {
+        viewModelScope.launch {
+            runCatching { content.flushDeletes() }
+            onLock()
+        }
     }
 
     fun moveSelected(destination: Id?) {
@@ -187,15 +216,22 @@ class BrowserViewModel @Inject constructor(
     val tree: StateFlow<VaultTree?> = contents.map { it?.tree }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** The folder shown, or everything matching the search across all folders. */
-    val listing: StateFlow<Listing> = combine(contents, folderFlow, queryFlow, sortingFlow, content.deleting) { contents, folder, query, sorting, deleting ->
+    private val goingAway = combine(content.deleting, content.hidden) { deleting, hidden -> deleting to hidden }
+
+    val listing: StateFlow<Listing> = combine(contents, folderFlow, queryFlow, sortingFlow, goingAway) { contents, folder, query, sorting, (deleting, hidden) ->
         if (contents == null) return@combine Listing()
         val tree = contents.tree
+        // Deleted and waiting for the undo to pass: out of sight, and so is everything inside a folder that is.
+        val hiddenFolders = hidden.filter { it in tree.folders }
+        fun hiddenFolder(id: Id?) = id != null && hiddenFolders.any { tree.isWithin(id, it) }
         // A folder deleted from another device takes the browser back to the root.
         val current = folder?.takeIf { it in tree.folders }
         val path = current?.let { tree.path(it).map { id -> FolderItem(id, tree.folders.getValue(id).name) } }.orEmpty()
         val needle = query.trim()
-        val folders = if (needle.isEmpty()) tree.childFolders(current) else tree.folders.filterValues { it.name.contains(needle, ignoreCase = true) }.keys
+        val folders = (if (needle.isEmpty()) tree.childFolders(current) else tree.folders.filterValues { it.name.contains(needle, ignoreCase = true) }.keys)
+            .filterNot(::hiddenFolder)
         val files = (if (needle.isEmpty()) tree.childFiles(current).mapNotNull(contents.files::get) else contents.files.values.filter { it.name.contains(needle, ignoreCase = true) })
+            .filterNot { it.fileId in hidden || hiddenFolder(tree.folderOf(it.fileId)) }
             .map { if (it.fileId in deleting) it.copy(deleting = true) else it }
 
         // Folders are listed by name whatever the sorting; they have no size or date of their own.
@@ -281,7 +317,7 @@ class BrowserViewModel @Inject constructor(
         viewModelScope.launch { content.download(fileId, null) }
     }
 
-    fun delete(fileId: Id) = act { content.delete(fileId) }
+    fun delete(fileId: Id) = deleteLater(emptyList(), listOf(fileId))
 
     fun renameFile(fileId: Id, name: String) = act { content.renameFile(fileId, name) }
 
@@ -296,7 +332,7 @@ class BrowserViewModel @Inject constructor(
 
     fun moveFolder(folderId: Id, parentId: Id?) = act { content.moveFolder(folderId, parentId) }
 
-    fun deleteFolder(folderId: Id) = act { content.deleteFolder(folderId) }
+    fun deleteFolder(folderId: Id) = deleteLater(listOf(folderId), emptyList())
 
 
     // Cancelling an upload deletes what it sent, so it talks to Telegram too.

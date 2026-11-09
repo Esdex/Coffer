@@ -15,6 +15,7 @@
 - The title of the files list says when Telegram cannot be reached: Waiting for network, Connecting, Updating.
 - Select several files and folders with a long press to move, save or delete them together; saving puts decrypted copies into a folder you pick.
 - Add a whole folder from the phone, and save a vault folder back to the phone, keeping its subfolders.
+- A delete can be undone for a few seconds before it goes to Telegram, where it is final.
 - Open a file in another app, or save a decrypted copy anywhere; the copy is checked against its checksum.
 - Delete a file from all devices.
 - Folders: create, rename, move and delete them (a folder is deleted with everything in it, after a confirmation); rename and move files; new files go into the folder on screen. Changes made on one device show up on the others.

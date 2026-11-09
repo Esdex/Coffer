@@ -86,8 +86,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -123,6 +125,8 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import java.util.Date
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.withTimeoutOrNull
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.index.FileStatus
@@ -147,6 +151,7 @@ import me.esdex.coffer.core.ui.components.groupShape
 import me.esdex.coffer.core.ui.theme.CofferHazeStyle
 import me.esdex.coffer.core.ui.theme.LocalAmoledMode
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
+import me.esdex.coffer.feature.browser.transfer.UNDO_MILLIS
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 
 /** Something a dialog acts on: a folder or a file. */
@@ -242,6 +247,20 @@ fun BrowserScreen(
         viewModel.messages.collect { snackbar.showSnackbar(resources.getString(it)) }
     }
 
+    // Deleted · Undo. Gone a little before the delete goes out, so a tap on Undo is never too late.
+    LaunchedEffect(Unit) {
+        viewModel.undoable.collectLatest { count ->
+            val result = withTimeoutOrNull(UNDO_MILLIS - UNDO_MARGIN_MILLIS) {
+                snackbar.showSnackbar(
+                    resources.getQuantityString(R.plurals.browser_deleted_count, count, count),
+                    actionLabel = resources.getString(R.string.browser_undo),
+                    duration = SnackbarDuration.Indefinite,
+                )
+            }
+            if (result == SnackbarResult.ActionPerformed) viewModel.undoDelete()
+        }
+    }
+
     AnimatedContent(
         targetState = showTransfers,
         transitionSpec = {
@@ -335,7 +354,7 @@ fun BrowserScreen(
                                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                             MenuItem(Icons.AutoMirrored.Outlined.Sort, R.string.browser_sort) { menuOpen = false; sortOpen = true }
                                             MenuItem(Icons.Outlined.SwapVert, R.string.browser_transfers) { menuOpen = false; showTransfers = true }
-                                            MenuItem(Icons.Outlined.Lock, R.string.browser_lock) { menuOpen = false; onLock() }
+                                            MenuItem(Icons.Outlined.Lock, R.string.browser_lock) { menuOpen = false; viewModel.lock(onLock) }
                                             MenuItem(Icons.Outlined.Settings, R.string.browser_settings) { menuOpen = false; onSettings() }
                                         }
                                     }
@@ -1155,5 +1174,6 @@ private fun TransferRegistry.Failure.label() = when (this) {
 }
 
 private const val SLIDE_MILLIS = 350
+private const val UNDO_MARGIN_MILLIS = 500L
 private const val TITLE_MILLIS = 300
 private const val FOLDER_MILLIS = 250

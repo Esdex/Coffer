@@ -78,6 +78,13 @@
     <string name="browser_export_some_failed">Some files could not be saved in that folder.</string>
     <string name="browser_export_not_ready">Files still uploading, or missing parts, were left out.</string>
     <string name="browser_save_folder">Save to phone</string>
+    <plurals name="browser_deleted_count">
+        <item quantity="one">Deleted %1$d item</item>
+        <item quantity="other">Deleted %1$d items</item>
+    </plurals>
+    <string name="browser_undo">Undo</string>
+    <string name="browser_undo_too_late">Too late to undo: the delete has gone out.</string>
+    <string name="browser_delete_failed">The delete did not reach Telegram. The items are back.</string>
     <string name="browser_add_folder">Add a folder</string>
     <string name="browser_add_folder_sub">A folder from your phone, with everything in it</string>
     <string name="browser_import_empty">That folder has no files. Its folders were added.</string>

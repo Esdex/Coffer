@@ -23,10 +23,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
@@ -309,8 +313,35 @@ class VaultContent @Inject constructor(
 
     /** The app went to the background: snapshot now rather than after the delay (SPEC §4.4). */
     fun onBackground() {
-        scope.launch { snapshot() }
+        // A delete waiting for its undo goes out now: in the background the vault may lock and take the keys.
+        scope.launch {
+            deferred.flush()
+            snapshot()
+        }
     }
+
+    private val deleteFailuresFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
+    /** A delete held back for its undo that then did not reach Telegram; the items are back in sight. */
+    val deleteFailures: SharedFlow<Unit> = deleteFailuresFlow.asSharedFlow()
+
+    private val deferred = DeferredDeletes(
+        scope,
+        UNDO_MILLIS,
+        send = { deleteMany(it.folders, it.files) },
+        onFailure = { deleteFailuresFlow.tryEmit(Unit) },
+    )
+
+    /** Deleted on screen and waiting for the chance to undo to pass; the browser leaves them out. */
+    val hidden: StateFlow<Set<Id>> = deferred.hidden
+
+    /** A delete that can be taken back for [UNDO_MILLIS]; see [DeferredDeletes]. */
+    suspend fun deleteLater(folderIds: List<Id>, fileIds: List<Id>) = deferred.schedule(DeferredDeletes.Batch(folderIds, fileIds))
+
+    suspend fun undoDelete(): Boolean = deferred.undo()
+
+    /** Before the vault locks: a delete waiting for its undo needs the keys to go out. */
+    suspend fun flushDeletes() = deferred.flush()
 
     /** Reads the whole of Saved Messages again (SPEC §5.5), with progress like a catch-up. */
     suspend fun rescan() {
@@ -554,3 +585,6 @@ suspend fun releaseFolderGrants(context: Context, index: VaultIndex) {
 }
 
 private const val FOLDER_FALLBACK_NAME = "Folder"
+
+/** How long a delete can be taken back before it goes to Telegram, where it is final. */
+const val UNDO_MILLIS = 6_000L
