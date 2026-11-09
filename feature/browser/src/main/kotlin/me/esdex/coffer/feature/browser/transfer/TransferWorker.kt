@@ -69,7 +69,7 @@ class TransferWorker @AssistedInject constructor(
         val upload = index.uploads().find { it.uploadId == id } ?: return Result.success()
         val fileId = upload.fileId ?: return Result.success()
         val entry = registry.get(fileId) ?: return Result.success()
-        setForeground(foregroundInfo(0))
+        if (!goForeground()) return Result.success()
         val storage = telegram.readyStorage() ?: return Result.retry()
         val runner = UploadRunner(sodium, storage, index, WorkFiles.upload(applicationContext))
         return try {
@@ -100,7 +100,7 @@ class TransferWorker @AssistedInject constructor(
     private suspend fun download(): Result {
         val download = index.downloads().find { it.downloadId == id } ?: return Result.success()
         val entry = registry.get(download.fileId) ?: return Result.success()
-        setForeground(foregroundInfo(0))
+        if (!goForeground()) return Result.success()
         val storage = telegram.readyStorage() ?: return Result.retry()
         val target = entry.target?.let(Uri::parse)
         // An export whose target is not in memory yet waits for the unlock that provides it.
@@ -150,6 +150,20 @@ class TransferWorker @AssistedInject constructor(
             lastNotified = now
             setForegroundAsync(foregroundInfo(percent))
         }
+    }
+
+    /**
+     * Android 15 stops a dataSync service after 6 hours a day and then refuses a new one while the app
+     * is in the background; WorkManager runs the worker again at once and would mark it failed (seen
+     * 2026-11-09). Ending quietly leaves the transfer in the index, and the app starts it again when it
+     * is next on screen.
+     */
+    private suspend fun goForeground(): Boolean = try {
+        setForeground(foregroundInfo(0))
+        true
+    } catch (_: IllegalStateException) {
+        // ForegroundServiceStartNotAllowedException is one.
+        false
     }
 
     private fun foregroundInfo(percent: Int): ForegroundInfo {

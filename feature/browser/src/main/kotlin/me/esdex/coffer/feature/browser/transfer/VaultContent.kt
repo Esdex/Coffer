@@ -292,6 +292,11 @@ class VaultContent @Inject constructor(
         }
     }
 
+    /** The app is on screen again: transfers Android stopped while it was away start over. */
+    fun onForeground() {
+        pendingWork.trySend(Unit)
+    }
+
     /** The app went to the background: snapshot now rather than after the delay (SPEC §4.4). */
     fun onBackground() {
         scope.launch { snapshot() }

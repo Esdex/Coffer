@@ -66,6 +66,7 @@ class VaultLifecycle @Inject constructor(
 
     override fun onStart(owner: LifecycleOwner) {
         lockTimer?.cancel()
+        content.onForeground()
         // The minute timer does not run while the process is frozen either.
         content.sweepOpenFiles()
         // The timer does not run while Android has the process frozen, so check the clock too.
