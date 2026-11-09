@@ -62,16 +62,45 @@ class Indexer(
     private var damageSeen = 0
     private var damageSnapshotted = 0
 
-    /** Catches up, then follows new messages and deletions until cancelled. */
-    suspend fun run(onCatchUpProgress: (Int) -> Unit = {}, onCaughtUp: () -> Unit = {}) = coroutineScope {
-        // Subscribed before catching up, so nothing between the two is missed; duplicates are skipped by id.
+    /**
+     * Catches up, then follows new messages and deletions until cancelled.
+     *
+     * A full read covers everything up to the last message it applied: ids only grow, so anything older
+     * was already in the history it read. A message newer than that, yet no newer than one applied
+     * since, and not applied itself, was delivered late, after a newer one (a send of ours and another
+     * device's landing together). Applied in its place it would break the message order the log depends
+     * on, and skipping it loses it; the whole history is read again instead (SPEC §5.5), and [onLate]
+     * says so. Anything else no newer than the last applied is a repeat and is skipped.
+     */
+    suspend fun run(
+        onCatchUpProgress: (Int) -> Unit = {},
+        onCaughtUp: () -> Unit = {},
+        onLate: (MessageId) -> Unit = {},
+    ) = coroutineScope {
+        // Subscribed before catching up, so nothing between the two is missed.
         val events = Channel<StorageEvent>(Channel.UNLIMITED)
         launch(start = CoroutineStart.UNDISPATCHED) { storage.events.collect { events.send(it) } }
         catchUp(onCatchUpProgress)
+        var readUpTo = index.lastApplied()
         onCaughtUp()
+        val appliedSince = HashSet<MessageId>()
         for (event in events) {
             when (event) {
-                is StorageEvent.NewMessage -> apply(event.message)
+                is StorageEvent.NewMessage -> {
+                    val id = event.message.id
+                    val last = index.lastApplied()
+                    val late = last != null && id <= last && (readUpTo == null || id > readUpTo) && id !in appliedSince
+                    if (late) {
+                        onLate(id)
+                        rescan(onCatchUpProgress)
+                        readUpTo = index.lastApplied()
+                        appliedSince.clear()
+                        onCaughtUp()
+                    } else {
+                        apply(event.message)
+                        appliedSince += id
+                    }
+                }
                 is StorageEvent.MessagesDeleted -> applyDeletion(event.ids)
             }
         }

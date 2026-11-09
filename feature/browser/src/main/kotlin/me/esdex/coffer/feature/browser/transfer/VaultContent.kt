@@ -2,6 +2,7 @@ package me.esdex.coffer.feature.browser.transfer
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.core.net.toUri
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
@@ -194,6 +195,8 @@ class VaultContent @Inject constructor(
                         // SPEC §5.8: weekly, quietly; a failure waits for the next unlock.
                         launch { if (store.weeklyCheck && current.maintenance.isDue()) runCatchingStorage { maintain(current) } }
                     },
+                    // A message id only: rare enough to want to know when it happens.
+                    onLate = { Log.w(SYNC_TAG, "message ${it.value} came late; reading the history again") },
                 )
             }
             // SPEC §4.4: a while after the last change, so a burst of changes makes one snapshot.
@@ -448,3 +451,5 @@ internal fun OneTimeWorkRequest.Builder.withTransferDefaults(kind: String, id: S
     .setConstraints(transferConstraints())
     .addTag(TransferWorker.TAG)
     .setInputData(workDataOf(TransferWorker.KEY_KIND to kind, TransferWorker.KEY_ID to id))
+
+private const val SYNC_TAG = "CofferSync"

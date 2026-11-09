@@ -1,6 +1,7 @@
 package me.esdex.coffer.core.sync
 
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import me.esdex.coffer.core.crypto.Id
@@ -13,6 +14,10 @@ import me.esdex.coffer.core.crypto.format.RecordKind
 import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.storage.FakeCloud
 import me.esdex.coffer.core.storage.MessageContent
+import me.esdex.coffer.core.storage.MessageId
+import me.esdex.coffer.core.storage.StorageBackend
+import me.esdex.coffer.core.storage.StorageEvent
+import me.esdex.coffer.core.storage.StoredMessage
 import me.esdex.coffer.core.storage.StorageException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,6 +50,86 @@ class OpLogTest {
     }
 
     private fun newId() = Id.random(sodium)
+
+    /**
+     * A device following live whose events arrive in the order a test chooses: [deliver] hands it any
+     * message from the cloud. Returns once its catch-up is done; [late] collects what it reported late.
+     */
+    private class Puppet(val device: Device, scope: kotlinx.coroutines.CoroutineScope) {
+        private val events = kotlinx.coroutines.flow.MutableSharedFlow<StorageEvent>(extraBufferCapacity = 64)
+        val late = java.util.concurrent.CopyOnWriteArrayList<MessageId>()
+        val reads = java.util.concurrent.atomic.AtomicInteger()
+        private val storage = object : StorageBackend by device.storage {
+            override val events = this@Puppet.events
+        }
+        private val caughtUp = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val job = scope.launch {
+            Indexer(storage, device.index, device.keys).run(
+                onCaughtUp = { reads.incrementAndGet(); caughtUp.complete(Unit) },
+                onLate = { late += it },
+            )
+        }
+
+        suspend fun started() = caughtUp.await()
+
+        suspend fun deliver(message: StoredMessage) = events.emit(StorageEvent.NewMessage(message))
+    }
+
+    private suspend fun lastMessages(count: Int): List<StoredMessage> =
+        cloud.device().historyBefore(null, count).reversed()
+
+    @Test
+    fun anOperationDeliveredLateIsAppliedInItsPlace() = runBlocking {
+        val here = device()
+        val a = here.ops.createFolder("A", null)
+        val b = here.ops.createFolder("B", null)
+        val follower = device()
+        val puppet = Puppet(follower, this)
+        puppet.started()
+
+        // In message order: A goes into B, then B into A, which would make a loop and is ignored.
+        here.sendOp(Op.FolderMove(newId(), 1, a, b))
+        here.sendOp(Op.FolderMove(newId(), 2, b, a))
+        val (first, second) = lastMessages(2)
+        // Delivered the other way round: the second arrives, then the first, late.
+        puppet.deliver(second)
+        puppet.deliver(first)
+
+        val expected = View(folders = setOf("A" to "B", "B" to null), files = emptySet())
+        withTimeout(10_000) { while (follower.view() != expected) kotlinx.coroutines.delay(10) }
+        // The read again covers both: delivered again, they are repeats, not another late pair.
+        puppet.deliver(first)
+        puppet.deliver(second)
+        kotlinx.coroutines.delay(100)
+        assertEquals(listOf(first.id), puppet.late.toList())
+        assertEquals(2, puppet.reads.get())
+        assertEquals(expected, follower.view())
+        assertRescanAgrees(expected)
+        puppet.job.cancel()
+    }
+
+    @Test
+    fun aRepeatedOrCoveredMessageIsNotTakenForALateOne() = runBlocking {
+        val here = device()
+        here.ops.createFolder("Before", null)
+        val covered = lastMessages(1).single()
+        val follower = device()
+        val puppet = Puppet(follower, this)
+        puppet.started()
+        // Already read by the catch-up, then delivered: nothing new.
+        puppet.deliver(covered)
+        here.ops.createFolder("After", null)
+        val fresh = lastMessages(1).single()
+        puppet.deliver(fresh)
+        puppet.deliver(fresh)
+
+        val expected = View(folders = setOf("Before" to null, "After" to null), files = emptySet())
+        withTimeout(10_000) { while (follower.view() != expected) kotlinx.coroutines.delay(10) }
+        kotlinx.coroutines.delay(100)
+        assertTrue(puppet.late.isEmpty())
+        assertEquals(1, puppet.reads.get())
+        puppet.job.cancel()
+    }
 
     @Test
     fun foldersRenamesAndMovesReachAnotherDevice() = runBlocking {
