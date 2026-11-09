@@ -84,6 +84,21 @@ object OpenFiles {
 }
 
 /**
+ * Encrypted parts and snapshots on their way to Saved Messages. Each is deleted once sent, but a process
+ * killed mid-send leaves its file behind; a new process has nothing in flight yet, so it starts clean.
+ */
+object WorkFiles {
+    fun upload(context: Context) = File(context.cacheDir, "upload")
+
+    fun snapshot(context: Context) = File(context.cacheDir, "snapshot")
+
+    fun clear(context: Context) {
+        upload(context).deleteRecursively()
+        snapshot(context).deleteRecursively()
+    }
+}
+
+/**
  * Everything that needs the open vault: following Saved Messages into the index, preparing uploads,
  * handing keys to transfers. Starts on unlock and stops on lock, when the keys it borrowed are wiped;
  * running transfers keep going with their own DEK (SPEC §6).
@@ -123,6 +138,7 @@ class VaultContent @Inject constructor(
 
     fun start() {
         OpenFiles.clear(context)
+        WorkFiles.clear(context)
         scope.launch {
             while (true) {
                 delay(60_000)
@@ -148,7 +164,7 @@ class VaultContent @Inject constructor(
             sweepShareCopies(keys)
             val storage = telegram.readyStorage(Long.MAX_VALUE) ?: return@launch
             val indexer = Indexer(storage, index, keys)
-            val snapshotter = Snapshotter(storage, index, indexer, keys, File(context.cacheDir, "snapshot"), System::currentTimeMillis)
+            val snapshotter = Snapshotter(storage, index, indexer, keys, WorkFiles.snapshot(context), System::currentTimeMillis)
             val current = Live(indexer, snapshotter, Maintenance(storage, index, indexer, snapshotter, keys, System::currentTimeMillis))
             live = current
             launch {
@@ -367,7 +383,7 @@ class VaultContent @Inject constructor(
         val upload = index.uploads().find { it.uploadId == uploadId } ?: return
         keysFlow.value?.local?.openUpload(uploadId, upload.sealedRequest)?.let { ShareInbox.deleteCopy(context, it.source) }
         val storage = telegram.readyStorage() ?: return
-        UploadRunner(sodium, storage, index, File(context.cacheDir, "upload")).cancel(upload)
+        UploadRunner(sodium, storage, index, WorkFiles.upload(context)).cancel(upload)
         upload.fileId?.let(registry::remove)
         registry.finished(uploadId)
         registry.clearFailure(uploadId)

@@ -71,7 +71,7 @@ class TransferWorker @AssistedInject constructor(
         val entry = registry.get(fileId) ?: return Result.success()
         setForeground(foregroundInfo(0))
         val storage = telegram.readyStorage() ?: return Result.retry()
-        val runner = UploadRunner(sodium, storage, index, File(applicationContext.cacheDir, "upload"))
+        val runner = UploadRunner(sodium, storage, index, WorkFiles.upload(applicationContext))
         return try {
             val source = entry.source ?: return Result.success()
             runner.run(upload, entry.keys, ContentUriSource(applicationContext, source)) { done, total -> report(done, total) }
