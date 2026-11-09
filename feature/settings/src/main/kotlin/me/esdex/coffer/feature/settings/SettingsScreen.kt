@@ -92,13 +92,14 @@ fun SettingsScreen(
     val shown = if (operation != null) Screen.OPERATION else current
     val activity = LocalContext.current.fragmentActivity()
     val promptTitle = stringResource(R.string.settings_device_prompt)
+    val promptCancel = stringResource(R.string.settings_cancel)
     val onDeviceUnlock: (Boolean) -> Unit = { on ->
         if (!on) {
             viewModel.disableDeviceUnlock()
         } else {
             val cipher = viewModel.deviceUnlockCipher()
             if (cipher != null && activity != null) {
-                activity.authenticate(cipher, promptTitle) { done -> if (done != null) viewModel.completeDeviceUnlock(done) else viewModel.disableDeviceUnlock() }
+                activity.authenticate(cipher, promptTitle, promptCancel) { done -> if (done != null) viewModel.completeDeviceUnlock(done) else viewModel.disableDeviceUnlock() }
             }
         }
     }
@@ -248,7 +249,7 @@ private fun OperationPage(viewModel: SettingsViewModel) {
 }
 
 /** Runs the system prompt for [cipher]; [onDone] gets the authenticated cipher, or null if cancelled. */
-private fun FragmentActivity.authenticate(cipher: Cipher, title: String, onDone: (Cipher?) -> Unit) {
+private fun FragmentActivity.authenticate(cipher: Cipher, title: String, cancel: String, onDone: (Cipher?) -> Unit) {
     val prompt = BiometricPrompt(
         this,
         ContextCompat.getMainExecutor(this),
@@ -262,7 +263,7 @@ private fun FragmentActivity.authenticate(cipher: Cipher, title: String, onDone:
             }
         },
     )
-    prompt.authenticate(DeviceUnlock.promptInfo(title), BiometricPrompt.CryptoObject(cipher))
+    prompt.authenticate(DeviceUnlock.promptInfo(title, cancel), BiometricPrompt.CryptoObject(cipher))
 }
 
 /** The phone's own screen lock, with nothing to unlock behind it: proof that the owner is holding the phone. */
@@ -277,7 +278,7 @@ private fun FragmentActivity.confirmOwner(title: String, onDone: (Boolean) -> Un
         },
     )
     // Throws where no screen lock is set; that is a refusal too.
-    runCatching { prompt.authenticate(DeviceUnlock.promptInfo(title)) }.onFailure { onDone(false) }
+    runCatching { prompt.authenticate(DeviceUnlock.ownerPromptInfo(title)) }.onFailure { onDone(false) }
 }
 
 private tailrec fun Context.fragmentActivity(): FragmentActivity? = when (this) {

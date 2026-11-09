@@ -128,7 +128,7 @@ private fun Searching(scanned: Int?) {
 // Unlock
 
 /** Runs the system prompt for [cipher]; [onDone] gets the authenticated cipher, or null if cancelled. */
-private fun FragmentActivity.authenticate(cipher: Cipher, title: String, onDone: (Cipher?) -> Unit) {
+private fun FragmentActivity.authenticate(cipher: Cipher, title: String, cancel: String, onDone: (Cipher?) -> Unit) {
     val prompt = BiometricPrompt(
         this,
         ContextCompat.getMainExecutor(this),
@@ -142,7 +142,7 @@ private fun FragmentActivity.authenticate(cipher: Cipher, title: String, onDone:
             }
         },
     )
-    prompt.authenticate(DeviceUnlock.promptInfo(title), BiometricPrompt.CryptoObject(cipher))
+    prompt.authenticate(DeviceUnlock.promptInfo(title, cancel), BiometricPrompt.CryptoObject(cipher))
 }
 
 private tailrec fun Context.fragmentActivity(): FragmentActivity? = when (this) {
@@ -160,10 +160,11 @@ private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean) {
     }
     val activity = LocalContext.current.fragmentActivity()
     val promptTitle = stringResource(R.string.vault_unlock_prompt)
+    val promptCancel = stringResource(R.string.vault_use_password)
     val promptDevice = {
         val cipher = viewModel.deviceUnlockCipher()
         if (cipher != null && activity != null) {
-            activity.authenticate(cipher, promptTitle) { done -> done?.let(viewModel::completeDeviceUnlock) }
+            activity.authenticate(cipher, promptTitle, promptCancel) { done -> done?.let(viewModel::completeDeviceUnlock) }
         }
     }
     // Biometric unlock, when enabled, comes up by itself.
@@ -220,6 +221,7 @@ private fun RecoveryKeyUnlock(viewModel: VaultViewModel, busy: Boolean, onBack: 
 private fun OfferDeviceUnlock(viewModel: VaultViewModel) {
     val activity = LocalContext.current.fragmentActivity()
     val promptTitle = stringResource(R.string.vault_device_enable_prompt)
+    val promptCancel = stringResource(R.string.vault_device_skip)
     Title(stringResource(R.string.vault_device_title))
     Body(stringResource(R.string.vault_device_explanation))
     WideButton(stringResource(R.string.vault_device_enable), activity != null) {
@@ -227,7 +229,7 @@ private fun OfferDeviceUnlock(viewModel: VaultViewModel) {
         if (cipher == null || activity == null) {
             viewModel.declineDeviceUnlock()
         } else {
-            activity.authenticate(cipher, promptTitle) { done ->
+            activity.authenticate(cipher, promptTitle, promptCancel) { done ->
                 if (done != null) viewModel.completeEnableDeviceUnlock(done) else viewModel.declineDeviceUnlock()
             }
         }
@@ -340,6 +342,7 @@ private fun ConfirmWords(quiz: RecoveryQuiz, viewModel: VaultViewModel) {
 private fun NewVaultDeviceUnlock(viewModel: VaultViewModel) {
     val activity = LocalContext.current.fragmentActivity()
     val promptTitle = stringResource(R.string.vault_device_enable_prompt)
+    val promptCancel = stringResource(R.string.vault_device_skip)
     Title(stringResource(R.string.vault_device_title))
     Body(stringResource(R.string.vault_device_explanation))
     WideButton(stringResource(R.string.vault_device_enable), activity != null) {
@@ -347,7 +350,7 @@ private fun NewVaultDeviceUnlock(viewModel: VaultViewModel) {
         if (cipher == null || activity == null) {
             viewModel.skipDeviceUnlockForNewVault()
         } else {
-            activity.authenticate(cipher, promptTitle) { done ->
+            activity.authenticate(cipher, promptTitle, promptCancel) { done ->
                 if (done != null) viewModel.completeEnableForNewVault(done) else viewModel.skipDeviceUnlockForNewVault()
             }
         }

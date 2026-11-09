@@ -77,7 +77,7 @@
     <string name="vault_unlock_title">Unlock your vault</string>
     <string name="vault_unlock_explanation">Enter the vault password. It is not your Telegram password.</string>
     <string name="vault_unlock_prompt">Unlock Coffer</string>
-    <string name="vault_unlock_device">Unlock with fingerprint or screen lock</string>
+    <string name="vault_unlock_device">Unlock with fingerprint</string>
     <string name="vault_use_recovery_key">Use the recovery key instead</string>
     <string name="vault_use_password">Use the password instead</string>
 
@@ -108,8 +108,8 @@
     <string name="vault_confirm_word">Word %1$d</string>
     <string name="vault_confirm_show_again">Show the words again</string>
 
-    <string name="vault_device_title">Unlock with fingerprint or screen lock</string>
-    <string name="vault_device_explanation">Open the vault with your fingerprint, face or screen lock instead of typing the password every time. The vault key stays in this phone\'s secure hardware and is lost if a new fingerprint or face is added; then the password is needed once.</string>
+    <string name="vault_device_title">Unlock with fingerprint</string>
+    <string name="vault_device_explanation">Open the vault with your fingerprint or face instead of typing the password every time. The phone\'s PIN does not open it. The vault key stays in this phone\'s secure hardware and is lost if a new fingerprint or face is added; then the password is needed once.</string>
     <string name="vault_device_enable">Turn on</string>
     <string name="vault_device_enable_prompt">Turn on unlock for Coffer</string>
     <string name="vault_device_skip">Not now</string>
@@ -124,7 +124,7 @@
     <string name="vault_error_words_mismatch">These words do not match. Check your paper copy, or show the words again.</string>
     <string name="vault_error_passwords_differ">The passwords do not match.</string>
     <string name="vault_error_vault_appeared">A vault was just created from another device. Unlock that one instead.</string>
-    <string name="vault_error_device_key">Could not unlock with the screen lock. Use the password.</string>
-    <string name="vault_error_device_invalidated">A new fingerprint or face was added, so unlock with the password once.</string>
+    <string name="vault_error_device_key">Could not unlock with the fingerprint. Use the password.</string>
+    <string name="vault_error_device_invalidated">Fingerprint unlock was reset, for example because a new fingerprint or face was added. Unlock with the password once.</string>
     <string name="vault_error_storage">Telegram error: %1$s</string>
 </resources>

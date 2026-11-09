@@ -5,7 +5,7 @@
     <string name="settings_ok">OK</string>
 
     <string name="settings_card_security">Security</string>
-    <string name="settings_card_security_desc">Auto-lock, screen lock, screenshots</string>
+    <string name="settings_card_security_desc">Auto-lock, fingerprint, screenshots</string>
     <string name="settings_card_vault">Password and recovery key</string>
     <string name="settings_card_vault_desc">Change the password, see the 24 words</string>
     <string name="settings_card_appearance">Appearance</string>
@@ -66,14 +66,14 @@
     <string name="settings_check_short">Compare the list with Saved Messages</string>
     <string name="settings_about_name">Coffer</string>
     <string name="settings_auto_lock">Auto-lock</string>
-    <string name="settings_device_unlock">Unlock with screen lock</string>
-    <string name="settings_device_unlock_summary">Fingerprint, face or the phone\'s PIN instead of the password</string>
-    <string name="settings_device_unlock_unavailable">Set up a screen lock on this phone to use this</string>
-    <string name="settings_device_prompt">Unlock Coffer with your screen lock</string>
+    <string name="settings_device_unlock">Unlock with fingerprint</string>
+    <string name="settings_device_unlock_summary">Fingerprint or face instead of the password; the phone\'s PIN does not open the vault</string>
+    <string name="settings_device_unlock_unavailable">Add a fingerprint or face on this phone to use this</string>
+    <string name="settings_device_prompt">Unlock Coffer with your fingerprint</string>
     <string name="settings_screenshots">Block screenshots</string>
     <string name="settings_screenshots_summary">No screenshots or screen recording, and the app looks blank in recent apps</string>
 
-    <string name="settings_auto_lock_info">How long Coffer stays open while you use other apps. Locking wipes the keys from memory; you unlock again with the password, the recovery key or the screen lock.</string>
+    <string name="settings_auto_lock_info">How long Coffer stays open while you use other apps. Locking wipes the keys from memory; you unlock again with the password, the recovery key or the fingerprint.</string>
     <string name="settings_theme">Theme</string>
     <string name="settings_theme_system">Same as the system</string>
     <string name="settings_theme_light">Light</string>
