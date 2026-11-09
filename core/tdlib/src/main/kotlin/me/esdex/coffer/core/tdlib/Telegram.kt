@@ -1,6 +1,8 @@
 package me.esdex.coffer.core.tdlib
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,6 +38,25 @@ class Telegram(
 
     private val stateFlow = MutableStateFlow<AuthState>(AuthState.Starting)
     val state: StateFlow<AuthState> = stateFlow.asStateFlow()
+
+    init {
+        // Android 15 cuts the network of an app a few seconds after it leaves the screen and gives it
+        // back when it returns or runs a transfer; TDLib, meanwhile, backs off further with every
+        // failed attempt. Seen 2026-11-09: sends waited 28 s to 7 min with the app on screen.
+        context.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(
+            object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) = networkChanged()
+
+                override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
+                    if (!blocked) networkChanged()
+                }
+            },
+        )
+    }
+
+    private fun networkChanged() {
+        scope.launch { lock.withLock { session }?.networkChanged() }
+    }
 
     /** Only the public build lets the user enter or change API keys. */
     val usesBundledCredentials: Boolean get() = bundledCredentials != null

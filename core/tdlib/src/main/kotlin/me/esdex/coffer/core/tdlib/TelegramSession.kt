@@ -255,6 +255,16 @@ class TelegramSession(config: TdlibConfig) {
         send(TdApi.ConfirmQrCodeAuthentication(link))
     }
 
+    /**
+     * The network came back, or Android let this app use it again. TDLib does not notice either and
+     * retries on its own schedule, minutes apart after a long time without network; this makes it
+     * reconnect now.
+     */
+    internal fun networkChanged() {
+        Log.i(TAG, "network available, reconnecting")
+        client.send(TdApi.SetNetworkType(TdApi.NetworkTypeOther()), null)
+    }
+
     internal suspend fun setPassword(password: String) {
         send(TdApi.SetPassword("", password, "", false, ""))
     }
