@@ -20,13 +20,15 @@
     <string name="login_qr_explanation">On a phone where you are signed in, open Telegram, go to Settings, Devices, Link Desktop Device, and scan this code.</string>
 
     <string name="login_code_title">Enter the code</string>
-    <string name="login_code_in_app">We sent the code to your Telegram app on another device.</string>
+    <string name="login_code_in_app">We sent the code to your Telegram app on another device. It comes as a message from Telegram, in the chat named Telegram with a blue check mark.</string>
     <string name="login_code_sms">We sent the code by SMS to %1$s.</string>
     <string name="login_code_call">You will get a call to %1$s with the code.</string>
     <string name="login_code_fragment">The code was sent to your anonymous number on Fragment.</string>
     <string name="login_code_other">Enter the code Telegram sent you.</string>
     <string name="login_code">Code</string>
     <string name="login_code_resend">Send the code another way</string>
+    <string name="login_code_missing_title">No code?</string>
+    <string name="login_code_missing">It can take a minute. Look in every app where you use Telegram, on a phone or a computer. Each new code makes the one before it stop working, and starting over too often can get sign-in blocked for a while. If no code comes, sign in with a QR code instead, scanned with Telegram on another phone or tablet.</string>
 
     <string name="login_email_title">Email for sign-in</string>
     <string name="login_email_explanation">Telegram asks for an email address to send sign-in codes to.</string>

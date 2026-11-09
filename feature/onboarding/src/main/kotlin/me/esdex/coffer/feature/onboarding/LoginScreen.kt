@@ -58,7 +58,7 @@ fun LoginScreen(modifier: Modifier = Modifier, viewModel: LoginViewModel = hiltV
                 AuthState.NeedApiCredentials -> ApiKeysStep(busy, viewModel::submitApiKeys)
                 AuthState.WaitPhoneNumber -> PhoneStep(busy, viewModel::submitPhoneNumber, viewModel::useQrCode)
                 is AuthState.WaitQrConfirmation -> QrStep(s.link, busy, viewModel::startOver)
-                is AuthState.WaitCode -> CodeStep(s, busy, viewModel::submitCode, viewModel::resendCode, viewModel::startOver)
+                is AuthState.WaitCode -> CodeStep(s, busy, viewModel::submitCode, viewModel::resendCode, viewModel::useQrCode, viewModel::startOver)
                 AuthState.WaitEmailAddress -> EmailStep(busy, viewModel::submitEmailAddress, viewModel::startOver)
                 is AuthState.WaitEmailCode -> EmailCodeStep(s, busy, viewModel::submitEmailCode, viewModel::startOver)
                 is AuthState.WaitPassword -> PasswordStep(s, busy, viewModel::submitPassword, viewModel::startOver)
@@ -169,6 +169,7 @@ private fun CodeStep(
     busy: Boolean,
     onSubmit: (String) -> Unit,
     onResend: () -> Unit,
+    onUseQr: () -> Unit,
     onStartOver: () -> Unit,
 ) {
     var code by rememberSaveable(state.phoneNumber) { mutableStateOf("") }
@@ -194,6 +195,11 @@ private fun CodeStep(
     if (state.canResend) {
         TextButton(onClick = onResend, enabled = !busy) { Text(stringResource(R.string.login_code_resend)) }
     }
+    // Telegram sometimes says a code is on its way and never sends it (seen 2026-11-09, own API keys);
+    // nothing in the reply tells that apart, so the screen says what to try.
+    Text(stringResource(R.string.login_code_missing_title), style = MaterialTheme.typography.titleSmall)
+    Text(stringResource(R.string.login_code_missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    TextButton(onClick = onUseQr, enabled = !busy) { Text(stringResource(R.string.login_use_qr)) }
     StartOverButton(busy, onStartOver)
 }
 
