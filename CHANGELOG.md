@@ -12,6 +12,7 @@
 - The vault locks after 5 minutes in the background.
 - Add files to the vault: they are encrypted on the phone and sent to Saved Messages, with progress in a notification and a Transfers screen (percent, how many MB of how many, and what a transfer is waiting for); interrupted uploads resume, and a paused one says so in a notification.
 - Files list with search by name and sorting by name, date or size; files added from other devices show up too.
+- The title of the files list says when Telegram cannot be reached: Waiting for network, Connecting, Updating.
 - Open a file in another app, or save a decrypted copy anywhere; the copy is checked against its checksum.
 - Delete a file from all devices.
 - Folders: create, rename, move and delete them (a folder is deleted with everything in it, after a confirmation); rename and move files; new files go into the folder on screen. Changes made on one device show up on the others.

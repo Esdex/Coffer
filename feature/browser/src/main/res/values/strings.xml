@@ -67,6 +67,9 @@
     <string name="browser_transfer_unnamed">a file (unlock to see its name)</string>
     <string name="browser_transfer_preparing">Preparing: reading the file and encrypting its details</string>
     <string name="browser_transfer_waiting">Waiting</string>
+    <string name="browser_connection_waiting">Waiting for network…</string>
+    <string name="browser_connection_connecting">Connecting…</string>
+    <string name="browser_connection_updating">Updating…</string>
     <plurals name="browser_transfer_queued">
         <item quantity="one">Waiting for a free slot: %1$d transfer runs at a time</item>
         <item quantity="other">Waiting for a free slot: %1$d transfers run at a time</item>

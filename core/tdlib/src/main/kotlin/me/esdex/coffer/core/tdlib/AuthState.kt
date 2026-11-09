@@ -48,3 +48,6 @@ sealed interface AuthState {
 }
 
 enum class CodeDelivery { TELEGRAM_APP, SMS, CALL, FLASH_CALL, MISSED_CALL, FRAGMENT, OTHER }
+
+/** How TDLib's link to Telegram stands; what Telegram's own apps show in their title bar. */
+enum class Connection { WAITING_FOR_NETWORK, CONNECTING, UPDATING, READY }

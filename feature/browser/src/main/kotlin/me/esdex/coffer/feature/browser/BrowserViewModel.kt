@@ -5,6 +5,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -16,6 +19,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.index.FileStatus
@@ -25,6 +29,8 @@ import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.VaultTree
+import me.esdex.coffer.core.tdlib.Connection
+import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import javax.inject.Inject
@@ -72,7 +78,13 @@ class BrowserViewModel @Inject constructor(
     private val content: VaultContent,
     private val index: VaultIndex,
     private val registry: TransferRegistry,
+    telegram: Telegram,
 ) : ViewModel() {
+
+    /** Telegram's link, for the title bar. */
+    val connection: StateFlow<Connection> = telegram.connection
+        .ignoringBlips(CONNECTION_GRACE_MS)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Connection.READY)
 
     private val queryFlow = MutableStateFlow("")
     val query: StateFlow<String> = queryFlow.asStateFlow()
@@ -224,3 +236,15 @@ class BrowserViewModel @Inject constructor(
 
     fun retry(item: TransferItem) = content.retry(item.id)
 }
+
+/**
+ * Coming back to the app reconnects in well under a second, and a title that said so every time would
+ * flicker; a lapse is shown only once it has lasted [graceMillis].
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+internal fun Flow<Connection>.ignoringBlips(graceMillis: Long): Flow<Connection> = transformLatest { state ->
+    if (state != Connection.READY) delay(graceMillis)
+    emit(state)
+}
+
+private const val CONNECTION_GRACE_MS = 1_000L

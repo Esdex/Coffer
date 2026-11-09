@@ -39,6 +39,11 @@ class Telegram(
     private val stateFlow = MutableStateFlow<AuthState>(AuthState.Starting)
     val state: StateFlow<AuthState> = stateFlow.asStateFlow()
 
+    private val connectionFlow = MutableStateFlow(Connection.CONNECTING)
+
+    /** The running session's link to Telegram; [Connection.CONNECTING] between sessions. */
+    val connection: StateFlow<Connection> = connectionFlow.asStateFlow()
+
     init {
         // Android 15 cuts the network of an app a few seconds after it leaves the screen and gives it
         // back when it returns or runs a transfer; TDLib, meanwhile, backs off further with every
@@ -94,6 +99,7 @@ class Telegram(
         databaseKey.fill(0)
         session = started
         stateJob = scope.launch {
+            launch { started.connection.collect { connectionFlow.value = it } }
             started.state.collect { state ->
                 stateFlow.value = state
                 if (state == AuthState.Closed) scope.launch { restartAfter(started) }
@@ -114,6 +120,7 @@ class Telegram(
         stateJob?.cancel()
         session = null
         stateFlow.value = AuthState.Starting
+        connectionFlow.value = Connection.CONNECTING
         runCatching { running.close() }
         running.state.first { it == AuthState.Closed }
     }

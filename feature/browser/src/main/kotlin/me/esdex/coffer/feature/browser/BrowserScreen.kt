@@ -19,7 +19,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -114,6 +116,7 @@ import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.storage.TransferLimiter
 import me.esdex.coffer.core.sync.VaultTree
+import me.esdex.coffer.core.tdlib.Connection
 import me.esdex.coffer.core.ui.components.AppDialog
 import me.esdex.coffer.core.ui.components.AppSheet
 import me.esdex.coffer.core.ui.components.CofferScaffold
@@ -164,6 +167,7 @@ fun BrowserScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val sorting by viewModel.sorting.collectAsStateWithLifecycle()
     val catchingUp by viewModel.catchingUp.collectAsStateWithLifecycle()
+    val connection by viewModel.connection.collectAsStateWithLifecycle()
     var showTransfers by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -238,7 +242,21 @@ fun BrowserScreen(
                                 if (searching) {
                                     TopBarSearchField(query, viewModel::search, stringResource(R.string.browser_search), Modifier.fillMaxWidth())
                                 } else {
-                                    Text(listing.path.lastOrNull()?.name ?: stringResource(R.string.browser_title), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    // Like Telegram's own apps: while there is no link the title says so, and the
+                                    // change rolls down. Only that change: a folder's name moves with its list.
+                                    AnimatedContent(
+                                        targetState = connection.label(),
+                                        transitionSpec = {
+                                            (slideInVertically(tween(TITLE_MILLIS, easing = EaseInOutCubic)) { -it } + fadeIn(tween(TITLE_MILLIS))) togetherWith
+                                                (slideOutVertically(tween(TITLE_MILLIS, easing = EaseInOutCubic)) { it } + fadeOut(tween(TITLE_MILLIS)))
+                                        },
+                                        label = "title",
+                                    ) { label ->
+                                        val title = label?.let { stringResource(it) }
+                                            ?: listing.path.lastOrNull()?.name
+                                            ?: stringResource(R.string.browser_title)
+                                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
                                 }
                             },
                             navigationIcon = {
@@ -795,6 +813,13 @@ fun TransfersScreen(
     }
 }
 
+private fun Connection.label() = when (this) {
+    Connection.WAITING_FOR_NETWORK -> R.string.browser_connection_waiting
+    Connection.CONNECTING -> R.string.browser_connection_connecting
+    Connection.UPDATING -> R.string.browser_connection_updating
+    Connection.READY -> null
+}
+
 /** What a transfer is doing: an error, a wait, or a bar with how much of how much has gone. */
 @Composable
 private fun TransferStatus(item: TransferItem) {
@@ -858,4 +883,5 @@ private fun TransferRegistry.Failure.label() = when (this) {
 }
 
 private const val SLIDE_MILLIS = 350
+private const val TITLE_MILLIS = 300
 private const val FOLDER_MILLIS = 250
