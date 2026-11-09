@@ -57,6 +57,7 @@
     <string name="browser_error_flood">Telegram asks to slow down. Try again in a little while.</string>
 
     <string name="browser_status_uploading">Uploading</string>
+    <string name="browser_status_deleting">Deleting</string>
     <string name="browser_status_incomplete">Incomplete: some parts are still on their way</string>
     <string name="browser_status_damaged">Damaged: a part is missing from Saved Messages (deleted outside Coffer, or the upload never finished)</string>
 

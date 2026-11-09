@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -132,6 +133,23 @@ class VaultContent @Inject constructor(
     val keys: StateFlow<VaultKeys?> = keysFlow.asStateFlow()
 
     private val catchUpFlow = MutableStateFlow<Int?>(null)
+
+    private val deletingFlow = MutableStateFlow<Set<Id>>(emptySet())
+
+    /**
+     * Files and folders whose delete has not reached Telegram yet. The row stays until the operation is
+     * sent (SPEC §5.3), which can take a while on a slow network; this lets the browser say so.
+     */
+    val deleting: StateFlow<Set<Id>> = deletingFlow.asStateFlow()
+
+    private suspend fun <T> markedDeleting(id: Id, block: suspend () -> T): T {
+        deletingFlow.update { it + id }
+        try {
+            return block()
+        } finally {
+            deletingFlow.update { it - id }
+        }
+    }
 
     /** Messages read so far while catching up, or null when caught up. */
     val catchingUp: StateFlow<Int?> = catchUpFlow.asStateFlow()
@@ -348,8 +366,10 @@ class VaultContent @Inject constructor(
 
     suspend fun delete(fileId: Id) {
         val keys = keysFlow.value ?: return
-        val storage = telegram.readyStorage() ?: return
-        FileDeleter(storage, index).delete(keys, fileId, System.currentTimeMillis())
+        markedDeleting(fileId) {
+            val storage = telegram.readyStorage() ?: return@markedDeleting
+            FileDeleter(storage, index).delete(keys, fileId, System.currentTimeMillis())
+        }
     }
 
     /** Runs [block] with the operation log of the open vault; does nothing while locked or signed out. */
@@ -371,10 +391,12 @@ class VaultContent @Inject constructor(
     suspend fun moveFile(fileId: Id, folderId: Id?) = withOps { ops, _, _ -> ops.moveFile(fileId, folderId) }
 
     /** The folder and everything in it; uploads into it are cancelled, which takes back what they sent. */
-    suspend fun deleteFolder(folderId: Id) = withOps { ops, keys, storage ->
-        ops.deleteFolder(VaultTree.of(index, keys), folderId) { fileId ->
-            val upload = index.uploads().find { it.fileId == fileId }
-            if (upload != null) cancelUpload(upload.uploadId) else FileDeleter(storage, index).delete(keys, fileId, System.currentTimeMillis())
+    suspend fun deleteFolder(folderId: Id) = markedDeleting(folderId) {
+        withOps { ops, keys, storage ->
+            ops.deleteFolder(VaultTree.of(index, keys), folderId) { fileId ->
+                val upload = index.uploads().find { it.fileId == fileId }
+                if (upload != null) cancelUpload(upload.uploadId) else FileDeleter(storage, index).delete(keys, fileId, System.currentTimeMillis())
+            }
         }
     }
 

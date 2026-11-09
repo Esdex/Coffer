@@ -37,9 +37,11 @@ data class FileItem(
     val size: Long,
     val modifiedAt: Long,
     val status: FileStatus,
+    /** Its delete is on the way to Telegram. */
+    val deleting: Boolean = false,
 )
 
-data class FolderItem(val folderId: Id, val name: String)
+data class FolderItem(val folderId: Id, val name: String, val deleting: Boolean = false)
 
 /** What one screen of the browser shows. */
 data class Listing(
@@ -105,7 +107,7 @@ class BrowserViewModel @Inject constructor(
     val tree: StateFlow<VaultTree?> = contents.map { it?.tree }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** The folder shown, or everything matching the search across all folders. */
-    val listing: StateFlow<Listing> = combine(contents, folderFlow, queryFlow, sortingFlow) { contents, folder, query, sorting ->
+    val listing: StateFlow<Listing> = combine(contents, folderFlow, queryFlow, sortingFlow, content.deleting) { contents, folder, query, sorting, deleting ->
         if (contents == null) return@combine Listing()
         val tree = contents.tree
         // A folder deleted from another device takes the browser back to the root.
@@ -113,10 +115,11 @@ class BrowserViewModel @Inject constructor(
         val path = current?.let { tree.path(it).map { id -> FolderItem(id, tree.folders.getValue(id).name) } }.orEmpty()
         val needle = query.trim()
         val folders = if (needle.isEmpty()) tree.childFolders(current) else tree.folders.filterValues { it.name.contains(needle, ignoreCase = true) }.keys
-        val files = if (needle.isEmpty()) tree.childFiles(current).mapNotNull(contents.files::get) else contents.files.values.filter { it.name.contains(needle, ignoreCase = true) }
+        val files = (if (needle.isEmpty()) tree.childFiles(current).mapNotNull(contents.files::get) else contents.files.values.filter { it.name.contains(needle, ignoreCase = true) })
+            .map { if (it.fileId in deleting) it.copy(deleting = true) else it }
 
         // Folders are listed by name whatever the sorting; they have no size or date of their own.
-        val folderItems = folders.map { FolderItem(it, tree.folders.getValue(it).name) }
+        val folderItems = folders.map { FolderItem(it, tree.folders.getValue(it).name, deleting = it in deleting) }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
             .let { if (sorting.by == SortBy.NAME && sorting.descending) it.reversed() else it }
         val sorted = when (sorting.by) {

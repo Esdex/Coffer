@@ -93,6 +93,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -654,18 +655,26 @@ fun FolderPicker(tree: VaultTree, at: Id?, onAt: (Id?) -> Unit, excluding: Id? =
 @Composable
 private fun FolderRow(folder: FolderItem, onOpen: () -> Unit, onAction: (RowAction) -> Unit, modifier: Modifier = Modifier) {
     var menu by remember { mutableStateOf(false) }
+    val idle = !folder.deleting
     Row(
-        modifier.fillMaxWidth().combinedClickable(onClick = onOpen, onLongClick = { menu = true }).padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+        modifier.fillMaxWidth()
+            .combinedClickable(enabled = idle, onClick = onOpen, onLongClick = { menu = true })
+            .alpha(if (idle) 1f else DELETING_ALPHA)
+            .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TypeTile(FolderIcon)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-            Text(stringResource(R.string.browser_type_folder), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (idle) {
+                Text(stringResource(R.string.browser_type_folder), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Text(stringResource(R.string.browser_status_deleting), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
         }
         Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
+            IconButton(onClick = { menu = true }, enabled = idle) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 MenuItem(Icons.Outlined.Edit, R.string.browser_rename) { menu = false; onAction(RowAction.RENAME) }
                 MenuItem(Icons.AutoMirrored.Outlined.DriveFileMove, R.string.browser_move) { menu = false; onAction(RowAction.MOVE) }
@@ -686,10 +695,12 @@ private fun FileRow(file: FileItem, onOpen: () -> Unit, onExport: (Uri) -> Unit,
     val ready = file.status == FileStatus.READY
     // Until its part 0 is in Saved Messages a rename would lose to it (SPEC §5.2), so uploads are left alone.
     val settled = file.status != FileStatus.UPLOADING
+    val idle = !file.deleting
     Row(
         modifier.fillMaxWidth()
             // A ready file opens on a tap, like everywhere else; one that is not shows what can be done with it.
-            .combinedClickable(onClick = { if (ready) onOpen() else menu = true }, onLongClick = { menu = true })
+            .combinedClickable(enabled = idle, onClick = { if (ready) onOpen() else menu = true }, onLongClick = { menu = true })
+            .alpha(if (idle) 1f else DELETING_ALPHA)
             .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -700,7 +711,9 @@ private fun FileRow(file: FileItem, onOpen: () -> Unit, onExport: (Uri) -> Unit,
             Spacer(Modifier.height(2.dp))
             val details = Formatter.formatShortFileSize(context, file.size) + " · " + DateFormat.getMediumDateFormat(context).format(Date(file.modifiedAt))
             Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            file.status.label()?.let {
+            if (!idle) {
+                Text(stringResource(R.string.browser_status_deleting), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            } else file.status.label()?.let {
                 Text(
                     stringResource(it),
                     style = MaterialTheme.typography.bodySmall,
@@ -709,7 +722,7 @@ private fun FileRow(file: FileItem, onOpen: () -> Unit, onExport: (Uri) -> Unit,
             }
         }
         Box {
-            IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
+            IconButton(onClick = { menu = true }, enabled = idle) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 MenuItem(Icons.Outlined.FileOpen, R.string.browser_open, enabled = ready) { menu = false; onOpen() }
                 MenuItem(Icons.Outlined.SaveAlt, R.string.browser_export, enabled = ready) { menu = false; export.launch(file.name) }
@@ -720,6 +733,9 @@ private fun FileRow(file: FileItem, onOpen: () -> Unit, onExport: (Uri) -> Unit,
         }
     }
 }
+
+/** A row whose delete is on the way: still there, but nothing to do with it. */
+private const val DELETING_ALPHA = 0.5f
 
 private fun FileStatus.label() = when (this) {
     FileStatus.UPLOADING -> R.string.browser_status_uploading
