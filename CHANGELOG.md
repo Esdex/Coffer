@@ -10,7 +10,7 @@
 - The vault password is stretched with Argon2id at 128 MiB and 4 passes, about half a second on a recent phone; an existing vault takes the new strength at its next password change.
 - Unlock the vault with its password, the recovery key, or a fingerprint or face. The phone's PIN does not open it, and adding a new fingerprint turns fingerprint unlock off until the next password unlock.
 - The vault locks after 5 minutes in the background.
-- Add files to the vault: they are encrypted on the phone and sent to Saved Messages, with progress in a notification and a Transfers screen; interrupted uploads resume.
+- Add files to the vault: they are encrypted on the phone and sent to Saved Messages, with progress in a notification and a Transfers screen (percent, how many MB of how many, and what a transfer is waiting for); interrupted uploads resume, and a paused one says so in a notification.
 - Files list with search by name and sorting by name, date or size; files added from other devices show up too.
 - Open a file in another app, or save a decrypted copy anywhere; the copy is checked against its checksum.
 - Delete a file from all devices.

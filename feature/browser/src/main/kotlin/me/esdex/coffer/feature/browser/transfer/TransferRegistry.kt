@@ -66,14 +66,27 @@ class TransferRegistry @Inject constructor() {
         entries.clear()
     }
 
-    data class Progress(val done: Long, val total: Long)
+    enum class Phase {
+        /** Waiting for one of the [gate]'s places. */
+        QUEUED,
+
+        /** Reading or encrypting with nothing on the wire (see [me.esdex.coffer.core.sync.TransferStage]). */
+        PREPARING,
+        MOVING,
+    }
+
+    /** Bytes of the encrypted file: what goes over the wire, a little more than the file itself. */
+    data class Progress(val done: Long, val total: Long, val phase: Phase) {
+        fun percent(): Int = if (total > 0) (done * 100 / total).toInt() else 0
+    }
 
     private val progressFlow = MutableStateFlow<Map<String, Progress>>(emptyMap())
 
     /** By upload or download id. */
     val progress: StateFlow<Map<String, Progress>> = progressFlow.asStateFlow()
 
-    fun progress(id: String, done: Long, total: Long) = progressFlow.update { it + (id to Progress(done, total)) }
+    fun queued(id: String) = progressFlow.update { it + (id to Progress(0, 0, Phase.QUEUED)) }
+    fun progress(id: String, done: Long, total: Long, phase: Phase) = progressFlow.update { it + (id to Progress(done, total, phase)) }
     fun finished(id: String) = progressFlow.update { it - id }
 
     enum class Failure { NO_SPACE, SOURCE_CHANGED, SOURCE_GONE, CONTENT_MISMATCH, MISSING_PART, TARGET_FAILED }

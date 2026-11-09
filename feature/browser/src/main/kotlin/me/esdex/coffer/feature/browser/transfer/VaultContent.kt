@@ -407,6 +407,7 @@ class VaultContent @Inject constructor(
 
     suspend fun cancelUpload(uploadId: String) {
         WorkManager.getInstance(context).cancelUniqueWork(TransferWorker.uploadName(uploadId))
+        TransferWorker.dismiss(context, uploadId)
         val upload = index.uploads().find { it.uploadId == uploadId } ?: return
         keysFlow.value?.local?.openUpload(uploadId, upload.sealedRequest)?.let { ShareInbox.deleteCopy(context, it.source) }
         val storage = telegram.readyStorage() ?: return
@@ -418,6 +419,7 @@ class VaultContent @Inject constructor(
 
     suspend fun cancelDownload(downloadId: String) {
         WorkManager.getInstance(context).cancelUniqueWork(TransferWorker.downloadName(downloadId))
+        TransferWorker.dismiss(context, downloadId)
         index.removeDownload(downloadId)
         registry.finished(downloadId)
         registry.clearFailure(downloadId)

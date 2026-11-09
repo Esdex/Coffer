@@ -2,11 +2,13 @@ package me.esdex.coffer.feature.browser.transfer
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.net.Uri
 import android.os.SystemClock
 import android.provider.DocumentsContract
+import android.text.format.Formatter
 import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.CoroutineWorker
@@ -27,6 +29,7 @@ import me.esdex.coffer.core.sync.DownloadRunner
 import me.esdex.coffer.core.sync.MissingPartException
 import me.esdex.coffer.core.sync.NotEnoughSpaceException
 import me.esdex.coffer.core.sync.SourceChangedException
+import me.esdex.coffer.core.sync.TransferStage
 import me.esdex.coffer.core.sync.UploadRunner
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.feature.browser.R
@@ -54,6 +57,7 @@ class TransferWorker @AssistedInject constructor(
     // The backend allows 3 transfers on the wire; this also keeps more than 3 encrypted parts
     // from piling up in the cache while they wait for a slot.
     override suspend fun doWork(): Result = try {
+        registry.queued(id)
         registry.gate.withPermit { if (isUpload) upload() else download() }
     } catch (e: FloodWaitException) {
         // Honest FLOOD_WAIT (SPEC §6): wait what Telegram asked, then one more try through WorkManager.
@@ -68,13 +72,13 @@ class TransferWorker @AssistedInject constructor(
     private suspend fun upload(): Result {
         val upload = index.uploads().find { it.uploadId == id } ?: return Result.success()
         val fileId = upload.fileId ?: return Result.success()
-        val entry = registry.get(fileId) ?: return Result.success()
-        if (!goForeground()) return Result.success()
+        val entry = registry.get(fileId) ?: return paused()
+        if (!goForeground()) return paused()
         val storage = telegram.readyStorage() ?: return Result.retry()
         val runner = UploadRunner(sodium, storage, index, WorkFiles.upload(applicationContext))
         return try {
             val source = entry.source ?: return Result.success()
-            runner.run(upload, entry.keys, ContentUriSource(applicationContext, source)) { done, total -> report(done, total) }
+            runner.run(upload, entry.keys, ContentUriSource(applicationContext, source)) { done, total, stage -> report(done, total, stage) }
             registry.remove(fileId)
             // A file shared into Coffer was copied for this upload (SPEC §6, step 1); done with it.
             ShareInbox.deleteCopy(applicationContext, source)
@@ -99,12 +103,12 @@ class TransferWorker @AssistedInject constructor(
 
     private suspend fun download(): Result {
         val download = index.downloads().find { it.downloadId == id } ?: return Result.success()
-        val entry = registry.get(download.fileId) ?: return Result.success()
-        if (!goForeground()) return Result.success()
+        val entry = registry.get(download.fileId) ?: return paused()
+        if (!goForeground()) return paused()
         val storage = telegram.readyStorage() ?: return Result.retry()
         val target = entry.target?.let(Uri::parse)
         // An export whose target is not in memory yet waits for the unlock that provides it.
-        if (download.sealedTarget != null && target == null) return Result.success()
+        if (download.sealedTarget != null && target == null) return paused()
         val open = entry.open
         val openFile = open?.let { File(File(OpenFiles.dir(applicationContext), id), it.name) }
         val failure = try {
@@ -113,7 +117,7 @@ class TransferWorker @AssistedInject constructor(
             } else {
                 checkNotNull(openFile).also { it.parentFile?.mkdirs() }.outputStream()
             }
-            output.use { DownloadRunner(sodium, storage, index).run(download.fileId, entry.keys, it) { done, total -> report(done, total) } }
+            output.use { DownloadRunner(sodium, storage, index).run(download.fileId, entry.keys, it) { done, total -> report(done, total, TransferStage.MOVING) } }
             null
         } catch (_: ContentMismatchException) {
             TransferRegistry.Failure.CONTENT_MISMATCH
@@ -138,18 +142,45 @@ class TransferWorker @AssistedInject constructor(
     }
 
     private var lastPercent = -1
+    private var lastPhase: TransferRegistry.Phase? = null
     private var lastNotified = 0L
 
-    private fun report(done: Long, total: Long) {
-        registry.progress(id, done, total)
-        val percent = if (total > 0) (done * 100 / total).toInt() else 100
+    private fun report(done: Long, total: Long, stage: TransferStage) {
+        val phase = if (stage == TransferStage.PREPARING) TransferRegistry.Phase.PREPARING else TransferRegistry.Phase.MOVING
+        val progress = TransferRegistry.Progress(done, total, phase)
+        registry.progress(id, done, total, phase)
+        val percent = progress.percent()
         // Android drops updates beyond about 5 a second, and on a fast network the percent moves faster.
         val now = SystemClock.elapsedRealtime()
-        if (percent != lastPercent && (percent == 100 || now - lastNotified >= NOTIFY_INTERVAL_MS)) {
+        val changed = phase != lastPhase || (percent != lastPercent && (percent == 100 || now - lastNotified >= NOTIFY_INTERVAL_MS))
+        if (changed) {
             lastPercent = percent
+            lastPhase = phase
             lastNotified = now
-            setForegroundAsync(foregroundInfo(percent))
+            setForegroundAsync(foregroundInfo(progress))
         }
+    }
+
+    /**
+     * Ends without the transfer: the vault is locked after a restart, or Android refused the foreground
+     * service. It stays in the index; this says so where the progress was, instead of leaving the user
+     * to guess.
+     */
+    private fun paused(): Result {
+        val notification = builder()
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle(applicationContext.getString(if (isUpload) R.string.transfers_upload_paused else R.string.transfers_download_paused))
+            .setContentText(applicationContext.getString(R.string.transfers_paused_text))
+            .setContentIntent(openApp())
+            .setAutoCancel(true)
+            .build()
+        runCatching { applicationContext.getSystemService(NotificationManager::class.java).notify(id.hashCode(), notification) }
+        return Result.success()
+    }
+
+    private fun openApp(): PendingIntent? {
+        val launch = applicationContext.packageManager.getLaunchIntentForPackage(applicationContext.packageName) ?: return null
+        return PendingIntent.getActivity(applicationContext, 0, launch, PendingIntent.FLAG_IMMUTABLE)
     }
 
     /**
@@ -159,24 +190,40 @@ class TransferWorker @AssistedInject constructor(
      * is next on screen.
      */
     private suspend fun goForeground(): Boolean = try {
-        setForeground(foregroundInfo(0))
+        setForeground(foregroundInfo(null))
         true
     } catch (_: IllegalStateException) {
         // ForegroundServiceStartNotAllowedException is one.
         false
     }
 
-    private fun foregroundInfo(percent: Int): ForegroundInfo {
+    private fun builder(): NotificationCompat.Builder {
         val manager = applicationContext.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, applicationContext.getString(R.string.transfers_channel), NotificationManager.IMPORTANCE_LOW),
         )
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL)
+        return NotificationCompat.Builder(applicationContext, CHANNEL).setOnlyAlertOnce(true)
+    }
+
+    /** Sizes, not the name: the notification can show on the lock screen. Null before anything is known. */
+    private fun foregroundInfo(progress: TransferRegistry.Progress?): ForegroundInfo {
+        val moving = progress?.phase == TransferRegistry.Phase.MOVING
+        val text = when {
+            progress == null -> null
+            !moving -> applicationContext.getString(R.string.transfers_preparing)
+            else -> applicationContext.getString(
+                R.string.transfers_amount,
+                Formatter.formatShortFileSize(applicationContext, progress.done),
+                Formatter.formatShortFileSize(applicationContext, progress.total),
+            )
+        }
+        val notification = builder()
             .setSmallIcon(if (isUpload) android.R.drawable.stat_sys_upload else android.R.drawable.stat_sys_download)
             .setContentTitle(applicationContext.getString(if (isUpload) R.string.transfers_uploading else R.string.transfers_downloading))
-            .setProgress(100, percent, false)
+            .setContentText(text)
+            .setProgress(100, progress?.percent() ?: 0, !moving)
+            .setContentIntent(openApp())
             .setOngoing(true)
-            .setOnlyAlertOnce(true)
             .build()
         return ForegroundInfo(id.hashCode(), notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
@@ -189,6 +236,11 @@ class TransferWorker @AssistedInject constructor(
         private const val KIND_DOWNLOAD = "download"
         private const val CHANNEL = "transfers"
         private const val NOTIFY_INTERVAL_MS = 1_000L
+
+        /** The paused notice of a transfer the user cancelled; a running one's goes with its service. */
+        fun dismiss(context: Context, id: String) {
+            context.getSystemService(NotificationManager::class.java).cancel(id.hashCode())
+        }
 
         fun uploadName(id: String) = "upload-$id"
         fun downloadName(id: String) = "download-$id"

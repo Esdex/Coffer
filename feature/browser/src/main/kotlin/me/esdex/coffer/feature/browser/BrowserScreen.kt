@@ -112,6 +112,7 @@ import dev.chrisbanes.haze.hazeSource
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.index.FileStatus
+import me.esdex.coffer.core.storage.TransferLimiter
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.ui.components.AppDialog
 import me.esdex.coffer.core.ui.components.AppSheet
@@ -782,19 +783,58 @@ fun TransfersScreen(
                         )
                     }
                     Spacer(Modifier.height(10.dp))
-                    val progress = item.progress
-                    when {
-                        item.failure != null -> Text(stringResource(item.failure.label()), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-                        item.preparing -> Text(stringResource(R.string.browser_transfer_preparing), style = MaterialTheme.typography.bodySmall)
-                        progress != null && progress.total > 0 -> LinearProgressIndicator(progress = { progress.done.toFloat() / progress.total }, modifier = Modifier.fillMaxWidth())
-                        else -> Text(stringResource(R.string.browser_transfer_waiting), style = MaterialTheme.typography.bodySmall)
-                    }
+                    TransferStatus(item)
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (item.failure != null) OutlinedButton(onClick = { onRetry(item) }) { Text(stringResource(R.string.browser_retry)) }
                         TextButton(onClick = { onCancel(item) }) { Text(stringResource(R.string.browser_cancel)) }
                     }
                 }
+            }
+        }
+    }
+}
+
+/** What a transfer is doing: an error, a wait, or a bar with how much of how much has gone. */
+@Composable
+private fun TransferStatus(item: TransferItem) {
+    val context = LocalContext.current
+    val progress = item.progress
+    val small = MaterialTheme.typography.bodySmall
+    when {
+        item.failure != null -> Text(stringResource(item.failure.label()), color = MaterialTheme.colorScheme.error, style = small)
+        item.preparing -> {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+            Spacer(Modifier.height(6.dp))
+            Text(stringResource(R.string.browser_transfer_preparing), style = small)
+        }
+        progress == null -> Text(stringResource(R.string.browser_transfer_waiting), style = small)
+        progress.phase == TransferRegistry.Phase.QUEUED ->
+            Text(pluralStringResource(R.plurals.browser_transfer_queued, TransferLimiter.MAX_TRANSFERS, TransferLimiter.MAX_TRANSFERS), style = small)
+        else -> {
+            val moving = progress.phase == TransferRegistry.Phase.MOVING
+            // A part being read or encrypted moves nothing on the wire: a running bar, not a stuck one.
+            if (moving && progress.total > 0) {
+                LinearProgressIndicator(progress = { progress.done.toFloat() / progress.total }, modifier = Modifier.fillMaxWidth())
+            } else {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val amount = stringResource(
+                    R.string.transfers_amount,
+                    Formatter.formatShortFileSize(context, progress.done),
+                    Formatter.formatShortFileSize(context, progress.total),
+                )
+                Text(
+                    if (moving) amount else stringResource(R.string.transfers_preparing) + " · " + amount,
+                    style = small,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(stringResource(R.string.browser_transfer_percent, progress.percent()), style = MaterialTheme.typography.labelLarge)
             }
         }
     }

@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.KeyRing
 import me.esdex.coffer.core.crypto.LocalKeys
@@ -111,6 +112,31 @@ class SyncTest {
         assertEquals(sha256(source.open()), sink.hex())
         watcher.indexer.catchUp()
         assertEquals(FileStatus.READY, watcher.index.file(fileId)!!.status)
+    }
+
+    @Test
+    fun progressSaysWhenTheUploadIsPreparingRatherThanSending() = runBlocking {
+        val size = 512L * 1024 * 1024 + 5
+        val source = PatternSource(size)
+        val here = device()
+        var transfers = 0
+        cloud.onTransfer = { if (++transfers == 2) throw StorageException("connection lost") }
+        val prepared = here.prepare("big.bin", source)
+        val first = ContentLayout.encryptedPartSize(size, 0)
+        val total = first + ContentLayout.encryptedPartSize(size, 1)
+
+        val before = mutableListOf<Pair<TransferStage, Long>>()
+        runCatching { here.runner.run(prepared.upload, prepared.keys, source) { done, _, stage -> before += stage to done } }
+        assertEquals(TransferStage.PREPARING to 0L, before.first())
+        // Part 0 sent, part 1 being encrypted: nothing moves on the wire, and the report says so.
+        assertTrue(TransferStage.PREPARING to first in before)
+
+        val after = mutableListOf<Triple<TransferStage, Long, Long>>()
+        here.runner.run(here.index.uploads().single(), prepared.keys, source) { done, all, stage -> after += Triple(stage, done, all) }
+        // A resume re-reads part 0 for the hash: that counts as done already, but is preparing.
+        assertEquals(Triple(TransferStage.PREPARING, first, total), after.first())
+        assertTrue(after.filter { it.first == TransferStage.MOVING }.all { it.second >= first })
+        assertEquals(Triple(TransferStage.MOVING, total, total), after.last())
     }
 
     @Test

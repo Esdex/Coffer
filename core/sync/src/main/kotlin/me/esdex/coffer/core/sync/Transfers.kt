@@ -101,6 +101,18 @@ class UploadPreparer(private val keys: VaultKeys, private val index: VaultIndex,
  */
 // usableSpace leaves out cache the system could clear: an upload refused for space it might have had is
 // better than one that runs out of it in the middle of a part.
+/** What a transfer is busy with, for whoever shows its progress. */
+enum class TransferStage {
+    /**
+     * Reading the source with nothing on the wire: hashing parts already sent before a resume, or
+     * encrypting the next part. A 512 MiB part takes a while, and a bar that does not move looks stuck.
+     */
+    PREPARING,
+
+    /** Bytes going to or coming from Telegram. */
+    MOVING,
+}
+
 @SuppressLint("UsableSpace")
 class UploadRunner(
     private val sodium: Sodium,
@@ -109,7 +121,12 @@ class UploadRunner(
     private val tempDir: File,
     private val freeSpace: () -> Long = { tempDir.usableSpace },
 ) {
-    suspend fun run(upload: PendingUpload, keys: TransferKeys, source: UploadSource, onProgress: (done: Long, total: Long) -> Unit = { _, _ -> }) {
+    suspend fun run(
+        upload: PendingUpload,
+        keys: TransferKeys,
+        source: UploadSource,
+        onProgress: (done: Long, total: Long, stage: TransferStage) -> Unit = { _, _, _ -> },
+    ) {
         val fileId = checkNotNull(upload.fileId) { "upload not prepared" }
         val file = checkNotNull(index.file(fileId)) { "upload has no index entry" }
         val plainSize = file.plainSize
@@ -119,7 +136,7 @@ class UploadRunner(
         val hasher = ContentHasher(sodium)
         val sent = index.parts(fileId)
         var done = sizes.filterIndexed { part, _ -> part in sent }.sum()
-        onProgress(done, total)
+        onProgress(done, total, TransferStage.PREPARING)
 
         source.open().buffered(BUFFER).use { input ->
             for (part in 0 until encryptor.partCount) {
@@ -127,6 +144,7 @@ class UploadRunner(
                     hashOnly(input, partPlainSize(plainSize, part), hasher)
                     continue
                 }
+                onProgress(done, total, TransferStage.PREPARING)
                 // Created first: File.usableSpace reports 0 for a path that does not exist.
                 tempDir.mkdirs()
                 val needed = sizes[part] + SPACE_MARGIN
@@ -139,13 +157,13 @@ class UploadRunner(
                         // Shorter or longer than when it was hashed: the file changed.
                         throw abandon(upload, fileId)
                     }
-                    val message = storage.sendBlob(temp, upload.captions[part]) { onProgress(done + it.done, total) }
+                    val message = storage.sendBlob(temp, upload.captions[part]) { onProgress(done + it.done, total, TransferStage.MOVING) }
                     index.putPart(fileId, part, message.id)
                 } finally {
                     temp.delete()
                 }
                 done += sizes[part]
-                onProgress(done, total)
+                onProgress(done, total, TransferStage.MOVING)
             }
         }
         if (hasher.finish() != keys.contentHash) throw abandon(upload, fileId)
