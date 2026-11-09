@@ -20,7 +20,9 @@ data class Argon2Params(val opsLimit: Long, val memLimitBytes: Long) {
         val OPS_RANGE = 1L..16L
         val MEM_RANGE = 8L * 1024 * 1024..1024L * 1024 * 1024
 
-        val DEFAULT = Argon2Params(opsLimit = 3, memLimitBytes = 64L * 1024 * 1024)
+        // Measured 2026-11-09: 64 MiB and 3 passes took 196-201 ms on a Nothing Phone (1), well under the
+        // 0.5-1 s SPEC §3.3 aims for. Memory is what makes guessing expensive, so it doubled first.
+        val DEFAULT = Argon2Params(opsLimit = 4, memLimitBytes = 128L * 1024 * 1024)
     }
 }
 

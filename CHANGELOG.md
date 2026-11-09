@@ -7,6 +7,7 @@
 - Public build: enter your own Telegram API keys (api_id and api_hash) on first start.
 - A first-start screen explaining what Coffer does and that its files in Saved Messages must not be deleted there.
 - Create a vault: a password checked for strength, a 24-word recovery key, and a check that it was written down.
+- The vault password is stretched with Argon2id at 128 MiB and 4 passes, about half a second on a recent phone; an existing vault takes the new strength at its next password change.
 - Unlock the vault with its password, the recovery key, or fingerprint and screen lock.
 - The vault locks after 5 minutes in the background.
 - Add files to the vault: they are encrypted on the phone and sent to Saved Messages, with progress in a notification and a Transfers screen; interrupted uploads resume.

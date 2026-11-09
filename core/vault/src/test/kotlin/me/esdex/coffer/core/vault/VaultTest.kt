@@ -174,7 +174,8 @@ class VaultManagerTest {
 
         val created = manager.prepareNew("a password for the manager")
         assertEquals(42, created.header.createdAt)
-        assertEquals(Argon2Params.DEFAULT, created.header.argon)
+        // SPEC §3.3, calibrated on a real phone: 128 MiB and 4 passes.
+        assertEquals(Argon2Params(opsLimit = 4, memLimitBytes = 128L * 1024 * 1024), created.header.argon)
         manager.publish(storage, created)
         val unlocked = manager.state.value as VaultManager.State.Unlocked
 
