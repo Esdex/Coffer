@@ -17,6 +17,9 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/** Coffer's own lines about TDLib: states, counts, ids and timings, never message content (SPEC §8). */
+internal const val TAG = "CofferTdlib"
+
 /** Telegram API keys (BYO api_id). The hash is a secret: it never appears in [toString]. */
 class ApiCredentials(val apiId: Int, val apiHash: String) {
     init {
@@ -110,6 +113,8 @@ class TelegramSession(config: TdlibConfig) {
 
     private fun onUpdate(update: TdApi.Object) {
         if (update is TdApi.UpdateAuthorizationState) onAuthorizationState(update.authorizationState)
+        // A send that waits for minutes is often a send waiting for the network.
+        if (update is TdApi.UpdateConnectionState) Log.i(TAG, "connection state ${update.state.javaClass.simpleName}")
         for (listener in listeners) listener(update)
         updateFlow.tryEmit(update)
     }
@@ -255,8 +260,6 @@ class TelegramSession(config: TdlibConfig) {
     }
 
     private companion object {
-        const val TAG = "CofferTdlib"
-
         /**
          * TDLib logs to logcat at a high verbosity by default, including message text and file paths.
          * Errors only (SPEC §8).

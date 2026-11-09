@@ -1,5 +1,7 @@
 package me.esdex.coffer.core.tdlib
 
+import android.os.SystemClock
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -84,17 +86,28 @@ class TdlibStorageBackend internal constructor(
         content: TdApi.InputMessageContent,
         onPending: (TdApi.Message) -> Unit = {},
     ): StoredMessage {
+        val kind = if (content is TdApi.InputMessageText) "text" else "blob"
         val pending = session.send(TdApi.SendMessage(chatId, null, null, null, null, content))
         if (pending.sendingState == null) return pending.toStored()
+        val started = SystemClock.elapsedRealtime()
+        fun elapsed() = SystemClock.elapsedRealtime() - started
+        Log.i(TAG, "send $kind ${pending.id} pending")
         val outcome = outcomeOf(pending.id)
         try {
             onPending(pending)
             return when (val result = outcome.await()) {
-                is TdApi.UpdateMessageSendSucceeded -> result.message.toStored()
-                is TdApi.UpdateMessageSendFailed -> throw result.error.toException()
+                is TdApi.UpdateMessageSendSucceeded -> {
+                    Log.i(TAG, "send $kind ${pending.id} sent as ${result.message.id} after ${elapsed()} ms")
+                    result.message.toStored()
+                }
+                is TdApi.UpdateMessageSendFailed -> {
+                    Log.w(TAG, "send $kind ${pending.id} failed with ${result.error.code} after ${elapsed()} ms")
+                    throw result.error.toException()
+                }
                 else -> error("unexpected send result")
             }
         } catch (e: CancellationException) {
+            Log.i(TAG, "send $kind ${pending.id} cancelled after ${elapsed()} ms")
             synchronized(sendLock) { waiting.remove(pending.id) }
             // Deleting a message that is still being sent stops its upload; it never reaches the server.
             withContext(NonCancellable) {
