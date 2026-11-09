@@ -57,6 +57,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DriveFolderUpload
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.Home
@@ -210,10 +211,19 @@ fun BrowserScreen(
         viewModel.upload(uris.map { uri -> context.uploadRequest(uri, folderId) })
     }
 
+    // A folder saved from its own menu, or else the selection.
+    var savingFolder by remember { mutableStateOf<Id?>(null) }
     val exportTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val folder = savingFolder
+        savingFolder = null
         if (uri == null) return@rememberLauncherForActivityResult
         askForNotifications()
-        viewModel.exportSelected(uri)
+        if (folder != null) viewModel.exportFolder(folder, uri) else viewModel.exportSelected(uri)
+    }
+    val importTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        askForNotifications()
+        viewModel.importFolder(uri)
     }
 
     // Decrypted files go straight to the app that can show them.
@@ -354,13 +364,10 @@ fun BrowserScreen(
                         enter = slideInVertically { it } + fadeIn(),
                         exit = slideOutVertically { it } + fadeOut(),
                     ) {
-                        val shownTree = tree
-                        val pickedFiles = listing.files.filter { it.fileId in selection }
                         SelectionActions(
                             onMove = { movingSelection = true },
-                            // Files only, and only whole ones; a folder with its contents is a later step.
-                            canSave = shownTree != null && selection.none { it in shownTree.folders } &&
-                                pickedFiles.size == selection.size && pickedFiles.all { it.status == FileStatus.READY },
+                            // Folders go with what is in them; files that are not whole are left out and said so.
+                            canSave = true,
                             onSave = { exportTree.launch(null) },
                             onDelete = { deletingSelection = true },
                         )
@@ -400,6 +407,10 @@ fun BrowserScreen(
                                     RowAction.RENAME -> renaming = Target.Folder(item)
                                     RowAction.MOVE -> moving = Target.Folder(item)
                                     RowAction.DELETE -> deletingFolder = item
+                                    RowAction.EXPORT -> {
+                                        savingFolder = item.folderId
+                                        exportTree.launch(null)
+                                    }
                                     else -> Unit
                                 }
                             },
@@ -426,6 +437,7 @@ fun BrowserScreen(
     if (adding) {
         AddSheet(
             onFiles = { adding = false; pick.launch(arrayOf("*/*")) },
+            onPhoneFolder = { adding = false; importTree.launch(null) },
             onFolder = { adding = false; creatingFolder = true },
             onDismiss = { adding = false },
         )
@@ -622,7 +634,7 @@ private fun Breadcrumbs(path: List<FolderItem>, onRoot: () -> Unit, onFolder: (I
 /** Add to the folder on screen: files from the phone, or a new folder. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddSheet(onFiles: () -> Unit, onFolder: () -> Unit, onDismiss: () -> Unit) {
+private fun AddSheet(onFiles: () -> Unit, onPhoneFolder: () -> Unit, onFolder: () -> Unit, onDismiss: () -> Unit) {
     AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
             SettingsGroup(title = null) {
@@ -633,6 +645,15 @@ private fun AddSheet(onFiles: () -> Unit, onFolder: () -> Unit, onDismiss: () ->
                         subtitle = stringResource(R.string.browser_add_files_sub),
                         leading = { GroupedRoundIcon(Icons.Outlined.UploadFile, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer) },
                         onClick = onFiles,
+                    )
+                }
+                row { shape ->
+                    GroupedRow(
+                        shape,
+                        title = stringResource(R.string.browser_add_folder),
+                        subtitle = stringResource(R.string.browser_add_folder_sub),
+                        leading = { GroupedRoundIcon(Icons.Outlined.DriveFolderUpload, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer) },
+                        onClick = onPhoneFolder,
                     )
                 }
                 row { shape ->
@@ -837,6 +858,7 @@ private fun FolderRow(
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 MenuItem(Icons.Outlined.Edit, R.string.browser_rename) { menu = false; onAction(RowAction.RENAME) }
                 MenuItem(Icons.AutoMirrored.Outlined.DriveFileMove, R.string.browser_move) { menu = false; onAction(RowAction.MOVE) }
+                MenuItem(Icons.Outlined.SaveAlt, R.string.browser_save_folder) { menu = false; onAction(RowAction.EXPORT) }
                 MenuItem(Icons.Outlined.Delete, R.string.browser_delete, destructive = true) { menu = false; onAction(RowAction.DELETE) }
             }
         }

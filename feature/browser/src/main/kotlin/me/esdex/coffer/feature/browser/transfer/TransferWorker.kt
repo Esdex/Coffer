@@ -82,6 +82,7 @@ class TransferWorker @AssistedInject constructor(
             registry.remove(fileId)
             // A file shared into Coffer was copied for this upload (SPEC §6, step 1); done with it.
             ShareInbox.deleteCopy(applicationContext, source)
+            releaseFolderGrants(applicationContext, index)
             Result.success()
         } catch (_: SourceChangedException) {
             // Abandoned and out of the queue: its copy, if any, has nothing left to serve.
@@ -138,7 +139,7 @@ class TransferWorker @AssistedInject constructor(
         }
         index.removeDownload(id)
         if (failure == null) registry.remove(download.fileId)
-        if (index.downloads().none { it.sealedTarget != null }) releaseFolderGrants(applicationContext)
+        releaseFolderGrants(applicationContext, index)
         return if (failure == null) Result.success() else Result.failure()
     }
 

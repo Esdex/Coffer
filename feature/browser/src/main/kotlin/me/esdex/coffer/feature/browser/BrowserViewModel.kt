@@ -159,12 +159,27 @@ class BrowserViewModel @Inject constructor(
         act { content.moveMany(folders, files, destination) }
     }
 
-    /** Files only: saving a folder with what is in it is a later step. */
+    /** Files and folders, each folder with everything in it. */
     fun exportSelected(tree: Uri) {
-        val (_, files) = takeSelection()
+        val (folders, files) = takeSelection()
+        export(tree, folders, files)
+    }
+
+    fun exportFolder(folderId: Id, tree: Uri) = export(tree, listOf(folderId), emptyList())
+
+    private fun export(tree: Uri, folders: List<Id>, files: List<Id>) {
         viewModelScope.launch {
-            val failed = content.exportTo(tree, files)
-            if (failed > 0) messagesFlow.emit(R.string.browser_export_some_failed)
+            val count = content.exportTo(tree, folders, files)
+            if (count.notReady > 0) messagesFlow.emit(R.string.browser_export_not_ready)
+            if (count.failed > 0) messagesFlow.emit(R.string.browser_export_some_failed)
+        }
+    }
+
+    /** A folder from the phone into the folder on screen, with everything in it. */
+    fun importFolder(tree: Uri) {
+        val parent = listing.value.folderId
+        act {
+            if (content.importFolder(tree, parent) == 0) messagesFlow.emit(R.string.browser_import_empty)
         }
     }
 

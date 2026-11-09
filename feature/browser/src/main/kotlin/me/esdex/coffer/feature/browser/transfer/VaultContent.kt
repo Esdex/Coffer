@@ -13,13 +13,18 @@ import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
 import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
+import java.io.IOException
+import java.util.UUID
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,10 +34,13 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.crypto.format.LocalUpload
 import me.esdex.coffer.core.crypto.sodium.Sodium
+import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.index.PendingDownload
 import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
@@ -49,15 +57,11 @@ import me.esdex.coffer.core.sync.VaultOps
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.sync.eachWaitingOutFloods
 import me.esdex.coffer.core.sync.transferKeys
+import me.esdex.coffer.core.sync.waitingOutFloods
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
-import java.io.File
-import java.io.IOException
-import java.util.UUID
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /** Saved Messages once TDLib is signed in, or null if it does not get there in time. */
 suspend fun Telegram.readyStorage(timeoutMillis: Long = 60_000): StorageBackend? {
@@ -432,28 +436,60 @@ class VaultContent @Inject constructor(
     }
 
     /**
-     * Saves a decrypted copy of each file into [tree], a folder the user picked. The downloads may
-     * outlive this process (SPEC §6), so the grant on the folder is kept until none is left (see
-     * [releaseFolderGrants]). Returns how many could not be started: the folder refused a new file.
+     * Saves decrypted copies into [tree], a folder the user picked: each file, and each folder with
+     * everything in it and its shape (see [saveOut]). The downloads may outlive this process (SPEC §6),
+     * so the grant on the folder is kept until nothing is left to write (see [releaseFolderGrants]).
      */
-    suspend fun exportTo(tree: Uri, fileIds: List<Id>): Int {
-        val keys = keysFlow.value ?: return fileIds.size
+    suspend fun exportTo(tree: Uri, folderIds: List<Id>, fileIds: List<Id>): SaveCount {
+        val keys = keysFlow.value ?: return SaveCount(failed = fileIds.size)
         val resolver = context.contentResolver
         runCatching { resolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        var failed = 0
-        for (fileId in fileIds) {
-            val file = index.file(fileId) ?: continue
-            val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: continue
+        val vaultTree = VaultTree.of(index, keys)
+        suspend fun ready(fileId: Id) = index.file(fileId)?.status == FileStatus.READY
+        suspend fun save(fileId: Id, into: Uri): Boolean {
+            val meta = vaultTree.files[fileId] ?: return false
             // A name taken already gets a number from the folder's provider, as any app's would.
-            val target = runCatching { DocumentsContract.createDocument(resolver, parent, meta.mime, meta.name) }.getOrNull()
-            if (target == null) {
-                failed++
-                continue
-            }
+            val target = runCatching { DocumentsContract.createDocument(resolver, into, meta.mime, meta.name) }.getOrNull() ?: return false
             download(fileId, target)
+            return true
         }
-        return failed
+        var count = SaveCount()
+        for (folderId in folderIds) {
+            count += saveOut(
+                vaultTree, folderId, parent, ::ready,
+                createFolder = { name, into -> runCatching { DocumentsContract.createDocument(resolver, into, DocumentsContract.Document.MIME_TYPE_DIR, name) }.getOrNull() },
+                saveFile = ::save,
+            )
+        }
+        for (fileId in fileIds) {
+            count += when {
+                !ready(fileId) -> SaveCount(notReady = 1)
+                save(fileId, parent) -> SaveCount(started = 1)
+                else -> SaveCount(failed = 1)
+            }
+        }
+        return count
+    }
+
+    /**
+     * Brings [tree], a folder the user picked on the phone, into the vault under [parentId] with its
+     * shape (see [bringIn]), and queues its files. The uploads read them later, maybe after a restart,
+     * so the grant on the folder is kept until nothing is left to read (see [releaseFolderGrants]).
+     * Returns how many files were queued.
+     */
+    suspend fun importFolder(tree: Uri, parentId: Id?): Int {
+        val resolver = context.contentResolver
+        runCatching { resolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        val folder = withContext(Dispatchers.IO) { resolver.readPhoneFolder(tree) }
+        val files = withOps { ops, _, _ ->
+            bringIn(folder, parentId) { name, parent ->
+                val fitted = FileNames.fitForImport(name).takeIf(FileNames::isValid) ?: FOLDER_FALLBACK_NAME
+                waitingOutFloods { ops.createFolder(fitted, parent) }
+            }
+        } ?: return 0
+        upload(files.map { (file, folderId) -> UploadRequest(file.uri.toUri(), file.name, file.mime, folderId) })
+        return files.size
     }
 
     suspend fun cancelUpload(uploadId: String) {
@@ -503,10 +539,12 @@ internal fun OneTimeWorkRequest.Builder.withTransferDefaults(kind: String, id: S
 private const val SYNC_TAG = "CofferSync"
 
 /**
- * Lets go of folders picked for saving copies (see [VaultContent.exportTo]) once no download is left to
- * write there. Only folder grants: an upload holds its own grant on the file it reads.
+ * Lets go of the phone folders picked for saving copies or bringing in a folder (see
+ * [VaultContent.exportTo], [VaultContent.importFolder]) once no transfer is left that reads or writes
+ * through them. Only folder grants: a file picked by itself keeps the grant of its own.
  */
-fun releaseFolderGrants(context: Context) {
+suspend fun releaseFolderGrants(context: Context, index: VaultIndex) {
+    if (index.uploads().isNotEmpty() || index.downloads().any { it.sealedTarget != null }) return
     val resolver = context.contentResolver
     for (grant in resolver.persistedUriPermissions) {
         if (DocumentsContract.isTreeUri(grant.uri)) {
@@ -514,3 +552,5 @@ fun releaseFolderGrants(context: Context) {
         }
     }
 }
+
+private const val FOLDER_FALLBACK_NAME = "Folder"

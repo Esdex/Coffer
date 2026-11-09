@@ -11,15 +11,17 @@ import me.esdex.coffer.core.storage.FloodWaitException
  * action here may run twice safely: what it already did shows in the index, or repeats harmlessly.
  */
 suspend fun <T> eachWaitingOutFloods(items: Iterable<T>, onWait: (seconds: Int) -> Unit = {}, action: suspend (T) -> Unit) {
-    for (item in items) {
-        while (true) {
-            try {
-                action(item)
-                break
-            } catch (e: FloodWaitException) {
-                onWait(e.seconds)
-                delay(e.seconds * 1000L)
-            }
+    for (item in items) waitingOutFloods(onWait) { action(item) }
+}
+
+/** One action of a batch, tried again after each FLOOD_WAIT until it goes through (see [eachWaitingOutFloods]). */
+suspend fun <R> waitingOutFloods(onWait: (seconds: Int) -> Unit = {}, action: suspend () -> R): R {
+    while (true) {
+        try {
+            return action()
+        } catch (e: FloodWaitException) {
+            onWait(e.seconds)
+            delay(e.seconds * 1000L)
         }
     }
 }
