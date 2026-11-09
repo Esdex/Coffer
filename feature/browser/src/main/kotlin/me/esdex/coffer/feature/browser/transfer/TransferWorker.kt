@@ -153,11 +153,14 @@ class TransferWorker @AssistedInject constructor(
         // Android drops updates beyond about 5 a second, and on a fast network the percent moves faster.
         val now = SystemClock.elapsedRealtime()
         val changed = phase != lastPhase || (percent != lastPercent && (percent == 100 || now - lastNotified >= NOTIFY_INTERVAL_MS))
-        if (changed) {
+        // A late report after a stop would bring back a notice WorkManager has just taken down.
+        if (changed && !isStopped) {
             lastPercent = percent
             lastPhase = phase
             lastNotified = now
-            setForegroundAsync(foregroundInfo(progress))
+            // Straight to the notification: setForegroundAsync also restarts the service, which posts it
+            // twice milliseconds apart, and Android then drops one now and then (seen 2026-11-09).
+            notifications().notify(id.hashCode(), notification(progress).build())
         }
     }
 
@@ -174,7 +177,7 @@ class TransferWorker @AssistedInject constructor(
             .setContentIntent(openApp())
             .setAutoCancel(true)
             .build()
-        runCatching { applicationContext.getSystemService(NotificationManager::class.java).notify(id.hashCode(), notification) }
+        runCatching { notifications().notify(id.hashCode(), notification) }
         return Result.success()
     }
 
@@ -197,16 +200,25 @@ class TransferWorker @AssistedInject constructor(
         false
     }
 
+    private fun notifications(): NotificationManager = applicationContext.getSystemService(NotificationManager::class.java)
+
     private fun builder(): NotificationCompat.Builder {
-        val manager = applicationContext.getSystemService(NotificationManager::class.java)
+        val manager = notifications()
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, applicationContext.getString(R.string.transfers_channel), NotificationManager.IMPORTANCE_LOW),
         )
         return NotificationCompat.Builder(applicationContext, CHANNEL).setOnlyAlertOnce(true)
     }
 
-    /** Sizes, not the name: the notification can show on the lock screen. Null before anything is known. */
-    private fun foregroundInfo(progress: TransferRegistry.Progress?): ForegroundInfo {
+    private fun foregroundInfo(progress: TransferRegistry.Progress?): ForegroundInfo =
+        ForegroundInfo(id.hashCode(), notification(progress).setOngoing(true).build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+
+    /**
+     * Sizes, not the name: the notification can show on the lock screen. Null before anything is known.
+     * Not ongoing by itself: the service keeps it in place while it runs, and one that outlives it can be
+     * swiped away.
+     */
+    private fun notification(progress: TransferRegistry.Progress?): NotificationCompat.Builder {
         val moving = progress?.phase == TransferRegistry.Phase.MOVING
         val text = when {
             progress == null -> null
@@ -217,15 +229,12 @@ class TransferWorker @AssistedInject constructor(
                 Formatter.formatShortFileSize(applicationContext, progress.total),
             )
         }
-        val notification = builder()
+        return builder()
             .setSmallIcon(if (isUpload) android.R.drawable.stat_sys_upload else android.R.drawable.stat_sys_download)
             .setContentTitle(applicationContext.getString(if (isUpload) R.string.transfers_uploading else R.string.transfers_downloading))
             .setContentText(text)
             .setProgress(100, progress?.percent() ?: 0, !moving)
             .setContentIntent(openApp())
-            .setOngoing(true)
-            .build()
-        return ForegroundInfo(id.hashCode(), notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
     }
 
     companion object {
