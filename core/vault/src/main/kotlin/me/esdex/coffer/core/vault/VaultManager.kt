@@ -42,6 +42,9 @@ class VaultManager(
 
     private val lock = Mutex()
     private var headers: List<FoundHeader> = store.headers()
+
+    /** Counts writes of [headers], so a search that took a while can tell it was overtaken. */
+    private var headerWrites = 0L
     private val stateFlow = MutableStateFlow(lockedOrUnknown())
     val state: StateFlow<State> = stateFlow.asStateFlow()
 
@@ -57,10 +60,17 @@ class VaultManager(
      * password changed on another device is picked up.
      */
     suspend fun locate(storage: StorageBackend) {
-        val firstTime = lock.withLock { headers.isEmpty() && stateFlow.value !is State.Unlocked }
+        val (firstTime, startedAt) = lock.withLock { (headers.isEmpty() && stateFlow.value !is State.Unlocked) to headerWrites }
         if (firstTime) stateFlow.value = State.Searching(0)
         val found = VaultHeaders.find(storage) { scanned -> if (firstTime) stateFlow.value = State.Searching(scanned) }
         lock.withLock {
+            // Headers were written while this search was out (a password change, a new vault): what it
+            // found may be older than that, and the newer headers stay.
+            if (headerWrites != startedAt) {
+                // Whoever wrote also set the state; only a search screen this one put up is left to undo.
+                if (stateFlow.value is State.Searching) stateFlow.value = lockedOrUnknown()
+                return
+            }
             val current = stateFlow.value
             if (current is State.Unlocked) {
                 // Keep only headers of the open vault; another vault's header must not replace it.
@@ -79,6 +89,7 @@ class VaultManager(
 
     private fun remember(found: List<FoundHeader>) {
         headers = found
+        headerWrites++
         store.saveHeaders(found)
     }
 

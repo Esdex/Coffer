@@ -2,6 +2,9 @@ package me.esdex.coffer.core.vault
 
 import com.goterl.lazysodium.LazySodiumJava
 import com.goterl.lazysodium.SodiumJava
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import me.esdex.coffer.core.crypto.Argon2Params
 import me.esdex.coffer.core.crypto.Bytes
@@ -17,6 +20,7 @@ import me.esdex.coffer.core.storage.MessageContent
 import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.storage.StorageException
+import me.esdex.coffer.core.storage.StoredMessage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -277,6 +281,31 @@ class VaultManagerTest {
         assertTrue(fresh.unlockWithPassword("new password before cut"))
         fresh.lockVault()
         assertTrue(fresh.unlockWithPassword("old password before cut"))
+    }
+
+    @Test
+    fun aRefreshThatStartedBeforeAPasswordChangeDoesNotUndoIt() = runTest {
+        val cloud = FakeCloud()
+        val storage = cloud.device()
+        val manager = manager()
+        manager.locate(storage)
+        manager.publish(storage, manager.prepareNew("password before the change"))
+        // The refresh at startup has read the pinned headers (the old one) and is still on its way back.
+        val gate = CompletableDeferred<Unit>()
+        val slow = object : StorageBackend by storage {
+            override suspend fun pinnedMessages(): List<StoredMessage> = storage.pinnedMessages().also { gate.await() }
+        }
+        val refresh = launch { manager.locate(slow) }
+        runCurrent()
+        assertEquals(VaultManager.PasswordChange.Changed, manager.changePassword(storage, "password before the change", "password after the change"))
+        gate.complete(Unit)
+        refresh.join()
+
+        // The new header is what this device remembers: the new password opens the vault without the network.
+        manager.lockVault()
+        val again = manager(VaultStore(temp.root))
+        assertTrue(again.unlockWithPassword("password after the change"))
+        assertEquals(storage.pinnedMessages().single().id, VaultStore(temp.root).headers().first().messageId)
     }
 
     @Test
