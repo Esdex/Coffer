@@ -58,6 +58,24 @@
 
     <string name="browser_status_uploading">Uploading</string>
     <string name="browser_status_deleting">Deleting</string>
+    <plurals name="browser_selected_count">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <string name="browser_cd_cancel_selection">Cancel selection</string>
+    <string name="browser_cd_picked">Selected</string>
+    <string name="browser_select_all">Select all</string>
+    <string name="browser_save">Save</string>
+    <plurals name="browser_delete_many_title">
+        <item quantity="one">Delete %1$d item?</item>
+        <item quantity="other">Delete %1$d items?</item>
+    </plurals>
+    <string name="browser_delete_many_text">They are removed from Saved Messages for good. A folder goes with everything in it.</string>
+    <plurals name="browser_move_many_title">
+        <item quantity="one">Move %1$d item</item>
+        <item quantity="other">Move %1$d items</item>
+    </plurals>
+    <string name="browser_export_some_failed">Some files could not be saved in that folder.</string>
     <string name="browser_status_incomplete">Incomplete: some parts are still on their way</string>
     <string name="browser_status_damaged">Damaged: a part is missing from Saved Messages (deleted outside Coffer, or the upload never finished)</string>
 

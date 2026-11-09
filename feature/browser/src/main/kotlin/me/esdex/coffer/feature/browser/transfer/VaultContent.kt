@@ -1,7 +1,9 @@
 package me.esdex.coffer.feature.browser.transfer
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.work.Constraints
@@ -45,6 +47,7 @@ import me.esdex.coffer.core.sync.UploadRunner
 import me.esdex.coffer.core.sync.VaultKeys
 import me.esdex.coffer.core.sync.VaultOps
 import me.esdex.coffer.core.sync.VaultTree
+import me.esdex.coffer.core.sync.eachWaitingOutFloods
 import me.esdex.coffer.core.sync.transferKeys
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
@@ -408,6 +411,51 @@ class VaultContent @Inject constructor(
         }
     }
 
+    /**
+     * Deletes all of them, folders first: a file inside one goes with it. Every row says Deleting from
+     * the start, and each one disappears as its operation goes out.
+     */
+    suspend fun deleteMany(folderIds: List<Id>, fileIds: List<Id>) {
+        val all = folderIds + fileIds
+        deletingFlow.update { it + all }
+        try {
+            eachWaitingOutFloods(folderIds) { deleteFolder(it) }
+            eachWaitingOutFloods(fileIds) { if (index.file(it) != null) delete(it) }
+        } finally {
+            deletingFlow.update { it - all.toSet() }
+        }
+    }
+
+    suspend fun moveMany(folderIds: List<Id>, fileIds: List<Id>, destination: Id?) {
+        eachWaitingOutFloods(folderIds) { moveFolder(it, destination) }
+        eachWaitingOutFloods(fileIds) { moveFile(it, destination) }
+    }
+
+    /**
+     * Saves a decrypted copy of each file into [tree], a folder the user picked. The downloads may
+     * outlive this process (SPEC §6), so the grant on the folder is kept until none is left (see
+     * [releaseFolderGrants]). Returns how many could not be started: the folder refused a new file.
+     */
+    suspend fun exportTo(tree: Uri, fileIds: List<Id>): Int {
+        val keys = keysFlow.value ?: return fileIds.size
+        val resolver = context.contentResolver
+        runCatching { resolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        var failed = 0
+        for (fileId in fileIds) {
+            val file = index.file(fileId) ?: continue
+            val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: continue
+            // A name taken already gets a number from the folder's provider, as any app's would.
+            val target = runCatching { DocumentsContract.createDocument(resolver, parent, meta.mime, meta.name) }.getOrNull()
+            if (target == null) {
+                failed++
+                continue
+            }
+            download(fileId, target)
+        }
+        return failed
+    }
+
     suspend fun cancelUpload(uploadId: String) {
         WorkManager.getInstance(context).cancelUniqueWork(TransferWorker.uploadName(uploadId))
         TransferWorker.dismiss(context, uploadId)
@@ -453,3 +501,16 @@ internal fun OneTimeWorkRequest.Builder.withTransferDefaults(kind: String, id: S
     .setInputData(workDataOf(TransferWorker.KEY_KIND to kind, TransferWorker.KEY_ID to id))
 
 private const val SYNC_TAG = "CofferSync"
+
+/**
+ * Lets go of folders picked for saving copies (see [VaultContent.exportTo]) once no download is left to
+ * write there. Only folder grants: an upload holds its own grant on the file it reads.
+ */
+fun releaseFolderGrants(context: Context) {
+    val resolver = context.contentResolver
+    for (grant in resolver.persistedUriPermissions) {
+        if (DocumentsContract.isTreeUri(grant.uri)) {
+            runCatching { resolver.releasePersistableUriPermission(grant.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        }
+    }
+}

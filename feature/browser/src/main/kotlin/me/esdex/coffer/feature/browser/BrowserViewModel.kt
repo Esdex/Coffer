@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.transformLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.index.FileStatus
@@ -45,9 +46,14 @@ data class FileItem(
     val status: FileStatus,
     /** Its delete is on the way to Telegram. */
     val deleting: Boolean = false,
-)
+) {
+    /** An upload is left alone until it is done (SPEC §5.2), and a delete on its way is final. */
+    val selectable: Boolean get() = status != FileStatus.UPLOADING && !deleting
+}
 
-data class FolderItem(val folderId: Id, val name: String, val deleting: Boolean = false)
+data class FolderItem(val folderId: Id, val name: String, val deleting: Boolean = false) {
+    val selectable: Boolean get() = !deleting
+}
 
 /** What one screen of the browser shows. */
 data class Listing(
@@ -114,6 +120,53 @@ class BrowserViewModel @Inject constructor(
             },
         )
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val selectionFlow = MutableStateFlow<Set<Id>>(emptySet())
+
+    /** Files and folders picked for one action on all of them: only those still in the vault. */
+    val selection: StateFlow<Set<Id>> = combine(selectionFlow, contents) { picked, contents ->
+        if (contents == null) emptySet() else picked.filterTo(HashSet()) { it in contents.files || it in contents.tree.folders }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    fun toggleSelected(id: Id) = selectionFlow.update { if (id in it) it - id else it + id }
+
+    /** Everything on screen that can be picked: not what is being uploaded or deleted. */
+    fun selectAll() {
+        val shown = listing.value
+        selectionFlow.value = (shown.folders.filter { it.selectable }.map { it.folderId } + shown.files.filter { it.selectable }.map { it.fileId }).toSet()
+    }
+
+    fun clearSelection() {
+        selectionFlow.value = emptySet()
+    }
+
+    /** The selection split into folders and files, then cleared: the action takes it from here. */
+    private fun takeSelection(): Pair<List<Id>, List<Id>> {
+        val picked = selection.value
+        val tree = contents.value?.tree
+        clearSelection()
+        val folders = picked.filter { tree != null && it in tree.folders }
+        return folders to (picked - folders.toSet()).toList()
+    }
+
+    fun deleteSelected() {
+        val (folders, files) = takeSelection()
+        act { content.deleteMany(folders, files) }
+    }
+
+    fun moveSelected(destination: Id?) {
+        val (folders, files) = takeSelection()
+        act { content.moveMany(folders, files, destination) }
+    }
+
+    /** Files only: saving a folder with what is in it is a later step. */
+    fun exportSelected(tree: Uri) {
+        val (_, files) = takeSelection()
+        viewModelScope.launch {
+            val failed = content.exportTo(tree, files)
+            if (failed > 0) messagesFlow.emit(R.string.browser_export_some_failed)
+        }
+    }
 
     /** The whole tree, for picking where to move something; null while locked. */
     val tree: StateFlow<VaultTree?> = contents.map { it?.tree }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)

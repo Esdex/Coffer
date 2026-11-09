@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.EaseInOutCubic
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -24,6 +25,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -37,30 +39,35 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileOpen
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
-import androidx.compose.material.icons.outlined.SaveAlt
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SelectAll
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.Badge
@@ -80,9 +87,11 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -96,6 +105,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -111,11 +121,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
+import java.util.Date
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.storage.TransferLimiter
 import me.esdex.coffer.core.sync.VaultTree
+import me.esdex.coffer.core.sync.canTake
 import me.esdex.coffer.core.tdlib.Connection
 import me.esdex.coffer.core.ui.components.AppDialog
 import me.esdex.coffer.core.ui.components.AppSheet
@@ -135,7 +147,6 @@ import me.esdex.coffer.core.ui.theme.CofferHazeStyle
 import me.esdex.coffer.core.ui.theme.LocalAmoledMode
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.VaultContent
-import java.util.Date
 
 /** Something a dialog acts on: a folder or a file. */
 private sealed interface Target {
@@ -168,6 +179,10 @@ fun BrowserScreen(
     val sorting by viewModel.sorting.collectAsStateWithLifecycle()
     val catchingUp by viewModel.catchingUp.collectAsStateWithLifecycle()
     val connection by viewModel.connection.collectAsStateWithLifecycle()
+    val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val selecting = selection.isNotEmpty()
+    var movingSelection by remember { mutableStateOf(false) }
+    var deletingSelection by remember { mutableStateOf(false) }
     var showTransfers by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -193,6 +208,12 @@ fun BrowserScreen(
         // Into the folder on screen when the picker returns.
         val folderId = viewModel.listing.value.folderId
         viewModel.upload(uris.map { uri -> context.uploadRequest(uri, folderId) })
+    }
+
+    val exportTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        askForNotifications()
+        viewModel.exportSelected(uri)
     }
 
     // Decrypted files go straight to the app that can show them.
@@ -231,12 +252,31 @@ fun BrowserScreen(
         }
         BackHandler(enabled = searching) { closeSearch() }
         BackHandler(enabled = !searching && listing.folderId != null) { viewModel.up() }
+        // Declared last, so it goes first: back leaves the selection before anything else.
+        BackHandler(enabled = selecting) { viewModel.clearSelection() }
 
         CompositionLocalProvider(LocalHazeState provides haze) {
             Scaffold(
                 snackbarHost = { SnackbarHost(snackbar) },
                 topBar = {
                     Column(if (amoled) Modifier.hazeEffect(state = haze, style = CofferHazeStyle.topBar) else Modifier) {
+                      AnimatedContent(
+                        targetState = selecting,
+                        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                        label = "selection",
+                      ) { inSelection ->
+                       if (inSelection) {
+                        val single = selection.singleOrNull()?.let { id ->
+                            listing.folders.find { it.folderId == id }?.let(Target::Folder) ?: listing.files.find { it.fileId == id }?.let(Target::File)
+                        }
+                        SelectionTopBar(
+                            count = selection.size,
+                            onCancel = viewModel::clearSelection,
+                            onSelectAll = viewModel::selectAll,
+                            onRename = single?.let { target -> { viewModel.clearSelection(); renaming = target } },
+                            colors = if (amoled) TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent) else TopAppBarDefaults.topAppBarColors(),
+                        )
+                       } else {
                         TopAppBar(
                             title = {
                                 if (searching) {
@@ -293,7 +333,9 @@ fun BrowserScreen(
                             },
                             colors = if (amoled) TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent) else TopAppBarDefaults.topAppBarColors(),
                         )
-                        AnimatedVisibility(visible = !searching && listing.path.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
+                       }
+                      }
+                        AnimatedVisibility(visible = !searching && !selecting && listing.path.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
                             Breadcrumbs(listing.path, onRoot = viewModel::goToRoot, onFolder = viewModel::openFolder)
                         }
                         catchingUp?.let {
@@ -306,8 +348,26 @@ fun BrowserScreen(
                         }
                     }
                 },
+                bottomBar = {
+                    AnimatedVisibility(
+                        visible = selecting,
+                        enter = slideInVertically { it } + fadeIn(),
+                        exit = slideOutVertically { it } + fadeOut(),
+                    ) {
+                        val shownTree = tree
+                        val pickedFiles = listing.files.filter { it.fileId in selection }
+                        SelectionActions(
+                            onMove = { movingSelection = true },
+                            // Files only, and only whole ones; a folder with its contents is a later step.
+                            canSave = shownTree != null && selection.none { it in shownTree.folders } &&
+                                pickedFiles.size == selection.size && pickedFiles.all { it.status == FileStatus.READY },
+                            onSave = { exportTree.launch(null) },
+                            onDelete = { deletingSelection = true },
+                        )
+                    }
+                },
                 floatingActionButton = {
-                    if (!searching) {
+                    if (!searching && !selecting) {
                         FloatingActionButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, stringResource(R.string.browser_add)) }
                     }
                 },
@@ -327,6 +387,8 @@ fun BrowserScreen(
                         Listing(
                             shown = shown,
                             padding = padding,
+                            selection = selection,
+                            onToggle = viewModel::toggleSelected,
                             empty = when {
                                 query.isNotBlank() -> R.string.browser_no_match
                                 shown.folderId != null -> R.string.browser_folder_empty
@@ -395,9 +457,16 @@ fun BrowserScreen(
     val currentTree = tree
     moving?.let { target ->
         if (currentTree == null) return@let
+        val from = when (target) {
+            is Target.Folder -> currentTree.parentOf(target.item.folderId)
+            is Target.File -> currentTree.folderOf(target.item.fileId)
+        }
         MoveDialog(
             tree = currentTree,
-            target = target,
+            title = stringResource(R.string.browser_move_title, target.name),
+            from = from,
+            fromKnown = true,
+            movingFolders = listOfNotNull((target as? Target.Folder)?.item?.folderId),
             onMove = { destination ->
                 moving = null
                 when (target) {
@@ -415,6 +484,35 @@ fun BrowserScreen(
             text = { Text(stringResource(R.string.browser_delete_text, file.name)) },
             confirmButton = { TextButton(onClick = { deletingFile = null; viewModel.delete(file.fileId) }) { Text(stringResource(R.string.browser_delete)) } },
             dismissButton = { TextButton(onClick = { deletingFile = null }) { Text(stringResource(R.string.browser_cancel)) } },
+        )
+    }
+    if (movingSelection && currentTree != null) {
+        val picked = selection
+        val folders = picked.filter { it in currentTree.folders }
+        val parents = picked.map { if (it in currentTree.folders) currentTree.parentOf(it) else currentTree.folderOf(it) }.toSet()
+        MoveDialog(
+            tree = currentTree,
+            title = pluralStringResource(R.plurals.browser_move_many_title, picked.size, picked.size),
+            // Picked from one folder: moving them back there is no move. From a search, there is no one place.
+            from = parents.singleOrNull(),
+            fromKnown = parents.size == 1,
+            movingFolders = folders,
+            onMove = { destination -> movingSelection = false; viewModel.moveSelected(destination) },
+            onDismiss = { movingSelection = false },
+        )
+    }
+    if (deletingSelection) {
+        val count = selection.size
+        AppDialog(
+            onDismissRequest = { deletingSelection = false },
+            title = { Text(pluralStringResource(R.plurals.browser_delete_many_title, count, count)) },
+            text = { Text(stringResource(R.string.browser_delete_many_text)) },
+            confirmButton = {
+                TextButton(onClick = { deletingSelection = false; viewModel.deleteSelected() }) {
+                    Text(stringResource(R.string.browser_delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { deletingSelection = false }) { Text(stringResource(R.string.browser_cancel)) } },
         )
     }
     deletingFolder?.let { folder ->
@@ -443,6 +541,8 @@ private enum class RowAction { OPEN, EXPORT, RENAME, MOVE, DELETE }
 private fun Listing(
     shown: Listing,
     padding: PaddingValues,
+    selection: Set<Id>,
+    onToggle: (Id) -> Unit,
     empty: Int,
     onOpenFolder: (FolderItem) -> Unit,
     onFolderMenu: (FolderItem, RowAction) -> Unit,
@@ -464,10 +564,27 @@ private fun Listing(
         contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 88.dp),
     ) {
         items(shown.folders, key = { "d" + it.folderId.toByteArray().contentHashCode() }) { folder ->
-            FolderRow(folder, onOpen = { onOpenFolder(folder) }, onAction = { onFolderMenu(folder, it) }, modifier = Modifier.animateItem())
+            FolderRow(
+                folder,
+                selecting = selection.isNotEmpty(),
+                selected = folder.folderId in selection,
+                onOpen = { onOpenFolder(folder) },
+                onToggle = { onToggle(folder.folderId) },
+                onAction = { onFolderMenu(folder, it) },
+                modifier = Modifier.animateItem(),
+            )
         }
         items(shown.files, key = { "f" + it.fileId.toByteArray().contentHashCode() }) { file ->
-            FileRow(file, onOpen = { onOpenFile(file) }, onExport = { onExport(file, it) }, onAction = { onFileMenu(file, it) }, modifier = Modifier.animateItem())
+            FileRow(
+                file,
+                selecting = selection.isNotEmpty(),
+                selected = file.fileId in selection,
+                onOpen = { onOpenFile(file) },
+                onToggle = { onToggle(file.fileId) },
+                onExport = { onExport(file, it) },
+                onAction = { onFileMenu(file, it) },
+                modifier = Modifier.animateItem(),
+            )
         }
     }
 }
@@ -612,35 +729,44 @@ private fun NameDialog(title: Int, confirm: Int, initial: String, onConfirm: (St
     )
 }
 
-/** Picks a destination folder by walking the tree; a folder cannot go into itself or below itself. */
+/**
+ * Picks a destination folder by walking the tree; no folder of [movingFolders] can go into itself or
+ * below itself. [from] is where they all are now, when [fromKnown]: moving there again is no move.
+ */
 @Composable
-private fun MoveDialog(tree: VaultTree, target: Target, onMove: (Id?) -> Unit, onDismiss: () -> Unit) {
-    val movingFolder = (target as? Target.Folder)?.item?.folderId
-    val from = when (target) {
-        is Target.Folder -> tree.parentOf(target.item.folderId)
-        is Target.File -> tree.folderOf(target.item.fileId)
-    }
+private fun MoveDialog(
+    tree: VaultTree,
+    title: String,
+    from: Id?,
+    fromKnown: Boolean,
+    movingFolders: List<Id>,
+    onMove: (Id?) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var at by remember { mutableStateOf(from) }
     val here = at
     AppDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.browser_move_title, target.name), maxLines = 2, overflow = TextOverflow.Ellipsis) },
-        text = { FolderPicker(tree, here, onAt = { at = it }, excluding = movingFolder) },
+        title = { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+        text = { FolderPicker(tree, here, onAt = { at = it }, excluding = movingFolders) },
         confirmButton = {
-            TextButton(onClick = { onMove(here) }, enabled = here != from) { Text(stringResource(R.string.browser_move_here)) }
+            TextButton(
+                onClick = { onMove(here) },
+                enabled = (!fromKnown || here != from) && tree.canTake(here, movingFolders),
+            ) { Text(stringResource(R.string.browser_move_here)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.browser_cancel)) } },
     )
 }
 
 /**
- * Walks the folder tree from [at]: where it is, one level up, and the folders inside. [excluding] and
- * everything below it are not offered, so a folder cannot be put inside itself.
+ * Walks the folder tree from [at]: where it is, one level up, and the folders inside. The folders of
+ * [excluding] and everything below them are not offered, so a folder cannot be put inside itself.
  */
 @Composable
-fun FolderPicker(tree: VaultTree, at: Id?, onAt: (Id?) -> Unit, excluding: Id? = null) {
+fun FolderPicker(tree: VaultTree, at: Id?, onAt: (Id?) -> Unit, excluding: Collection<Id> = emptyList()) {
     val choices = tree.childFolders(at)
-        .filter { excluding == null || !tree.isWithin(it, excluding) }
+        .filter { child -> excluding.none { tree.isWithin(child, it) } }
         .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { tree.folders.getValue(it).name })
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -672,17 +798,31 @@ fun FolderPicker(tree: VaultTree, at: Id?, onAt: (Id?) -> Unit, excluding: Id? =
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FolderRow(folder: FolderItem, onOpen: () -> Unit, onAction: (RowAction) -> Unit, modifier: Modifier = Modifier) {
+private fun FolderRow(
+    folder: FolderItem,
+    selecting: Boolean,
+    selected: Boolean,
+    onOpen: () -> Unit,
+    onToggle: () -> Unit,
+    onAction: (RowAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var menu by remember { mutableStateOf(false) }
     val idle = !folder.deleting
     Row(
         modifier.fillMaxWidth()
-            .combinedClickable(enabled = idle, onClick = onOpen, onLongClick = { menu = true })
+            .background(selectedBackground(selected))
+            // Picking starts with a long press, as in Arcanum; while picking, a tap picks instead of opening.
+            .combinedClickable(
+                enabled = idle,
+                onClick = { if (selecting) onToggle() else onOpen() },
+                onLongClick = { if (folder.selectable) onToggle() },
+            )
             .alpha(if (idle) 1f else DELETING_ALPHA)
             .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TypeTile(FolderIcon)
+        PickTile(selecting, selected, FolderIcon)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
@@ -692,7 +832,7 @@ private fun FolderRow(folder: FolderItem, onOpen: () -> Unit, onAction: (RowActi
                 Text(stringResource(R.string.browser_status_deleting), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
         }
-        Box {
+        if (!selecting) Box {
             IconButton(onClick = { menu = true }, enabled = idle) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 MenuItem(Icons.Outlined.Edit, R.string.browser_rename) { menu = false; onAction(RowAction.RENAME) }
@@ -705,7 +845,16 @@ private fun FolderRow(folder: FolderItem, onOpen: () -> Unit, onAction: (RowActi
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FileRow(file: FileItem, onOpen: () -> Unit, onExport: (Uri) -> Unit, onAction: (RowAction) -> Unit, modifier: Modifier = Modifier) {
+private fun FileRow(
+    file: FileItem,
+    selecting: Boolean,
+    selected: Boolean,
+    onOpen: () -> Unit,
+    onToggle: () -> Unit,
+    onExport: (Uri) -> Unit,
+    onAction: (RowAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(file.mime)) { uri ->
@@ -717,13 +866,25 @@ private fun FileRow(file: FileItem, onOpen: () -> Unit, onExport: (Uri) -> Unit,
     val idle = !file.deleting
     Row(
         modifier.fillMaxWidth()
+            .background(selectedBackground(selected))
             // A ready file opens on a tap, like everywhere else; one that is not shows what can be done with it.
-            .combinedClickable(enabled = idle, onClick = { if (ready) onOpen() else menu = true }, onLongClick = { menu = true })
-            .alpha(if (idle) 1f else DELETING_ALPHA)
+            // While picking, a tap picks; one still uploading cannot be picked.
+            .combinedClickable(
+                enabled = idle && (!selecting || file.selectable),
+                onClick = {
+                    when {
+                        selecting -> onToggle()
+                        ready -> onOpen()
+                        else -> menu = true
+                    }
+                },
+                onLongClick = { if (file.selectable) onToggle() else if (!selecting) menu = true },
+            )
+            .alpha(if (idle && (!selecting || file.selectable)) 1f else DELETING_ALPHA)
             .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TypeTile(fileTypeIcon(file.name))
+        PickTile(selecting, selected, fileTypeIcon(file.name))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
@@ -740,7 +901,7 @@ private fun FileRow(file: FileItem, onOpen: () -> Unit, onExport: (Uri) -> Unit,
                 )
             }
         }
-        Box {
+        if (!selecting) Box {
             IconButton(onClick = { menu = true }, enabled = idle) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 MenuItem(Icons.Outlined.FileOpen, R.string.browser_open, enabled = ready) { menu = false; onOpen() }
@@ -755,6 +916,95 @@ private fun FileRow(file: FileItem, onOpen: () -> Unit, onExport: (Uri) -> Unit,
 
 /** A row whose delete is on the way: still there, but nothing to do with it. */
 private const val DELETING_ALPHA = 0.5f
+
+@Composable
+private fun selectedBackground(selected: Boolean): Color {
+    val color by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent,
+        label = "picked",
+    )
+    return color
+}
+
+/** The type tile, or while picking a check box in its place, as in Arcanum's file manager. */
+@Composable
+private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVector, Color>) {
+    AnimatedContent(targetState = selecting && selected, label = "pick") { picked ->
+        if (picked) {
+            Box(
+                Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Outlined.Check, stringResource(R.string.browser_cd_picked), tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
+            }
+        } else {
+            TypeTile(icon)
+        }
+    }
+}
+
+/** While picking: how many, and what applies to all of them; Rename only when there is one. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionTopBar(
+    count: Int,
+    onCancel: () -> Unit,
+    onSelectAll: () -> Unit,
+    onRename: (() -> Unit)?,
+    colors: TopAppBarColors,
+) {
+    var menu by remember { mutableStateOf(false) }
+    TopAppBar(
+        navigationIcon = {
+            IconButton(onClick = onCancel) { Icon(Icons.Outlined.Close, stringResource(R.string.browser_cd_cancel_selection)) }
+        },
+        title = { Text(pluralStringResource(R.plurals.browser_selected_count, count, count)) },
+        actions = {
+            IconButton(onClick = onSelectAll) { Icon(Icons.Outlined.SelectAll, stringResource(R.string.browser_select_all)) }
+            if (onRename != null) {
+                Box {
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        MenuItem(Icons.Outlined.Edit, R.string.browser_rename) { menu = false; onRename() }
+                    }
+                }
+            }
+        },
+        colors = colors,
+    )
+}
+
+/** The actions on everything picked, each with its name under it. */
+@Composable
+private fun SelectionActions(onMove: () -> Unit, canSave: Boolean, onSave: () -> Unit, onDelete: () -> Unit) {
+    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SelectionAction(R.string.browser_move, Icons.AutoMirrored.Outlined.DriveFileMove, onMove)
+            SelectionAction(R.string.browser_save, Icons.Outlined.SaveAlt, onSave, enabled = canSave)
+            SelectionAction(R.string.browser_delete, Icons.Outlined.Delete, onDelete, tint = MaterialTheme.colorScheme.error)
+        }
+    }
+}
+
+@Composable
+private fun SelectionAction(label: Int, icon: ImageVector, onClick: () -> Unit, enabled: Boolean = true, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.38f)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
+        Spacer(Modifier.height(2.dp))
+        Text(stringResource(label), style = MaterialTheme.typography.labelSmall, color = tint)
+    }
+}
 
 private fun FileStatus.label() = when (this) {
     FileStatus.UPLOADING -> R.string.browser_status_uploading

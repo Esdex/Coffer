@@ -138,6 +138,7 @@ class TransferWorker @AssistedInject constructor(
         }
         index.removeDownload(id)
         if (failure == null) registry.remove(download.fileId)
+        if (index.downloads().none { it.sealedTarget != null }) releaseFolderGrants(applicationContext)
         return if (failure == null) Result.success() else Result.failure()
     }
 
