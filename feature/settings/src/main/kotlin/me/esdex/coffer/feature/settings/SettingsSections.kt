@@ -209,6 +209,46 @@ internal fun VaultSection(onBack: () -> Unit, onPassword: () -> Unit, onRecovery
     }
 }
 
+// ── Video player ─────────────────────────────────────────────────────────────
+
+/** The player's extras, one switch each, as in Arcanum (pre-release item 5). */
+@Composable
+internal fun PlayerSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
+    val prefs by viewModel.player.collectAsStateWithLifecycle()
+    SectionScaffold(stringResource(R.string.settings_card_player), onBack) {
+        SettingsGroup(stringResource(R.string.settings_player_gestures)) {
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_player_swipe_volume), checked = prefs.swipeVolume,
+                    onCheckedChange = { on -> viewModel.setPlayer { it.copy(swipeVolume = on) } })
+            }
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_player_swipe_brightness), checked = prefs.swipeBrightness,
+                    info = stringResource(R.string.settings_player_swipe_brightness_info),
+                    onCheckedChange = { on -> viewModel.setPlayer { it.copy(swipeBrightness = on) } })
+            }
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_player_hold_speed), checked = prefs.holdForSpeed,
+                    onCheckedChange = { on -> viewModel.setPlayer { it.copy(holdForSpeed = on) } })
+            }
+        }
+        SettingsGroup(stringResource(R.string.settings_player_controls)) {
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_player_lock), checked = prefs.lockButton,
+                    info = stringResource(R.string.settings_player_lock_info),
+                    onCheckedChange = { on -> viewModel.setPlayer { it.copy(lockButton = on) } })
+            }
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_player_speed), checked = prefs.speedMenu,
+                    onCheckedChange = { on -> viewModel.setPlayer { it.copy(speedMenu = on) } })
+            }
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_player_loop), checked = prefs.loop,
+                    onCheckedChange = { on -> viewModel.setPlayer { it.copy(loop = on) } })
+            }
+        }
+    }
+}
+
 // ── Appearance ───────────────────────────────────────────────────────────────
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -35,6 +35,7 @@ import me.esdex.coffer.core.tdlib.Connection
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.VaultContent
+import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
 import javax.inject.Inject
 
 /** A file as the browser shows it, decrypted in memory only (SPEC §8). */
@@ -210,6 +211,20 @@ class BrowserViewModel @Inject constructor(
         act {
             if (content.importFolder(tree, parent) == 0) messagesFlow.emit(R.string.browser_import_empty)
         }
+    }
+
+    /** What the viewer shows and the page it opened on; kept here, so a recreated screen does not close it. */
+    data class Viewing(val pages: List<ViewerViewModel.Page>, val start: Int)
+
+    private val viewingFlow = MutableStateFlow<Viewing?>(null)
+    val viewing: StateFlow<Viewing?> = viewingFlow.asStateFlow()
+
+    fun view(pages: List<ViewerViewModel.Page>, start: Int) {
+        viewingFlow.value = Viewing(pages, start)
+    }
+
+    fun closeViewer() {
+        viewingFlow.value = null
     }
 
     /** The whole tree, for picking where to move something; null while locked. */

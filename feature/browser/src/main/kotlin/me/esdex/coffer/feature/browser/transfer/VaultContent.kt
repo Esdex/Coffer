@@ -56,10 +56,12 @@ import me.esdex.coffer.core.sync.Maintenance
 import me.esdex.coffer.core.sync.Snapshotter
 import me.esdex.coffer.core.sync.UploadPreparer
 import me.esdex.coffer.core.sync.UploadRunner
+import me.esdex.coffer.core.sync.VaultFileReader
 import me.esdex.coffer.core.sync.VaultKeys
 import me.esdex.coffer.core.sync.VaultOps
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.sync.eachWaitingOutFloods
+import me.esdex.coffer.core.sync.reader
 import me.esdex.coffer.core.sync.transferKeys
 import me.esdex.coffer.core.sync.waitingOutFloods
 import me.esdex.coffer.core.tdlib.AuthState
@@ -521,6 +523,31 @@ class VaultContent @Inject constructor(
         } ?: return 0
         upload(files.map { (file, folderId) -> UploadRequest(file.uri.toUri(), file.name, file.mime, folderId) })
         return files.size
+    }
+
+    /** A vault file open for reading in place, for the viewers; [close] wipes and lets go of it all. */
+    class OpenedFile(val name: String, val mime: String, val reader: VaultFileReader, private val onClose: () -> Unit) : AutoCloseable {
+        override fun close() = onClose()
+    }
+
+    /**
+     * Opens [fileId] for reading in place (see [VaultFileReader]); null while locked, offline for too
+     * long, or when the file is not whole. Closing wipes the file's key and the chunks held, and drops
+     * the encrypted pieces TDLib downloaded for it.
+     */
+    suspend fun openFile(fileId: Id): OpenedFile? {
+        val keys = keysFlow.value ?: return null
+        val file = index.file(fileId)?.takeIf { it.status == FileStatus.READY } ?: return null
+        val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: return null
+        val storage = telegram.readyStorage() ?: return null
+        val transfer = keys.transferKeys(fileId, file.sealedMeta) ?: return null
+        val reader = keys.reader(storage, file, transfer)
+        return OpenedFile(meta.name, meta.mime, reader) {
+            reader.close()
+            transfer.close()
+            val parts = reader.partsUsed()
+            scope.launch { for (part in parts) runCatching { storage.releaseBlob(part) } }
+        }
     }
 
     suspend fun cancelUpload(uploadId: String) {

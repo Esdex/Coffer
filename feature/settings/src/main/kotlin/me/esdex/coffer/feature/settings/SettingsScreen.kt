@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.SnackbarHostState
@@ -41,6 +42,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import javax.crypto.Cipher
 import me.esdex.coffer.core.ui.components.GroupBuilder
 import me.esdex.coffer.core.ui.components.GroupedRoundIcon
 import me.esdex.coffer.core.ui.components.GroupedRow
@@ -49,7 +51,6 @@ import me.esdex.coffer.core.ui.components.OperationLoading
 import me.esdex.coffer.core.ui.components.OperationSuccess
 import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.vault.DeviceUnlock
-import javax.crypto.Cipher
 
 /** Where in Settings the user is. [depth] decides which way a change slides; [parent] is where back goes. */
 private enum class Screen(val depth: Int) {
@@ -57,6 +58,7 @@ private enum class Screen(val depth: Int) {
     SECURITY(1),
     VAULT(1),
     APPEARANCE(1),
+    PLAYER(1),
     MAINTENANCE(1),
     ACCOUNT(1),
     ABOUT(1),
@@ -139,6 +141,7 @@ fun SettingsScreen(
             Screen.SECURITY -> SecuritySection(viewModel, back, onDeviceUnlock)
             Screen.VAULT -> VaultSection(back, onPassword = { current = Screen.PASSWORD }, onRecovery = { current = Screen.RECOVERY })
             Screen.APPEARANCE -> AppearanceSection(viewModel, back)
+            Screen.PLAYER -> PlayerSection(viewModel, back)
             Screen.MAINTENANCE -> MaintenanceSection(viewModel, back)
             Screen.ACCOUNT -> AccountSection(viewModel, back)
             Screen.ABOUT -> AboutSection(back, onLicenses = { current = Screen.LICENSES }, onUnlockDebug = unlockDebug, debugUnlocked = state.debugTools)
@@ -162,6 +165,7 @@ private object SectionHue {
     val Security = Hue(Color(0xFF60D5F3), Color(0xFF004E5D))
     val Vault = Hue(Color(0xFFB9C4FF), Color(0xFF1B2E82))
     val Appearance = Hue(Color(0xFFFFB683), Color(0xFF753403))
+    val Player = Hue(Color(0xFFFFB1C8), Color(0xFF7B1D44))
     val Maintenance = Hue(Color(0xFF7FD8C8), Color(0xFF00504A))
     val Account = Hue(Color(0xFFD0BCFF), Color(0xFF381E72))
     val About = Hue(Color(0xFFC7C7C7), Color(0xFF474747))
@@ -186,6 +190,7 @@ private fun MainList(onBack: () -> Unit, viewModel: SettingsViewModel, showDebug
         Spacer(Modifier.height(16.dp))
         SettingsGroup(title = null) {
             section(Screen.APPEARANCE, Icons.Outlined.Palette, SectionHue.Appearance, R.string.settings_card_appearance, R.string.settings_card_appearance_desc, onOpen)
+            section(Screen.PLAYER, Icons.Outlined.PlayCircle, SectionHue.Player, R.string.settings_card_player, R.string.settings_card_player_desc, onOpen)
             section(Screen.MAINTENANCE, Icons.Outlined.Sync, SectionHue.Maintenance, R.string.settings_card_maintenance, R.string.settings_card_maintenance_desc, onOpen)
         }
         Spacer(Modifier.height(16.dp))

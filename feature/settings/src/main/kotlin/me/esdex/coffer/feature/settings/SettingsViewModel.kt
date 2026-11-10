@@ -3,6 +3,8 @@ package me.esdex.coffer.feature.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.crypto.Cipher
+import javax.inject.Inject
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,14 +22,14 @@ import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.tdlib.TelegramAccount
 import me.esdex.coffer.core.ui.theme.Appearance
 import me.esdex.coffer.core.ui.theme.AppearanceStore
+import me.esdex.coffer.core.ui.theme.PlayerPrefs
+import me.esdex.coffer.core.ui.theme.PlayerStore
 import me.esdex.coffer.core.ui.theme.ThemeMode
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import me.esdex.coffer.feature.browser.transfer.readyStorage
-import javax.crypto.Cipher
-import javax.inject.Inject
 
 /** The settings of SPEC §9, each read from where it lives. */
 data class SettingsState(
@@ -48,9 +50,14 @@ class SettingsViewModel @Inject constructor(
     private val content: VaultContent,
     private val telegram: Telegram,
     private val appearanceStore: AppearanceStore,
+    private val playerStore: PlayerStore,
 ) : ViewModel() {
 
     val appearance: StateFlow<Appearance> = appearanceStore.appearance
+
+    val player: StateFlow<PlayerPrefs> = playerStore.prefs
+
+    fun setPlayer(change: (PlayerPrefs) -> PlayerPrefs) = playerStore.update(change)
 
     private val accountFlow = MutableStateFlow<TelegramAccount?>(null)
 

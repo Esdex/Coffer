@@ -16,7 +16,10 @@
             android:name=".MainActivity"
             android:exported="true"
             android:theme="@style/Theme.Coffer"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:windowSoftInputMode="adjustResize">
+            <!-- Turned or resized, the activity stays: Compose lays itself out again, and a video
+                 going fullscreen (which turns the screen) plays on instead of starting over. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

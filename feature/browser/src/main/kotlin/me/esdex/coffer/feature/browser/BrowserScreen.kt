@@ -153,6 +153,8 @@ import me.esdex.coffer.core.ui.theme.LocalAmoledMode
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.UNDO_MILLIS
 import me.esdex.coffer.feature.browser.transfer.VaultContent
+import me.esdex.coffer.feature.browser.viewer.ViewerScreen
+import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
 
 /** Something a dialog acts on: a folder or a file. */
 private sealed interface Target {
@@ -218,6 +220,20 @@ fun BrowserScreen(
 
     // A folder saved from its own menu, or else the selection.
     var savingFolder by remember { mutableStateOf<Id?>(null) }
+    // Pictures shown in the viewer, the folder's or the search's, and which one was tapped.
+    val viewing by viewModel.viewing.collectAsStateWithLifecycle()
+    // Still shown while the viewer fades out, after it was closed.
+    var lastViewing by remember { mutableStateOf(viewing) }
+    if (viewing != null) lastViewing = viewing
+    var savingFromViewer by remember { mutableStateOf<Id?>(null) }
+    val saveFromViewer = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+        val fileId = savingFromViewer
+        savingFromViewer = null
+        if (uri != null && fileId != null) {
+            askForNotifications()
+            viewModel.export(fileId, uri)
+        }
+    }
     val exportTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         val folder = savingFolder
         savingFolder = null
@@ -433,7 +449,15 @@ fun BrowserScreen(
                                     else -> Unit
                                 }
                             },
-                            onOpenFile = { askForNotifications(); viewModel.open(it.fileId) },
+                            onOpenFile = { file ->
+                                if (file.isViewable()) {
+                                    val media = shown.files.filter { it.isViewable() && it.status == FileStatus.READY }
+                                    viewModel.view(media.map { ViewerViewModel.Page(it.fileId, it.name, it.mime) }, media.indexOf(file).coerceAtLeast(0))
+                                } else {
+                                    askForNotifications()
+                                    viewModel.open(file.fileId)
+                                }
+                            },
                             onExport = { item, uri -> askForNotifications(); viewModel.export(item.fileId, uri) },
                             onFileMenu = { item, action ->
                                 when (action) {
@@ -564,7 +588,27 @@ fun BrowserScreen(
             dismissButton = { TextButton(onClick = { deletingFolder = null }) { Text(stringResource(R.string.browser_cancel)) } },
         )
     }
+    // Over everything else, the bars included.
+    AnimatedVisibility(visible = viewing != null, enter = fadeIn(tween(FOLDER_MILLIS)), exit = fadeOut(tween(FOLDER_MILLIS))) {
+        val (pages, start) = lastViewing ?: return@AnimatedVisibility
+        ViewerScreen(
+            pages = pages,
+            startIndex = start,
+            onClose = viewModel::closeViewer,
+            onSave = { page ->
+                savingFromViewer = page.fileId
+                saveFromViewer.launch(page.name)
+            },
+            onOpenWith = { page ->
+                askForNotifications()
+                viewModel.open(page.fileId)
+            },
+        )
+    }
 }
+
+/** What the viewer shows so far (pre-release item 5); other files open in another app. */
+private fun FileItem.isViewable() = mime.startsWith("image/") || mime.startsWith("video/")
 
 private enum class RowAction { OPEN, EXPORT, RENAME, MOVE, DELETE }
 

@@ -10,6 +10,7 @@ import me.esdex.coffer.core.crypto.sodium.Sodium
 import me.esdex.coffer.core.index.RoomVaultIndex
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.ui.theme.AppearanceStore
+import me.esdex.coffer.core.ui.theme.PlayerStore
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
@@ -36,6 +37,10 @@ object VaultModule {
     @Provides
     @Singleton
     fun appearanceStore(@ApplicationContext context: Context) = AppearanceStore(File(context.noBackupFilesDir, "appearance.properties"))
+
+    @Provides
+    @Singleton
+    fun playerStore(@ApplicationContext context: Context) = PlayerStore(File(context.noBackupFilesDir, "player.properties"))
 
     @Provides
     @Singleton
