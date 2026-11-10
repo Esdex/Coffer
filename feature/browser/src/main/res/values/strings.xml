@@ -94,6 +94,13 @@
     <string name="viewer_speed">Speed</string>
     <string name="viewer_speed_normal">Normal</string>
     <string name="viewer_loop">Repeat</string>
+    <string name="viewer_pdf_page_of">%1$d / %2$d</string>
+    <string name="viewer_pdf_cd_page">Page %1$d</string>
+    <string name="viewer_pdf_password">This PDF is protected by a password</string>
+    <string name="viewer_pdf_password_hint">Coffer cannot open a password-protected PDF. Open it in another app from the menu above.</string>
+    <string name="viewer_pdf_unreadable">This PDF cannot be opened</string>
+    <string name="viewer_pdf_not_available">This PDF cannot be read right now</string>
+    <string name="viewer_pdf_not_available_hint">Telegram cannot be reached, or the file is not whole.</string>
     <plurals name="browser_deleted_count">
         <item quantity="one">Deleted %1$d item</item>
         <item quantity="other">Deleted %1$d items</item>

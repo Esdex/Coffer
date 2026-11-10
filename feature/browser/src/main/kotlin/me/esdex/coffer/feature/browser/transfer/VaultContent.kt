@@ -16,6 +16,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
@@ -527,7 +528,12 @@ class VaultContent @Inject constructor(
 
     /** A vault file open for reading in place, for the viewers; [close] wipes and lets go of it all. */
     class OpenedFile(val name: String, val mime: String, val reader: VaultFileReader, private val onClose: () -> Unit) : AutoCloseable {
-        override fun close() = onClose()
+        private val closed = AtomicBoolean(false)
+
+        // Once only: a viewer may close early to cut off a read waiting on Telegram, then again with the rest.
+        override fun close() {
+            if (closed.compareAndSet(false, true)) onClose()
+        }
     }
 
     /**

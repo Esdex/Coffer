@@ -227,6 +227,18 @@ class BrowserViewModel @Inject constructor(
         viewingFlow.value = null
     }
 
+    /** A document open on its own, outside the pager: a PDF scrolls and zooms in ways a swipe to the next file would fight. */
+    private val readingFlow = MutableStateFlow<ViewerViewModel.Page?>(null)
+    val reading: StateFlow<ViewerViewModel.Page?> = readingFlow.asStateFlow()
+
+    fun read(page: ViewerViewModel.Page) {
+        readingFlow.value = page
+    }
+
+    fun closeReading() {
+        readingFlow.value = null
+    }
+
     /** The whole tree, for picking where to move something; null while locked. */
     val tree: StateFlow<VaultTree?> = contents.map { it?.tree }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 

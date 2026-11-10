@@ -17,6 +17,7 @@
 - Add a whole folder from the phone, and save a vault folder back to the phone, keeping its subfolders.
 - A delete can be undone for a few seconds before it goes to Telegram, where it is final.
 - Pictures and videos open in Coffer's own viewer, read from Saved Messages a piece at a time and never written out decrypted: swipe through a folder, pinch or double tap to zoom a picture; HEIF, animated GIF and WebP included. A video starts before it is downloaded, seeks anywhere, and has double tap to skip 10 seconds, swipes for volume and brightness, hold for 2x, speed, repeat, a touch lock and full screen; each extra has a switch in Settings, Video player.
+- PDFs open in Coffer too, read the same way: pages drawn as they scroll into view, pinch or double tap to zoom with the text kept sharp, and a page counter. A password-protected PDF says so and can still be opened in another app.
 - Open a file in another app, or save a decrypted copy anywhere; the copy is checked against its checksum.
 - Delete a file from all devices.
 - Folders: create, rename, move and delete them (a folder is deleted with everything in it, after a confirmation); rename and move files; new files go into the folder on screen. Changes made on one device show up on the others.

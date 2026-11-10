@@ -153,6 +153,7 @@ import me.esdex.coffer.core.ui.theme.LocalAmoledMode
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.UNDO_MILLIS
 import me.esdex.coffer.feature.browser.transfer.VaultContent
+import me.esdex.coffer.feature.browser.viewer.PdfViewerScreen
 import me.esdex.coffer.feature.browser.viewer.ViewerScreen
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
 
@@ -225,6 +226,9 @@ fun BrowserScreen(
     // Still shown while the viewer fades out, after it was closed.
     var lastViewing by remember { mutableStateOf(viewing) }
     if (viewing != null) lastViewing = viewing
+    val reading by viewModel.reading.collectAsStateWithLifecycle()
+    var lastReading by remember { mutableStateOf(reading) }
+    if (reading != null) lastReading = reading
     var savingFromViewer by remember { mutableStateOf<Id?>(null) }
     val saveFromViewer = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val fileId = savingFromViewer
@@ -453,6 +457,8 @@ fun BrowserScreen(
                                 if (file.isViewable()) {
                                     val media = shown.files.filter { it.isViewable() && it.status == FileStatus.READY }
                                     viewModel.view(media.map { ViewerViewModel.Page(it.fileId, it.name, it.mime) }, media.indexOf(file).coerceAtLeast(0))
+                                } else if (file.isReadable()) {
+                                    viewModel.read(ViewerViewModel.Page(file.fileId, file.name, file.mime))
                                 } else {
                                     askForNotifications()
                                     viewModel.open(file.fileId)
@@ -605,10 +611,28 @@ fun BrowserScreen(
             },
         )
     }
+    AnimatedVisibility(visible = reading != null, enter = fadeIn(tween(FOLDER_MILLIS)), exit = fadeOut(tween(FOLDER_MILLIS))) {
+        val page = lastReading ?: return@AnimatedVisibility
+        PdfViewerScreen(
+            page = page,
+            onClose = viewModel::closeReading,
+            onSave = {
+                savingFromViewer = it.fileId
+                saveFromViewer.launch(it.name)
+            },
+            onOpenWith = {
+                askForNotifications()
+                viewModel.open(it.fileId)
+            },
+        )
+    }
 }
 
 /** What the viewer shows so far (pre-release item 5); other files open in another app. */
 private fun FileItem.isViewable() = mime.startsWith("image/") || mime.startsWith("video/")
+
+/** Documents Coffer reads itself, one at a time. */
+private fun FileItem.isReadable() = mime == "application/pdf"
 
 private enum class RowAction { OPEN, EXPORT, RENAME, MOVE, DELETE }
 
