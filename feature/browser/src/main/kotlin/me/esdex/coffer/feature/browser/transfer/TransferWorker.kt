@@ -49,6 +49,7 @@ class TransferWorker @AssistedInject constructor(
     private val telegram: Telegram,
     private val index: VaultIndex,
     private val registry: TransferRegistry,
+    private val cache: FileCache,
 ) : CoroutineWorker(context, params) {
 
     private val id = inputData.getString(KEY_ID).orEmpty()
@@ -118,7 +119,7 @@ class TransferWorker @AssistedInject constructor(
             } else {
                 checkNotNull(openFile).also { it.parentFile?.mkdirs() }.outputStream()
             }
-            output.use { DownloadRunner(sodium, storage, index).run(download.fileId, entry.keys, it) { done, total -> report(done, total, TransferStage.MOVING) } }
+            output.use { DownloadRunner(sodium, storage, index) { part -> cache.keep(download.fileId, part, storage) }.run(download.fileId, entry.keys, it) { done, total -> report(done, total, TransferStage.MOVING) } }
             null
         } catch (_: ContentMismatchException) {
             TransferRegistry.Failure.CONTENT_MISMATCH

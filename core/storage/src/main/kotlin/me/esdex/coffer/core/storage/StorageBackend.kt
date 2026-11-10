@@ -69,6 +69,9 @@ interface StorageBackend {
     /** Drops whatever local copy [openBlob] left behind. */
     suspend fun releaseBlob(id: MessageId)
 
+    /** How much of the blob [openBlob] has left on the phone and [releaseBlob] has not dropped; 0 for none. */
+    suspend fun localBytes(id: MessageId): Long
+
     companion object {
         const val WHOLE = -1L
 

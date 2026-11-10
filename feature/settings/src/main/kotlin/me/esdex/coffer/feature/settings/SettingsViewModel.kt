@@ -32,6 +32,9 @@ import me.esdex.coffer.feature.browser.stats.Breakdown
 import me.esdex.coffer.feature.browser.stats.FileKind
 import me.esdex.coffer.feature.browser.stats.PhoneUsage
 import me.esdex.coffer.feature.browser.stats.VaultStats
+import me.esdex.coffer.feature.browser.transfer.FileCache
+import me.esdex.coffer.core.ui.theme.CachePrefs
+import me.esdex.coffer.core.ui.theme.CacheStore
 import me.esdex.coffer.core.ui.theme.ThemeMode
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
@@ -61,6 +64,8 @@ class SettingsViewModel @Inject constructor(
     private val playerStore: PlayerStore,
     private val textStore: TextStore,
     private val stats: VaultStats,
+    private val cache: FileCache,
+    private val cacheStore: CacheStore,
 ) : ViewModel() {
 
     val appearance: StateFlow<Appearance> = appearanceStore.appearance
@@ -113,6 +118,28 @@ class SettingsViewModel @Inject constructor(
 
     fun measurePhone() {
         viewModelScope.launch { phoneFlow.value = stats.phone() }
+    }
+
+    val cachePrefs: StateFlow<CachePrefs> = cache.prefs
+
+    /** A new setting for the cache, and the cache brought into line: a lower limit or the cache off lets pieces go. */
+    fun setCache(change: (CachePrefs) -> CachePrefs) {
+        val before = cache.prefs.value
+        cacheStore.update(change)
+        val after = cache.prefs.value
+        if (after.enabled && after.limitMb >= before.limitMb && before.enabled) return
+        viewModelScope.launch {
+            telegram.readyStorage()?.let { cache.blobs.trim(it) }
+            phoneFlow.value = stats.phone()
+        }
+    }
+
+    /** Lets go of every cached piece but those of a file open right now. */
+    fun clearCache() {
+        viewModelScope.launch {
+            telegram.readyStorage()?.let { cache.blobs.clear(it) }
+            phoneFlow.value = stats.phone()
+        }
     }
 
     private val accountFlow = MutableStateFlow<TelegramAccount?>(null)

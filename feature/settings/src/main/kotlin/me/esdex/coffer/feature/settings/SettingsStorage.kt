@@ -36,6 +36,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.alpha
+import me.esdex.coffer.core.ui.components.AppDialog
+import me.esdex.coffer.core.ui.components.GroupedSwitch
+import me.esdex.coffer.core.ui.theme.CachePrefs
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -231,6 +240,8 @@ private val TEMPORARY = Color(0xFF9CA3AF)
 @Composable
 internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
     val phone by viewModel.phone.collectAsStateWithLifecycle()
+    val cache by viewModel.cachePrefs.collectAsStateWithLifecycle()
+    var confirmClear by remember { mutableStateOf(false) }
     val context = LocalContext.current
     fun size(bytes: Long) = Formatter.formatShortFileSize(context, bytes)
     LaunchedEffect(Unit) { viewModel.measurePhone() }
@@ -261,13 +272,68 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                     trailing = { Text(size(bytes), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 )
             }
-            line(TELEGRAM_FILES, R.string.settings_phone_downloads, R.string.settings_phone_downloads_info, usage.telegramFiles)
+            row { shape ->
+                GroupedRow(
+                    shape,
+                    title = stringResource(R.string.settings_phone_downloads),
+                    subtitle = if (cache.enabled) stringResource(R.string.settings_phone_cache_limit, limitLabel(cache.limitMb)) else stringResource(R.string.settings_phone_cache_off),
+                    info = stringResource(R.string.settings_phone_downloads_info),
+                    leading = { Dot(TELEGRAM_FILES) },
+                    trailing = { Text(size(usage.telegramFiles), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                )
+            }
             line(TELEGRAM_DATABASE, R.string.settings_phone_database, R.string.settings_phone_database_info, usage.telegramDatabase)
             line(INDEX, R.string.settings_phone_index, R.string.settings_phone_index_info, usage.index)
             line(TEMPORARY, R.string.settings_phone_temporary, R.string.settings_phone_temporary_info, usage.temporary)
         }
+        SettingsGroup(stringResource(R.string.settings_cache)) {
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_cache_on), checked = cache.enabled,
+                    info = stringResource(R.string.settings_cache_on_info),
+                    onCheckedChange = { on -> viewModel.setCache { it.copy(enabled = on) } })
+            }
+            row { shape ->
+                GroupedBox(shape) {
+                    Text(stringResource(R.string.settings_cache_limit), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.alpha(if (cache.enabled) 1f else 0.38f))
+                    Spacer(Modifier.height(8.dp))
+                    val limits = CachePrefs.LIMITS_MB
+                    SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                        limits.forEachIndexed { i, mb ->
+                            SegmentedButton(
+                                selected = cache.limitMb == mb,
+                                onClick = { viewModel.setCache { it.copy(limitMb = mb) } },
+                                enabled = cache.enabled,
+                                shape = SegmentedButtonDefaults.itemShape(index = i, count = limits.size),
+                                icon = {},
+                                label = { Text(limitLabel(mb), style = MaterialTheme.typography.labelSmall, maxLines = 1) },
+                            )
+                        }
+                    }
+                }
+            }
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_cache_clear_on_lock), checked = cache.clearOnLock,
+                    info = stringResource(R.string.settings_cache_clear_on_lock_info),
+                    onCheckedChange = { on -> viewModel.setCache { it.copy(clearOnLock = on) } })
+            }
+            row { shape ->
+                GroupedRow(shape, title = stringResource(R.string.settings_cache_clear), titleColor = MaterialTheme.colorScheme.error, onClick = { confirmClear = true })
+            }
+        }
+    }
+    if (confirmClear) {
+        AppDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text(stringResource(R.string.settings_cache_clear_title)) },
+            text = { Text(stringResource(R.string.settings_cache_clear_text)) },
+            confirmButton = { TextButton(onClick = { confirmClear = false; viewModel.clearCache() }) { Text(stringResource(R.string.settings_cache_clear_confirm)) } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.settings_cancel)) } },
+        )
     }
 }
+
+/** A cache limit as offered: whole megabytes or gigabytes of 1024, as the choices were made, not Android's 1000s. */
+private fun limitLabel(mb: Int): String = if (mb < 1024) "$mb MB" else "${mb / 1024} GB"
 
 // ── Drawing ──────────────────────────────────────────────────────────────────
 

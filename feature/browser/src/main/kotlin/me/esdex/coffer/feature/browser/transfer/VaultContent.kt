@@ -131,11 +131,12 @@ class VaultContent @Inject constructor(
     private val registry: TransferRegistry,
     private val store: VaultStore,
     private val inbox: ShareInbox,
+    private val cache: FileCache,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    // Files open in the viewers: their pieces go when the last reader of each closes.
-    private val leases = ReadLeases(scope)
+    // Files open in the viewers: their pieces go to the cache when the last reader of each closes.
+    private val leases = cache.leases
 
     private var session: Job? = null
 
@@ -232,6 +233,8 @@ class VaultContent @Inject constructor(
         keysFlow.value = null
         catchUpFlow.value = null
         OpenFiles.clear(context)
+        // The cache is encrypted, but shows what was opened lately; emptied on lock only when asked for.
+        if (cache.prefs.value.clearOnLock) scope.launch { telegram.readyStorage()?.let { cache.blobs.clear(it) } }
     }
 
     /**
@@ -557,7 +560,7 @@ class VaultContent @Inject constructor(
         return OpenedFile(meta.name, meta.mime, reader) {
             reader.close()
             transfer.close()
-            leases.close(fileId, reader.partsUsed()) { storage.releaseBlob(it) }
+            leases.close(fileId, reader.partsUsed()) { cache.keep(fileId, it, storage) }
         }
     }
 
@@ -589,7 +592,7 @@ class VaultContent @Inject constructor(
                 leases.open(fileId)
                 OpenedFile(meta.name, meta.mime, reader) {
                     reader.close()
-                    leases.close(fileId, reader.partsUsed()) { storage.releaseBlob(it) }
+                    leases.close(fileId, reader.partsUsed()) { cache.keep(fileId, it, storage) }
                 }
             }
         }

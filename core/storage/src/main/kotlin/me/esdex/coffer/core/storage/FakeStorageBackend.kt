@@ -115,6 +115,9 @@ class FakeCloud(private val pageCap: Int = Int.MAX_VALUE) {
 /** One device's view of a [FakeCloud]. */
 class FakeStorageBackend internal constructor(private val cloud: FakeCloud) : StorageBackend {
     private val limiter = TransferLimiter()
+
+    // What this device holds of each blob: up to the furthest byte read, as a download that fills in from the start.
+    private val local = HashMap<MessageId, Long>()
     private val eventFlow = MutableSharedFlow<StorageEvent>(extraBufferCapacity = Int.MAX_VALUE)
 
     override val events: Flow<StorageEvent> = eventFlow.asSharedFlow()
@@ -192,12 +195,16 @@ class FakeStorageBackend internal constructor(private val cloud: FakeCloud) : St
                 onProgress(Progress(range.last - range.first + 1, range.last - range.first + 1))
             }
         }
+        synchronized(local) { local[id] = maxOf(local[id] ?: 0L, range.last + 1) }
         return ByteArrayInputStream(bytes, range.first.toInt(), (range.last - range.first + 1).toInt())
     }
 
     override suspend fun releaseBlob(id: MessageId) {
         cloud.checkFailure()
+        synchronized(local) { local.remove(id) }
     }
+
+    override suspend fun localBytes(id: MessageId): Long = synchronized(local) { local[id] ?: 0L }
 }
 
 /**

@@ -170,6 +170,18 @@ abstract class StorageBackendContract {
     }
 
     @Test
+    fun localBytesFollowWhatIsDownloadedAndReleased() = contract {
+        val bytes = Random(13).nextBytes(150_000)
+        val sent = otherDevice.sendBlob(blobFile(bytes), token())
+        // The device that did not send it holds nothing of it yet.
+        assertEquals(0L, device.localBytes(sent.id))
+        device.openBlob(sent.id).use { it.readBytes() }
+        assertEquals(bytes.size.toLong(), device.localBytes(sent.id))
+        device.releaseBlob(sent.id)
+        assertEquals(0L, device.localBytes(sent.id))
+    }
+
+    @Test
     fun blobArgumentsAreChecked() = contract {
         val sent = device.sendBlob(blobFile(ByteArray(1000) { it.toByte() }), token())
         assertFails<IllegalArgumentException> { device.openBlob(sent.id, 1001) }

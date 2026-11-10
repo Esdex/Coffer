@@ -19,6 +19,7 @@ import me.esdex.coffer.core.crypto.sodium.Sodium
 import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
+import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
 import java.io.File
 import java.io.IOException
@@ -209,8 +210,16 @@ class UploadRunner(
     }
 }
 
-/** Downloads, decrypts and checks a file (SPEC §6, "Скачивание / экспорт"). Needs only the DEK. */
-class DownloadRunner(private val sodium: Sodium, private val storage: StorageBackend, private val index: VaultIndex) {
+/**
+ * Downloads, decrypts and checks a file (SPEC §6, "Скачивание / экспорт"). Needs only the DEK. Each part
+ * is handed to [partRead] once read; by default its local copy is dropped, the app keeps it in its cache.
+ */
+class DownloadRunner(
+    private val sodium: Sodium,
+    private val storage: StorageBackend,
+    private val index: VaultIndex,
+    private val partRead: suspend (MessageId) -> Unit = storage::releaseBlob,
+) {
 
     suspend fun run(fileId: Id, keys: TransferKeys, output: OutputStream, onProgress: (done: Long, total: Long) -> Unit = { _, _ -> }) {
         val file = checkNotNull(index.file(fileId)) { "file not in the index" }
@@ -226,7 +235,7 @@ class DownloadRunner(private val sodium: Sodium, private val storage: StorageBac
                     decryptor.decryptPart(part, it, output, hasher)
                 }
             } finally {
-                storage.releaseBlob(messageId)
+                partRead(messageId)
             }
             done += sizes[part]
             onProgress(done, total)

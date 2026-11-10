@@ -305,6 +305,12 @@ class TdlibStorageBackend internal constructor(
         fileLocks.getOrPut(file.id) { Mutex() }.withLock { session.send(TdApi.DeleteFile(file.id)) }
     }
 
+    override suspend fun localBytes(id: MessageId): Long {
+        val file = runCatching { blobFile(id) }.getOrNull() ?: return 0L
+        // The message's copy of the file may be old; TDLib's current word on it is GetFile's.
+        return runCatching { session.send(TdApi.GetFile(file.id)).local.downloadedSize }.getOrDefault(0L)
+    }
+
     private companion object {
         const val HISTORY_ATTEMPTS = 3
         const val HISTORY_RETRY_MILLIS = 300L

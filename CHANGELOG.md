@@ -25,7 +25,8 @@
 - Folders: create, rename, move and delete them (a folder is deleted with everything in it, after a confirmation); rename and move files; new files go into the folder on screen. Changes made on one device show up on the others.
 - Index snapshots in Saved Messages: a new device, or one long offline, loads the latest snapshot instead of reading the whole history. The last 3 are kept.
 - Settings, Storage: what the vault holds by kind (pictures, videos, music, documents, other) on a ring, each kind opening its files largest first, with a tap taking you to the file's folder; and what Coffer keeps in Saved Messages: parts of files, changes, index snapshots, the vault header, and how many messages are your own.
-- Settings, On this phone: what Coffer takes up on the phone apart from the vault: pieces Telegram has downloaded, Telegram's database, Coffer's index and temporary files.
+- Settings, On this phone: what Coffer takes up on the phone apart from the vault: the file cache, Telegram's database, Coffer's index and temporary files.
+- A file cache: files opened, played or saved keep their encrypted pieces on the phone, so they open again without a download and without traffic. Up to 2 GB by default (500 MB to 10 GB), the files read longest ago making room first, never one that is open. It can be turned off, cleared, or cleared each time the vault locks, in Settings, On this phone.
 - Rescan Saved Messages from the menu, to rebuild the list of files and folders from scratch.
 - Integrity check, weekly and from the menu: finds files with missing parts, brings back files the list missed, removes leftovers of unfinished uploads and deletions, and clears out old operations that are no longer needed.
 - Settings: auto-lock after 1 to 60 minutes or off, unlock with fingerprint on or off, block screenshots, weekly integrity check on or off. Integrity check, rescan and log out moved here; log out asks first.
