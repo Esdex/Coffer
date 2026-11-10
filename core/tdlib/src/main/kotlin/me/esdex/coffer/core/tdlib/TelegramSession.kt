@@ -228,6 +228,15 @@ class TelegramSession(config: TdlibConfig) {
         return TelegramUsage(stats.filesSize, stats.fileCount, stats.databaseSize + stats.languagePackDatabaseSize + stats.logSize)
     }
 
+    /**
+     * Deletes every file TDLib has downloaded, whole or in part: documents and its temp folder. Not the
+     * database, the profile photo or what is being uploaded from outside its folders.
+     */
+    suspend fun dropDownloads() {
+        // fileTypeUnknown is how the API names TDLib's temp files: partial downloads live there.
+        send(TdApi.OptimizeStorage(0, 0, 0, 0, arrayOf(TdApi.FileTypeDocument(), TdApi.FileTypeUnknown()), longArrayOf(), longArrayOf(), false, 0))
+    }
+
     /** Ends the Telegram session on the server and deletes TDLib's local data. */
     suspend fun logOut() {
         send(TdApi.LogOut())

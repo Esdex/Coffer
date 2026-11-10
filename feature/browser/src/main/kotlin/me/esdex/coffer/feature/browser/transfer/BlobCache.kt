@@ -63,8 +63,12 @@ class BlobCache(
         save(all)
     }
 
-    /** Everything goes but what an open file is reading; that goes when the file closes. */
-    suspend fun clear(storage: StorageBackend) = lock.withLock {
+    /**
+     * Everything goes but what an open file is reading; that goes when the file closes. Then, with nothing
+     * being read or saved ([idle]), [purge] drops what the ledger never heard of: pieces left half
+     * downloaded by a process killed mid-read, or from before there was a cache.
+     */
+    suspend fun clear(storage: StorageBackend, idle: suspend () -> Boolean = { false }, purge: suspend () -> Unit = {}) = lock.withLock {
         val all = load()
         for ((part, entry) in all.entries.toList()) {
             if (inUse(entry.fileId)) continue
@@ -72,6 +76,7 @@ class BlobCache(
             all.remove(part)
         }
         save(all)
+        if (all.isEmpty() && idle()) runCatching { purge() }
     }
 
     /** Signed out: TDLib has deleted its files itself, and the list of them goes too. */

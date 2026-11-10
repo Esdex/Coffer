@@ -234,7 +234,7 @@ class VaultContent @Inject constructor(
         catchUpFlow.value = null
         OpenFiles.clear(context)
         // The cache is encrypted, but shows what was opened lately; emptied on lock only when asked for.
-        if (cache.prefs.value.clearOnLock) scope.launch { telegram.readyStorage()?.let { cache.blobs.clear(it) } }
+        if (cache.prefs.value.clearOnLock) scope.launch { telegram.readyStorage()?.let { cache.clear(it) } }
     }
 
     /**

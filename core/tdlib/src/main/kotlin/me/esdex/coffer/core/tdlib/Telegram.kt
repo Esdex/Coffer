@@ -181,6 +181,7 @@ class Telegram(
     suspend fun accountName(): String = current().accountName()
     suspend fun account(): TelegramAccount = current().account()
     suspend fun usage(): TelegramUsage = current().usage()
+    suspend fun dropDownloads() = current().dropDownloads()
     suspend fun storage(): TdlibStorageBackend = current().storage()
 
     /**

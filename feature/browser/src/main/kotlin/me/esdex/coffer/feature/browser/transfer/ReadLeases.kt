@@ -27,6 +27,9 @@ class ReadLeases(private val scope: CoroutineScope) {
     /** Whether a reader of [fileId] is open now: the cache keeps its pieces until it closes. */
     fun isOpen(fileId: Id): Boolean = synchronized(leases) { leases.containsKey(fileId) }
 
+    /** Whether any file is open for reading now. */
+    fun anyOpen(): Boolean = synchronized(leases) { leases.isNotEmpty() }
+
     /**
      * A reader of [fileId] closed, having read [parts]. The last one lets go of what all of them read,
      * through [release], in the background; a reader opening meanwhile takes over what is left.

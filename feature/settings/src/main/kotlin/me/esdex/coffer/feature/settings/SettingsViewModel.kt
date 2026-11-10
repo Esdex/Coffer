@@ -137,7 +137,7 @@ class SettingsViewModel @Inject constructor(
     /** Lets go of every cached piece but those of a file open right now. */
     fun clearCache() {
         viewModelScope.launch {
-            telegram.readyStorage()?.let { cache.blobs.clear(it) }
+            telegram.readyStorage()?.let { cache.clear(it) }
             phoneFlow.value = stats.phone()
         }
     }

@@ -8,6 +8,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.tdlib.AuthState
@@ -26,7 +27,8 @@ import javax.inject.Singleton
 class FileCache @Inject constructor(
     @ApplicationContext context: Context,
     store: CacheStore,
-    telegram: Telegram,
+    private val telegram: Telegram,
+    private val index: VaultIndex,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -41,6 +43,16 @@ class FileCache @Inject constructor(
         // Logging out deletes TDLib's files and the next account has other message ids: the list goes too.
         scope.launch { telegram.state.collect { if (it == AuthState.LoggingOut) blobs.forget() } }
     }
+
+    /**
+     * Empties the cache; with nothing open and no copy being saved, also of the pieces it never knew
+     * about, so the phone's figure comes down to what open files still hold.
+     */
+    suspend fun clear(storage: StorageBackend) = blobs.clear(
+        storage,
+        idle = { !leases.anyOpen() && index.downloads().isEmpty() },
+        purge = { telegram.dropDownloads() },
+    )
 
     /** [part] of [fileId] was read whole for a copy and is done with. */
     fun keep(fileId: Id, part: MessageId, storage: StorageBackend) = blobs.keep(fileId, listOf(part), storage)

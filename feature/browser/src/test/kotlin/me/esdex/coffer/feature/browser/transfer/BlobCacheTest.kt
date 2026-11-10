@@ -137,6 +137,31 @@ class BlobCacheTest {
     }
 
     @Test
+    fun clearingDropsTheUnknownOnlyWhenNothingIsReadOrSaved() = runTest {
+        val cache = cache()
+        val a = blob().also { read(it) }
+        val f = fileId()
+        cache.keep(f, listOf(a), phone)
+        runCurrent()
+        var purged = 0
+        // Something is being saved: what the ledger never heard of may be that download.
+        cache.clear(phone, idle = { false }, purge = { purged++ })
+        assertEquals(0, purged)
+        // Idle, but a file is open: its pieces stay, and so does everything else.
+        val b = blob().also { read(it) }
+        open += f
+        cache.keep(f, listOf(b), phone)
+        runCurrent()
+        cache.clear(phone, idle = { true }, purge = { purged++ })
+        assertEquals(0, purged)
+        // Nothing open and nothing saved: the unknown goes too.
+        open -= f
+        cache.clear(phone, idle = { true }, purge = { purged++ })
+        assertEquals(1, purged)
+        assertEquals(0L, cache.size())
+    }
+
+    @Test
     fun theLedgerOutlivesTheProcess() = runTest {
         prefs = CachePrefs(limitMb = 10)
         val ledger = temp.root.resolve("ledger")
