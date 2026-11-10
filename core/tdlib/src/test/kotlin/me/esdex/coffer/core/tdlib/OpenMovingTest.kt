@@ -6,6 +6,7 @@ import org.junit.Assert.assertThrows
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.FileInputStream
 import java.io.FileNotFoundException
 
 class OpenMovingTest {
@@ -21,7 +22,7 @@ class OpenMovingTest {
         var asked = 0
         val input = openMoving {
             asked++
-            answers.removeFirst()
+            FileInputStream(answers.removeFirst())
         }
         assertEquals(7, input.use { it.read() })
         assertEquals(2, asked)
@@ -32,7 +33,7 @@ class OpenMovingTest {
         val gone = dir.root.resolve("temp/38").path
         var asked = 0
         assertThrows(FileNotFoundException::class.java) {
-            runBlocking { openMoving(attempts = 3) { asked++; gone } }
+            runBlocking { openMoving(attempts = 3) { asked++; FileInputStream(gone) } }
         }
         assertEquals(3, asked)
     }

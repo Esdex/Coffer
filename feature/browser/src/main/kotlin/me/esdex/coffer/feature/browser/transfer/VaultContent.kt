@@ -132,6 +132,10 @@ class VaultContent @Inject constructor(
     private val inbox: ShareInbox,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // Files open in the viewers: their pieces go when the last reader of each closes.
+    private val leases = ReadLeases(scope)
+
     private var session: Job? = null
 
     /** The open session's indexer and snapshotter; null while locked or not yet signed in. */
@@ -548,11 +552,11 @@ class VaultContent @Inject constructor(
         val storage = telegram.readyStorage() ?: return null
         val transfer = keys.transferKeys(fileId, file.sealedMeta) ?: return null
         val reader = keys.reader(storage, file, transfer)
+        leases.open(fileId)
         return OpenedFile(meta.name, meta.mime, reader) {
             reader.close()
             transfer.close()
-            val parts = reader.partsUsed()
-            scope.launch { for (part in parts) runCatching { storage.releaseBlob(part) } }
+            leases.close(fileId, reader.partsUsed()) { storage.releaseBlob(it) }
         }
     }
 

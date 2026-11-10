@@ -270,7 +270,12 @@ class TdlibStorageBackend internal constructor(
         return LimitedInputStream(input, count)
     }
 
-    private suspend fun download(fileId: Int, offset: Long, count: Long, onProgress: (Progress) -> Unit): String =
+    /**
+     * Downloads the range and opens the file, both under the file's lock: [releaseBlob] takes it too, so
+     * a DeleteFile can neither cut a download short nor take the file away before it is open. Once open,
+     * a delete no longer matters: the descriptor reads on.
+     */
+    private suspend fun download(fileId: Int, offset: Long, count: Long, onProgress: (Progress) -> Unit): FileInputStream =
         fileLocks.getOrPut(fileId) { Mutex() }.withLock {
             fileProgress[fileId] = { f ->
                 if (f.local.downloadOffset == offset) {
@@ -283,7 +288,7 @@ class TdlibStorageBackend internal constructor(
                 val covered = local.isDownloadingCompleted ||
                     (local.downloadOffset <= offset && local.downloadOffset + local.downloadedPrefixSize >= offset + count)
                 if (local.path.isEmpty() || !covered) throw StorageException("download stopped before the range was complete")
-                local.path
+                FileInputStream(local.path)
             } catch (e: CancellationException) {
                 withContext(NonCancellable) { runCatching { session.send(TdApi.CancelDownloadFile(fileId, false)) } }
                 throw e
@@ -294,7 +299,10 @@ class TdlibStorageBackend internal constructor(
 
     override suspend fun releaseBlob(id: MessageId) {
         val file = runCatching { blobFile(id) }.getOrNull() ?: return
-        session.send(TdApi.DeleteFile(file.id))
+        // Never alongside a download of the same file: TDLib drops the local copy being written, and the
+        // download fails with 400 (a viewer closing a file and opening it again at once, or reading a
+        // file while it is being saved).
+        fileLocks.getOrPut(file.id) { Mutex() }.withLock { session.send(TdApi.DeleteFile(file.id)) }
     }
 
     private companion object {
@@ -307,15 +315,16 @@ class TdlibStorageBackend internal constructor(
 }
 
 /**
- * Opens the file [locate] points at. TDLib keeps a part-downloaded file in temp/ and moves it out once
- * the last piece is in, so a range that completed the file can come back with the temp path just
- * before the move. Asking again gives the new one; TDLib's own ReadFilePart retries the same way.
+ * Runs [open], again when the file it was told of is gone. TDLib keeps a part-downloaded file in temp/
+ * and moves it out once the last piece is in, so a range that completed the file can come back with the
+ * temp path just before the move. Asking again gives the new one; TDLib's own ReadFilePart retries the
+ * same way.
  */
-internal suspend fun openMoving(attempts: Int = OPEN_ATTEMPTS, onRetry: () -> Unit = {}, locate: suspend () -> String): FileInputStream {
+internal suspend fun openMoving(attempts: Int = OPEN_ATTEMPTS, onRetry: () -> Unit = {}, open: suspend () -> FileInputStream): FileInputStream {
     var attempt = 1
     while (true) {
         try {
-            return FileInputStream(locate())
+            return open()
         } catch (e: FileNotFoundException) {
             if (attempt >= attempts) throw e
             onRetry()
