@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -28,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInNew
@@ -85,42 +87,37 @@ import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
 import me.esdex.coffer.feature.browser.viewer.formatTime
 
 /**
- * The tracks of a folder, one at a time, after Arcanum's audio player (pre-release item 5): the cover
- * and its colour, the tags, a seek bar, previous and next, shuffle and repeat. It plays while Coffer is
- * on screen and pauses when Coffer leaves it.
+ * The queue playing, after Arcanum's audio player (pre-release item 5): the cover and its colour, the
+ * tags, a seek bar, previous and next, shuffle and repeat. The music is [AudioPlayback]'s and plays on
+ * when this screen goes, the vault locking included; closing the player is what stops it.
  */
 @Composable
 fun AudioPlayerScreen(
-    tracks: List<ViewerViewModel.Page>,
-    startIndex: Int,
-    onClose: () -> Unit,
     onSave: (ViewerViewModel.Page) -> Unit,
     onOpenWith: (ViewerViewModel.Page) -> Unit,
     viewModel: AudioViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(tracks) { viewModel.show(tracks, startIndex) }
-    // Left in any way, the vault locking included: the sound stops and the file closes.
-    DisposableEffect(viewModel) { onDispose { viewModel.close() } }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val locked by viewModel.locked.collectAsStateWithLifecycle()
-    LaunchedEffect(locked) { if (locked) onClose() }
+    val prefs by viewModel.prefs.collectAsStateWithLifecycle()
+    // Back folds the player away while music plays, closes it otherwise; Stop in the menu always closes.
+    val onClose = viewModel::back
     BackHandler(onBack = onClose)
 
-    // Playing on in the background is a step of its own; until then Coffer out of sight means paused.
+    // With background play turned off, Coffer out of sight means paused.
     val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) viewModel.pause() }
+    val background = prefs.backgroundAudio
+    DisposableEffect(lifecycleOwner, background) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP && !background) viewModel.pause() }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    val player = viewModel.player()
-    var positionMs by remember { mutableLongStateOf(0L) }
+    val player = viewModel.player
+    var positionMs by remember { mutableLongStateOf(player.currentPosition) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubFraction by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(state.index) { positionMs = 0L }
     // Once a frame rather than on a timer, so the bar moves smoothly; only while it plays.
-    LaunchedEffect(state.isPlaying, scrubbing) {
+    LaunchedEffect(state.isPlaying, scrubbing, state.index) {
         positionMs = player.currentPosition
         while (state.isPlaying && !scrubbing) {
             withFrameNanos { }
@@ -158,6 +155,11 @@ fun AudioPlayerScreen(
                                 leadingIcon = { Icon(Icons.Outlined.OpenInNew, null) },
                                 onClick = { menuOpen = false; viewModel.pause(); track?.let(onOpenWith) },
                             )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.audio_stop)) },
+                                leadingIcon = { Icon(Icons.Outlined.Close, null) },
+                                onClick = { menuOpen = false; viewModel.stop() },
+                            )
                         }
                     }
                 }
@@ -169,7 +171,7 @@ fun AudioPlayerScreen(
                             Cover(tags, Modifier.weight(1f, fill = false).widthIn(max = 420.dp).aspectRatio(1f))
                             Spacer(Modifier.height(24.dp))
                             Text(
-                                tags?.title ?: track?.name.orEmpty(),
+                                tags?.title ?: track?.name?.let { it.substringBeforeLast('.', it) }.orEmpty(),
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                                 maxLines = 1,
@@ -289,9 +291,14 @@ private fun ModeChip(selected: Boolean, label: String, icon: androidx.compose.ui
 
 /** The cover, or while there is none a gradient with a note, as in Arcanum. */
 @Composable
-private fun Cover(tags: AudioViewModel.Tags?, modifier: Modifier) {
-    val shape = RoundedCornerShape(16.dp)
-    Box(modifier.shadow(16.dp, shape, clip = false).clip(shape), contentAlignment = Alignment.Center) {
+private fun Cover(
+    tags: AudioViewModel.Tags?,
+    modifier: Modifier,
+    shape: RoundedCornerShape = RoundedCornerShape(16.dp),
+    elevation: androidx.compose.ui.unit.Dp = 16.dp,
+    noteSize: androidx.compose.ui.unit.Dp = 72.dp,
+) {
+    Box(modifier.shadow(elevation, shape, clip = false).clip(shape), contentAlignment = Alignment.Center) {
         val cover = tags?.cover
         if (cover != null) {
             Image(cover.asImageBitmap(), stringResource(R.string.audio_cd_cover), contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
@@ -301,8 +308,45 @@ private fun Cover(tags: AudioViewModel.Tags?, modifier: Modifier) {
                 contentAlignment = Alignment.Center,
             ) {
                 // Nothing while the tags are read, so a cover arriving does not replace a note.
-                if (tags != null) Icon(Icons.Filled.MusicNote, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(72.dp))
+                if (tags != null) Icon(Icons.Filled.MusicNote, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(noteSize))
             }
+        }
+    }
+}
+
+/**
+ * The player folded away: a bar under the files while the music plays on, with the track, play and
+ * pause, and a way to stop. A tap opens the player again.
+ */
+@Composable
+fun MiniPlayer(viewModel: AudioViewModel = hiltViewModel()) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val tags = state.tags
+    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = viewModel::expand).navigationBarsPadding().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Cover(tags, Modifier.size(44.dp), shape = RoundedCornerShape(8.dp), elevation = 0.dp, noteSize = 22.dp)
+            Column(Modifier.weight(1f)) {
+                Text(
+                    tags?.title ?: state.track?.name?.let { it.substringBeforeLast('.', it) }.orEmpty(),
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                tags?.artist?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            IconButton(onClick = viewModel::togglePlay) {
+                Icon(
+                    if (state.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    stringResource(if (state.isPlaying) R.string.viewer_pause else R.string.viewer_play),
+                )
+            }
+            IconButton(onClick = viewModel::stop) { Icon(Icons.Outlined.Close, stringResource(R.string.audio_stop)) }
         }
     }
 }

@@ -120,6 +120,7 @@
     <string name="audio_next">Next</string>
     <string name="audio_failed">This track could not be played</string>
     <string name="audio_cd_cover">Cover</string>
+    <string name="audio_stop">Stop</string>
     <plurals name="browser_deleted_count">
         <item quantity="one">Deleted %1$d item</item>
         <item quantity="other">Deleted %1$d items</item>

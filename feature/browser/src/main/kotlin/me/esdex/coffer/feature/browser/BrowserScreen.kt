@@ -156,6 +156,7 @@ import me.esdex.coffer.feature.browser.transfer.VaultContent
 import me.esdex.coffer.feature.browser.viewer.PdfViewerScreen
 import me.esdex.coffer.feature.browser.viewer.ViewerScreen
 import me.esdex.coffer.feature.browser.viewer.audio.AudioPlayerScreen
+import me.esdex.coffer.feature.browser.viewer.audio.MiniPlayer
 import me.esdex.coffer.feature.browser.viewer.text.TextFiles
 import me.esdex.coffer.feature.browser.viewer.text.TextViewerScreen
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
@@ -233,8 +234,7 @@ fun BrowserScreen(
     var lastReading by remember { mutableStateOf(reading) }
     if (reading != null) lastReading = reading
     val listening by viewModel.listening.collectAsStateWithLifecycle()
-    var lastListening by remember { mutableStateOf(listening) }
-    if (listening != null) lastListening = listening
+    val playerExpanded by viewModel.playerExpanded.collectAsStateWithLifecycle()
     var savingFromViewer by remember { mutableStateOf<Id?>(null) }
     val saveFromViewer = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val fileId = savingFromViewer
@@ -404,6 +404,14 @@ fun BrowserScreen(
                     }
                 },
                 bottomBar = {
+                    // Music playing on with its player folded away, unless a selection needs the place.
+                    AnimatedVisibility(
+                        visible = listening.isNotEmpty() && !playerExpanded && !selecting,
+                        enter = slideInVertically { it } + fadeIn(),
+                        exit = slideOutVertically { it } + fadeOut(),
+                    ) {
+                        MiniPlayer()
+                    }
                     AnimatedVisibility(
                         visible = selecting,
                         enter = slideInVertically { it } + fadeIn(),
@@ -636,12 +644,8 @@ fun BrowserScreen(
             TextViewerScreen(page = page, onClose = viewModel::closeReading, onSave = onSave, onOpenWith = onOpenWith)
         }
     }
-    AnimatedVisibility(visible = listening != null, enter = fadeIn(tween(FOLDER_MILLIS)), exit = fadeOut(tween(FOLDER_MILLIS))) {
-        val (tracks, start) = lastListening ?: return@AnimatedVisibility
+    AnimatedVisibility(visible = listening.isNotEmpty() && playerExpanded, enter = fadeIn(tween(FOLDER_MILLIS)), exit = fadeOut(tween(FOLDER_MILLIS))) {
         AudioPlayerScreen(
-            tracks = tracks,
-            startIndex = start,
-            onClose = viewModel::closeListening,
             onSave = {
                 savingFromViewer = it.fileId
                 saveFromViewer.launch(it.name)

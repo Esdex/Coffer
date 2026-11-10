@@ -11,9 +11,9 @@ class PlayerStoreTest {
     val temp = TemporaryFolder()
 
     @Test
-    fun everyExtraIsOnByDefault() {
+    fun everyExtraIsOnByDefaultAndNothingIsShownOutside() {
         val prefs = PlayerStore(File(temp.root, "player.properties")).prefs.value
-        assertEquals(PlayerPrefs(true, true, true, true, true, true), prefs)
+        assertEquals(PlayerPrefs(true, true, true, true, true, true, backgroundAudio = true, showPlaying = false), prefs)
     }
 
     @Test
@@ -28,6 +28,7 @@ class PlayerStoreTest {
         // One switch off at a time, each on its own key: none follows another.
         for (off in listOf<(PlayerPrefs) -> PlayerPrefs>(
             { it.copy(swipeVolume = false) }, { it.copy(holdForSpeed = false) }, { it.copy(lockButton = false) }, { it.copy(speedMenu = false) },
+            { it.copy(backgroundAudio = false) }, { it.copy(showPlaying = true) },
         )) {
             val one = File(temp.newFolder(), "player.properties")
             PlayerStore(one).update(off)

@@ -7,8 +7,9 @@ import java.io.File
 import java.util.Properties
 
 /**
- * The video player's extras, one switch each, as in Arcanum: the gestures change what a touch on the
- * video does and the controls add buttons, so each can be taken away by itself. All on by default.
+ * The players' extras, one switch each, as in Arcanum: the gestures change what a touch on the video
+ * does and the controls add buttons, so each can be taken away by itself, on by default. Music plays on
+ * in the background unless turned off; what plays is shown outside Coffer only when asked for.
  */
 data class PlayerPrefs(
     val swipeVolume: Boolean = true,
@@ -17,6 +18,9 @@ data class PlayerPrefs(
     val lockButton: Boolean = true,
     val speedMenu: Boolean = true,
     val loop: Boolean = true,
+    val backgroundAudio: Boolean = true,
+    // Off by default: a notification, the lock screen and anything listening to media sessions are outside Coffer.
+    val showPlaying: Boolean = false,
 )
 
 /** Where [PlayerPrefs] is kept: a file of its own beside the appearance, kept over a sign-out. */
@@ -48,6 +52,8 @@ class PlayerStore(private val file: File) {
             lockButton = flag(LOCK_BUTTON, d.lockButton),
             speedMenu = flag(SPEED_MENU, d.speedMenu),
             loop = flag(LOOP, d.loop),
+            backgroundAudio = flag(BACKGROUND_AUDIO, d.backgroundAudio),
+            showPlaying = flag(SHOW_PLAYING, d.showPlaying),
         )
     }
 
@@ -58,6 +64,8 @@ class PlayerStore(private val file: File) {
         const val LOCK_BUTTON = "lockButton"
         const val SPEED_MENU = "speedMenu"
         const val LOOP = "loop"
+        const val BACKGROUND_AUDIO = "backgroundAudio"
+        const val SHOW_PLAYING = "showPlaying"
         val KEYS: List<Pair<String, (PlayerPrefs) -> Boolean>> = listOf(
             SWIPE_VOLUME to { it.swipeVolume },
             SWIPE_BRIGHTNESS to { it.swipeBrightness },
@@ -65,6 +73,8 @@ class PlayerStore(private val file: File) {
             LOCK_BUTTON to { it.lockButton },
             SPEED_MENU to { it.speedMenu },
             LOOP to { it.loop },
+            BACKGROUND_AUDIO to { it.backgroundAudio },
+            SHOW_PLAYING to { it.showPlaying },
         )
     }
 }

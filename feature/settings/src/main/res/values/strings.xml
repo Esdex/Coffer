@@ -10,8 +10,8 @@
     <string name="settings_card_vault_desc">Change the password, see the 24 words</string>
     <string name="settings_card_appearance">Appearance</string>
     <string name="settings_card_appearance_desc">Theme, pure black, colours</string>
-    <string name="settings_card_player">Video player</string>
-    <string name="settings_card_player_desc">Gestures and controls</string>
+    <string name="settings_card_player">Player</string>
+    <string name="settings_card_player_desc">Video gestures and controls, music in the background</string>
     <string name="settings_player_gestures">Gestures</string>
     <string name="settings_player_swipe_volume">Swipe on the right for volume</string>
     <string name="settings_player_swipe_brightness">Swipe on the left for brightness</string>
@@ -22,6 +22,11 @@
     <string name="settings_player_lock_info">Locks the screen against touches while a video plays, for watching without pausing it by accident.</string>
     <string name="settings_player_speed">Playback speed menu</string>
     <string name="settings_player_loop">Repeat</string>
+    <string name="settings_player_music">Music</string>
+    <string name="settings_player_background">Play in the background</string>
+    <string name="settings_player_background_info">Music goes on when you leave Coffer or the screen turns off, with its controls in a notification. It goes on after the vault locks too, until you stop it: the tracks queued keep their own keys, which are wiped when the music stops, or ten minutes after it pauses with the vault locked.</string>
+    <string name="settings_player_show_playing">Show what is playing outside Coffer</string>
+    <string name="settings_player_show_playing_info">Off, the notification, the lock screen and headset displays say only Coffer. On, they show the title, artist and cover from the file\'s tags.</string>
     <string name="settings_card_text">Text viewer</string>
     <string name="settings_card_text_desc">Font, line numbers, colours, Markdown</string>
     <string name="settings_text_group_text">Text</string>

@@ -6,12 +6,26 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Music plays on in the background with its controls in a notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <application>
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync"
             tools:node="merge" />
+
+        <!-- Exported for the system's media controls and headset buttons; AudioService admits only
+             Coffer and the system. -->
+        <service
+            android:name="me.esdex.coffer.feature.browser.viewer.audio.AudioService"
+            tools:ignore="ExportedService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
 
         <!-- Decrypted copies for "open in another app" (SPEC §6), only from cache/open. -->
         <provider

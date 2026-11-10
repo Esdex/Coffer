@@ -13,13 +13,14 @@ import me.esdex.coffer.core.sync.VaultFileReader
 import java.io.IOException
 
 /**
- * What the player reads a video through, after Arcanum's EncryptedDataSource: every range it asks
- * for comes from [reader], a chunk at a time from Saved Messages, so a video starts before it is
- * downloaded and a seek fetches only where it lands. The player reads on a loader thread of its
- * own, which is why blocking here is fine.
+ * What the player reads a video or a track through, after Arcanum's EncryptedDataSource: every range
+ * it asks for comes from the reader [resolve] gives for the item's address, a chunk at a time from
+ * Saved Messages, so playing starts before the file is downloaded and a seek fetches only where it
+ * lands. The player reads on a loader thread of its own, which is why blocking here is fine.
  */
 @OptIn(UnstableApi::class)
-class ReaderDataSource(private val reader: VaultFileReader) : BaseDataSource(true) {
+class ReaderDataSource(private val resolve: (Uri) -> VaultFileReader) : BaseDataSource(true) {
+    private lateinit var reader: VaultFileReader
     private var uri: Uri? = null
     private var position = 0L
     private var remaining = 0L
@@ -27,6 +28,11 @@ class ReaderDataSource(private val reader: VaultFileReader) : BaseDataSource(tru
 
     override fun open(dataSpec: DataSpec): Long {
         uri = dataSpec.uri
+        reader = try {
+            resolve(dataSpec.uri)
+        } catch (e: Exception) {
+            throw DataSourceException(e, PlaybackException.ERROR_CODE_IO_UNSPECIFIED)
+        }
         transferInitializing(dataSpec)
         if (dataSpec.position > reader.size) throw DataSourceException(PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE)
         position = dataSpec.position

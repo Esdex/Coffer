@@ -40,6 +40,8 @@ import me.esdex.coffer.debug.DebugTools
 import me.esdex.coffer.feature.browser.BrowserScreen
 import me.esdex.coffer.feature.browser.R as BrowserR
 import me.esdex.coffer.feature.browser.ShareScreen
+import me.esdex.coffer.feature.browser.viewer.audio.AudioPlayback
+import javax.inject.Inject
 import me.esdex.coffer.feature.settings.SettingsScreen
 import me.esdex.coffer.core.ui.theme.CofferTheme
 
@@ -47,6 +49,8 @@ import me.esdex.coffer.core.ui.theme.CofferTheme
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
     private val viewModel: MainViewModel by viewModels()
+
+    @Inject lateinit var playback: AudioPlayback
 
     /** Opened by Share from another app: when the files are added or cancelled, go back there. */
     private var openedToShare = false
@@ -126,6 +130,10 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun receive(intent: Intent?) {
+        if (intent?.action == AudioPlayback.ACTION_SHOW_PLAYER) {
+            playback.expand()
+            return
+        }
         val uris = when (intent?.action) {
             Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
             Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()

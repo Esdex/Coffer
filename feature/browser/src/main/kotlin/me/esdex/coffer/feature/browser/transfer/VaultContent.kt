@@ -57,6 +57,7 @@ import me.esdex.coffer.core.sync.Maintenance
 import me.esdex.coffer.core.sync.Snapshotter
 import me.esdex.coffer.core.sync.UploadPreparer
 import me.esdex.coffer.core.sync.UploadRunner
+import me.esdex.coffer.core.sync.TransferKeys
 import me.esdex.coffer.core.sync.VaultFileReader
 import me.esdex.coffer.core.sync.VaultKeys
 import me.esdex.coffer.core.sync.VaultOps
@@ -557,6 +558,40 @@ class VaultContent @Inject constructor(
             reader.close()
             transfer.close()
             leases.close(fileId, reader.partsUsed()) { storage.releaseBlob(it) }
+        }
+    }
+
+    /**
+     * A file the audio player holds for its queue, with a key of its own: it can be read after the vault
+     * locks, as a running transfer can (SPEC §6). [close] wipes that key; readers opened from it must be
+     * closed before.
+     */
+    class HeldFile(val fileId: Id, val name: String, val mime: String, private val keys: TransferKeys, private val opener: (TransferKeys) -> OpenedFile) : AutoCloseable {
+        fun open(): OpenedFile = opener(keys)
+
+        override fun close() = keys.close()
+    }
+
+    /**
+     * Holds [fileIds] for the player, in order, leaving out any not whole or gone; null while locked or
+     * offline for too long. Only the vault's codec is kept, never its keys.
+     */
+    suspend fun holdFiles(fileIds: List<Id>): List<HeldFile>? {
+        val keys = keysFlow.value ?: return null
+        val storage = telegram.readyStorage() ?: return null
+        val sodium = keys.sodium
+        return fileIds.mapNotNull { fileId ->
+            val file = index.file(fileId)?.takeIf { it.status == FileStatus.READY } ?: return@mapNotNull null
+            val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: return@mapNotNull null
+            val transfer = keys.transferKeys(fileId, file.sealedMeta) ?: return@mapNotNull null
+            HeldFile(fileId, meta.name, meta.mime, transfer) { held ->
+                val reader = VaultFileReader(sodium, storage, file, held)
+                leases.open(fileId)
+                OpenedFile(meta.name, meta.mime, reader) {
+                    reader.close()
+                    leases.close(fileId, reader.partsUsed()) { storage.releaseBlob(it) }
+                }
+            }
         }
     }
 

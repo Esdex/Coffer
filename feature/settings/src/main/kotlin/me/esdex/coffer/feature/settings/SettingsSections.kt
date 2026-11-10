@@ -209,9 +209,9 @@ internal fun VaultSection(onBack: () -> Unit, onPassword: () -> Unit, onRecovery
     }
 }
 
-// ── Video player ─────────────────────────────────────────────────────────────
+// ── Player ───────────────────────────────────────────────────────────────────
 
-/** The player's extras, one switch each, as in Arcanum (pre-release item 5). */
+/** The players' extras, one switch each, as in Arcanum, and how music plays outside Coffer (pre-release item 5). */
 @Composable
 internal fun PlayerSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
     val prefs by viewModel.player.collectAsStateWithLifecycle()
@@ -244,6 +244,18 @@ internal fun PlayerSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
             row { shape ->
                 GroupedSwitch(shape, title = stringResource(R.string.settings_player_loop), checked = prefs.loop,
                     onCheckedChange = { on -> viewModel.setPlayer { it.copy(loop = on) } })
+            }
+        }
+        SettingsGroup(stringResource(R.string.settings_player_music)) {
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_player_background), checked = prefs.backgroundAudio,
+                    info = stringResource(R.string.settings_player_background_info),
+                    onCheckedChange = { on -> viewModel.setPlayer { it.copy(backgroundAudio = on) } })
+            }
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_player_show_playing), checked = prefs.showPlaying,
+                    info = stringResource(R.string.settings_player_show_playing_info),
+                    onCheckedChange = { on -> viewModel.setPlayer { it.copy(showPlaying = on) } })
             }
         }
     }

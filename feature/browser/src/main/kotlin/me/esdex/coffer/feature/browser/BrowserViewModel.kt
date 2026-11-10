@@ -36,6 +36,7 @@ import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
+import me.esdex.coffer.feature.browser.viewer.audio.AudioPlayback
 import javax.inject.Inject
 
 /** A file as the browser shows it, decrypted in memory only (SPEC §8). */
@@ -86,6 +87,7 @@ class BrowserViewModel @Inject constructor(
     private val content: VaultContent,
     private val index: VaultIndex,
     private val registry: TransferRegistry,
+    private val playback: AudioPlayback,
     telegram: Telegram,
 ) : ViewModel() {
 
@@ -239,16 +241,17 @@ class BrowserViewModel @Inject constructor(
         readingFlow.value = null
     }
 
-    /** The tracks of the folder on screen in the audio player, and the one tapped. */
-    private val listeningFlow = MutableStateFlow<Viewing?>(null)
-    val listening: StateFlow<Viewing?> = listeningFlow.asStateFlow()
+    /** The music queued; the player is on screen while there is any, and comes back with it after an unlock. */
+    val listening: StateFlow<List<ViewerViewModel.Page>> = playback.queue
 
+    /** Whether the player fills the screen or sits folded under the files. */
+    val playerExpanded: StateFlow<Boolean> = playback.expanded
+
+    /** The tracks of the folder on screen, from the one tapped. */
     fun listen(tracks: List<ViewerViewModel.Page>, start: Int) {
-        listeningFlow.value = Viewing(tracks, start)
-    }
-
-    fun closeListening() {
-        listeningFlow.value = null
+        viewModelScope.launch {
+            if (!playback.play(tracks, start)) messagesFlow.emit(R.string.audio_failed)
+        }
     }
 
     /** The whole tree, for picking where to move something; null while locked. */

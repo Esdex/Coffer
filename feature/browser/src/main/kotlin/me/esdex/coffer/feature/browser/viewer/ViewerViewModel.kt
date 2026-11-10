@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import androidx.annotation.OptIn
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -156,7 +158,11 @@ class ViewerViewModel @Inject constructor(
 
     /** One player for the whole viewer, made the first time a video is on screen. */
     @OptIn(UnstableApi::class)
-    fun player(): ExoPlayer = exo ?: ExoPlayer.Builder(context).build().also { exo = it }
+    fun player(): ExoPlayer = exo ?: ExoPlayer.Builder(context)
+        // Audio focus, so a video pauses music playing in the background instead of sounding over it.
+        .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
+        .build()
+        .also { exo = it }
 
     /** [page] is on screen: it plays, read in place; whatever played before is let go. */
     @OptIn(UnstableApi::class)
@@ -172,7 +178,7 @@ class ViewerViewModel @Inject constructor(
                 return@launch
             }
             playing = page.fileId to file
-            val source = ProgressiveMediaSource.Factory { ReaderDataSource(file.reader) }
+            val source = ProgressiveMediaSource.Factory { ReaderDataSource { file.reader } }
                 // Any address will do: the data source reads one file and ignores it.
                 .createMediaSource(MediaItem.fromUri("coffer://video"))
             player().run {
