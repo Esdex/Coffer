@@ -23,6 +23,7 @@ import org.drinkless.tdlib.TdApi
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileNotFoundException
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
@@ -257,8 +258,9 @@ class TdlibStorageBackend internal constructor(
         val range = blobRange(file.size, offset, length)
         val count = range.last - range.first + 1
         if (count == 0L) return ByteArrayInputStream(ByteArray(0))
-        val path = limiter.transfer { download(file.id, range.first, count, onProgress) }
-        val input = FileInputStream(path)
+        val input = openMoving(onRetry = { Log.i(TAG, "download of file ${file.id} moved out of temp, asking again") }) {
+            limiter.transfer { download(file.id, range.first, count, onProgress) }
+        }
         try {
             input.channel.position(range.first)
         } catch (e: Exception) {
@@ -303,6 +305,28 @@ class TdlibStorageBackend internal constructor(
         const val DOWNLOAD_PRIORITY = 16
     }
 }
+
+/**
+ * Opens the file [locate] points at. TDLib keeps a part-downloaded file in temp/ and moves it out once
+ * the last piece is in, so a range that completed the file can come back with the temp path just
+ * before the move. Asking again gives the new one; TDLib's own ReadFilePart retries the same way.
+ */
+internal suspend fun openMoving(attempts: Int = OPEN_ATTEMPTS, onRetry: () -> Unit = {}, locate: suspend () -> String): FileInputStream {
+    var attempt = 1
+    while (true) {
+        try {
+            return FileInputStream(locate())
+        } catch (e: FileNotFoundException) {
+            if (attempt >= attempts) throw e
+            onRetry()
+            delay(OPEN_RETRY_MILLIS * attempt)
+            attempt++
+        }
+    }
+}
+
+private const val OPEN_ATTEMPTS = 3
+private const val OPEN_RETRY_MILLIS = 10L
 
 /** Reads at most [remaining] bytes of [input]. */
 private class LimitedInputStream(input: InputStream, private var remaining: Long) : FilterInputStream(input) {
