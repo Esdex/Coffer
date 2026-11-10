@@ -24,6 +24,8 @@ import me.esdex.coffer.core.ui.theme.Appearance
 import me.esdex.coffer.core.ui.theme.AppearanceStore
 import me.esdex.coffer.core.ui.theme.PlayerPrefs
 import me.esdex.coffer.core.ui.theme.PlayerStore
+import me.esdex.coffer.core.ui.theme.TextPrefs
+import me.esdex.coffer.core.ui.theme.TextStore
 import me.esdex.coffer.core.ui.theme.ThemeMode
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
@@ -51,6 +53,7 @@ class SettingsViewModel @Inject constructor(
     private val telegram: Telegram,
     private val appearanceStore: AppearanceStore,
     private val playerStore: PlayerStore,
+    private val textStore: TextStore,
 ) : ViewModel() {
 
     val appearance: StateFlow<Appearance> = appearanceStore.appearance
@@ -58,6 +61,10 @@ class SettingsViewModel @Inject constructor(
     val player: StateFlow<PlayerPrefs> = playerStore.prefs
 
     fun setPlayer(change: (PlayerPrefs) -> PlayerPrefs) = playerStore.update(change)
+
+    val text: StateFlow<TextPrefs> = textStore.prefs
+
+    fun setText(change: (TextPrefs) -> TextPrefs) = textStore.update(change)
 
     private val accountFlow = MutableStateFlow<TelegramAccount?>(null)
 

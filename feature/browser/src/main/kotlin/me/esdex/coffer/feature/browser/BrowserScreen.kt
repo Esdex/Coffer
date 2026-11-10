@@ -155,6 +155,8 @@ import me.esdex.coffer.feature.browser.transfer.UNDO_MILLIS
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import me.esdex.coffer.feature.browser.viewer.PdfViewerScreen
 import me.esdex.coffer.feature.browser.viewer.ViewerScreen
+import me.esdex.coffer.feature.browser.viewer.text.TextFiles
+import me.esdex.coffer.feature.browser.viewer.text.TextViewerScreen
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
 
 /** Something a dialog acts on: a folder or a file. */
@@ -613,26 +615,29 @@ fun BrowserScreen(
     }
     AnimatedVisibility(visible = reading != null, enter = fadeIn(tween(FOLDER_MILLIS)), exit = fadeOut(tween(FOLDER_MILLIS))) {
         val page = lastReading ?: return@AnimatedVisibility
-        PdfViewerScreen(
-            page = page,
-            onClose = viewModel::closeReading,
-            onSave = {
-                savingFromViewer = it.fileId
-                saveFromViewer.launch(it.name)
-            },
-            onOpenWith = {
-                askForNotifications()
-                viewModel.open(it.fileId)
-            },
-        )
+        val onSave: (ViewerViewModel.Page) -> Unit = {
+            savingFromViewer = it.fileId
+            saveFromViewer.launch(it.name)
+        }
+        val onOpenWith: (ViewerViewModel.Page) -> Unit = {
+            askForNotifications()
+            viewModel.open(it.fileId)
+        }
+        if (page.mime == PDF) {
+            PdfViewerScreen(page = page, onClose = viewModel::closeReading, onSave = onSave, onOpenWith = onOpenWith)
+        } else {
+            TextViewerScreen(page = page, onClose = viewModel::closeReading, onSave = onSave, onOpenWith = onOpenWith)
+        }
     }
 }
 
-/** What the viewer shows so far (pre-release item 5); other files open in another app. */
-private fun FileItem.isViewable() = mime.startsWith("image/") || mime.startsWith("video/")
+/** What the viewer shows (pre-release item 5). SVG is an image by type but not one ImageDecoder draws: it opens as text. */
+private fun FileItem.isViewable() = (mime.startsWith("image/") && mime != "image/svg+xml") || mime.startsWith("video/")
 
 /** Documents Coffer reads itself, one at a time. */
-private fun FileItem.isReadable() = mime == "application/pdf"
+private fun FileItem.isReadable() = mime == PDF || TextFiles.isText(name, mime)
+
+private const val PDF = "application/pdf"
 
 private enum class RowAction { OPEN, EXPORT, RENAME, MOVE, DELETE }
 

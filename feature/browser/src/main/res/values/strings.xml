@@ -101,6 +101,16 @@
     <string name="viewer_pdf_unreadable">This PDF cannot be opened</string>
     <string name="viewer_pdf_not_available">This PDF cannot be read right now</string>
     <string name="viewer_pdf_not_available_hint">Telegram cannot be reached, or the file is not whole.</string>
+    <string name="viewer_text_too_large">This file is too large to show here</string>
+    <string name="viewer_text_too_large_hint">Coffer shows text files up to %1$s. Open it in another app from the menu above.</string>
+    <string name="viewer_text_not_text">This file is not text</string>
+    <string name="viewer_text_not_text_hint">It has a text name but holds something else. Open it in another app from the menu above.</string>
+    <string name="viewer_text_not_available">This file cannot be read right now</string>
+    <string name="viewer_text_encoding_note">Not UTF-8: shown as Latin-1, so some characters may look wrong.</string>
+    <string name="viewer_text_show_source">Show the source</string>
+    <string name="viewer_text_show_rendered">Show formatted</string>
+    <string name="viewer_link_title">Open this link outside Coffer?</string>
+    <string name="viewer_link_open">Open</string>
     <plurals name="browser_deleted_count">
         <item quantity="one">Deleted %1$d item</item>
         <item quantity="other">Deleted %1$d items</item>

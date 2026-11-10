@@ -11,6 +11,7 @@ import me.esdex.coffer.core.index.RoomVaultIndex
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.ui.theme.AppearanceStore
 import me.esdex.coffer.core.ui.theme.PlayerStore
+import me.esdex.coffer.core.ui.theme.TextStore
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
@@ -41,6 +42,10 @@ object VaultModule {
     @Provides
     @Singleton
     fun playerStore(@ApplicationContext context: Context) = PlayerStore(File(context.noBackupFilesDir, "player.properties"))
+
+    @Provides
+    @Singleton
+    fun textStore(@ApplicationContext context: Context) = TextStore(File(context.noBackupFilesDir, "text.properties"))
 
     @Provides
     @Singleton
