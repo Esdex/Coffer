@@ -155,6 +155,7 @@ import me.esdex.coffer.feature.browser.transfer.UNDO_MILLIS
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import me.esdex.coffer.feature.browser.viewer.PdfViewerScreen
 import me.esdex.coffer.feature.browser.viewer.ViewerScreen
+import me.esdex.coffer.feature.browser.viewer.audio.AudioPlayerScreen
 import me.esdex.coffer.feature.browser.viewer.text.TextFiles
 import me.esdex.coffer.feature.browser.viewer.text.TextViewerScreen
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
@@ -231,6 +232,9 @@ fun BrowserScreen(
     val reading by viewModel.reading.collectAsStateWithLifecycle()
     var lastReading by remember { mutableStateOf(reading) }
     if (reading != null) lastReading = reading
+    val listening by viewModel.listening.collectAsStateWithLifecycle()
+    var lastListening by remember { mutableStateOf(listening) }
+    if (listening != null) lastListening = listening
     var savingFromViewer by remember { mutableStateOf<Id?>(null) }
     val saveFromViewer = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val fileId = savingFromViewer
@@ -459,6 +463,9 @@ fun BrowserScreen(
                                 if (file.isViewable()) {
                                     val media = shown.files.filter { it.isViewable() && it.status == FileStatus.READY }
                                     viewModel.view(media.map { ViewerViewModel.Page(it.fileId, it.name, it.mime) }, media.indexOf(file).coerceAtLeast(0))
+                                } else if (file.isAudio()) {
+                                    val tracks = shown.files.filter { it.isAudio() && it.status == FileStatus.READY }
+                                    viewModel.listen(tracks.map { ViewerViewModel.Page(it.fileId, it.name, it.mime) }, tracks.indexOf(file).coerceAtLeast(0))
                                 } else if (file.isReadable()) {
                                     viewModel.read(ViewerViewModel.Page(file.fileId, file.name, file.mime))
                                 } else {
@@ -629,10 +636,29 @@ fun BrowserScreen(
             TextViewerScreen(page = page, onClose = viewModel::closeReading, onSave = onSave, onOpenWith = onOpenWith)
         }
     }
+    AnimatedVisibility(visible = listening != null, enter = fadeIn(tween(FOLDER_MILLIS)), exit = fadeOut(tween(FOLDER_MILLIS))) {
+        val (tracks, start) = lastListening ?: return@AnimatedVisibility
+        AudioPlayerScreen(
+            tracks = tracks,
+            startIndex = start,
+            onClose = viewModel::closeListening,
+            onSave = {
+                savingFromViewer = it.fileId
+                saveFromViewer.launch(it.name)
+            },
+            onOpenWith = {
+                askForNotifications()
+                viewModel.open(it.fileId)
+            },
+        )
+    }
 }
 
 /** What the viewer shows (pre-release item 5). SVG is an image by type but not one ImageDecoder draws: it opens as text. */
 private fun FileItem.isViewable() = (mime.startsWith("image/") && mime != "image/svg+xml") || mime.startsWith("video/")
+
+/** Tracks Coffer plays itself, the folder's one after another. */
+private fun FileItem.isAudio() = mime.startsWith("audio/")
 
 /** Documents Coffer reads itself, one at a time. */
 private fun FileItem.isReadable() = mime == PDF || TextFiles.isText(name, mime)

@@ -239,6 +239,18 @@ class BrowserViewModel @Inject constructor(
         readingFlow.value = null
     }
 
+    /** The tracks of the folder on screen in the audio player, and the one tapped. */
+    private val listeningFlow = MutableStateFlow<Viewing?>(null)
+    val listening: StateFlow<Viewing?> = listeningFlow.asStateFlow()
+
+    fun listen(tracks: List<ViewerViewModel.Page>, start: Int) {
+        listeningFlow.value = Viewing(tracks, start)
+    }
+
+    fun closeListening() {
+        listeningFlow.value = null
+    }
+
     /** The whole tree, for picking where to move something; null while locked. */
     val tree: StateFlow<VaultTree?> = contents.map { it?.tree }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 

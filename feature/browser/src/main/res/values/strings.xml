@@ -111,6 +111,15 @@
     <string name="viewer_text_show_rendered">Show formatted</string>
     <string name="viewer_link_title">Open this link outside Coffer?</string>
     <string name="viewer_link_open">Open</string>
+    <string name="audio_now_playing">Now playing</string>
+    <string name="audio_shuffle">Shuffle</string>
+    <string name="audio_repeat">Repeat</string>
+    <string name="audio_repeat_all">Repeat all</string>
+    <string name="audio_repeat_one">Repeat one</string>
+    <string name="audio_previous">Previous</string>
+    <string name="audio_next">Next</string>
+    <string name="audio_failed">This track could not be played</string>
+    <string name="audio_cd_cover">Cover</string>
     <plurals name="browser_deleted_count">
         <item quantity="one">Deleted %1$d item</item>
         <item quantity="other">Deleted %1$d items</item>
