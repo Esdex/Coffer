@@ -7,12 +7,18 @@ import androidx.lifecycle.ProcessLifecycleOwner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import me.esdex.coffer.core.storage.StorageBackend
+import me.esdex.coffer.core.storage.StorageEvent
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.DeviceUnlock
+import me.esdex.coffer.core.vault.FoundHeader
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
 import me.esdex.coffer.feature.browser.transfer.VaultContent
@@ -39,11 +45,17 @@ class VaultLifecycle @Inject constructor(
         ProcessLifecycleOwner.get().lifecycle.addObserver(this)
         content.start()
         scope.launch {
-            telegram.state.collect { state ->
+            // Latest only: watching the headers ends with the session it belongs to.
+            telegram.state.collectLatest { state ->
                 when (state) {
-                    AuthState.Ready -> launch { runCatching { vault.locate(telegram.storage()) } }
-                    // Closed only follows a log out or a reset of Telegram's data.
-                    AuthState.Closed -> {
+                    AuthState.Ready -> {
+                        val storage = runCatching { telegram.storage() }.getOrNull() ?: return@collectLatest
+                        launch { runCatching { vault.locate(storage) } }
+                        watchHeaders(storage)
+                    }
+                    // Closed only follows a log out or a reset of Telegram's data. The next state comes at
+                    // once, and forgetting the vault must not be cut short by it.
+                    AuthState.Closed -> withContext(NonCancellable) {
                         content.forget()
                         device.disable()
                         vault.forget()
@@ -51,6 +63,20 @@ class VaultLifecycle @Inject constructor(
                     else -> Unit
                 }
             }
+        }
+    }
+
+    /**
+     * A vault header arriving or a known one deleted means a password change (SPEC §4.1); the vault
+     * re-reads its headers and, if it is open here and its header went, locks.
+     */
+    private suspend fun watchHeaders(storage: StorageBackend) {
+        storage.events.collect { event ->
+            val header = when (event) {
+                is StorageEvent.NewMessage -> FoundHeader.from(event.message) != null
+                is StorageEvent.MessagesDeleted -> vault.knowsHeader(event.ids)
+            }
+            if (header) runCatching { vault.headersChanged(storage) }
         }
     }
 

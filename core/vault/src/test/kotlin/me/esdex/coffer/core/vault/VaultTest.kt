@@ -259,6 +259,100 @@ class VaultManagerTest {
         assertEquals(words, other.recoveryWords())
     }
 
+    /** Two devices on one Saved Messages: [here] made the vault, [there] found and opened it. */
+    private suspend fun twoDevices(cloud: FakeCloud, password: String): Triple<VaultManager, VaultManager, Pair<StorageBackend, StorageBackend>> {
+        val hereStorage = cloud.device()
+        val here = manager()
+        here.locate(hereStorage)
+        here.publish(hereStorage, here.prepareNew(password))
+        val thereStorage = cloud.device()
+        val there = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        there.locate(thereStorage)
+        assertTrue(there.unlockWithPassword(password, thereStorage))
+        return Triple(here, there, hereStorage to thereStorage)
+    }
+
+    @Test
+    fun aPasswordChangedElsewhereStopsTheOldOneAtTheNextUnlockHere() = runTest {
+        val cloud = FakeCloud()
+        val (here, there, storages) = twoDevices(cloud, "old password on both devices")
+        val (hereStorage, thereStorage) = storages
+        there.lockVault()
+        assertEquals(VaultManager.PasswordChange.Changed, here.changePassword(hereStorage, "old password on both devices", "new password changed over here"))
+        // There, still running and holding the old header: with Telegram answering, the old password is refused.
+        assertFalse(there.unlockWithPassword("old password on both devices", thereStorage))
+        assertTrue(there.unlockWithPassword("new password changed over here", thereStorage))
+    }
+
+    @Test
+    fun anOpenVaultLocksWhenItsHeaderIsReplacedElsewhere() = runTest {
+        val cloud = FakeCloud()
+        val (here, there, storages) = twoDevices(cloud, "old password on both devices")
+        val (hereStorage, thereStorage) = storages
+        here.changePassword(hereStorage, "old password on both devices", "new password changed over here")
+        there.headersChanged(thereStorage)
+        val state = there.state.value
+        assertTrue(state is VaultManager.State.Locked && state.passwordChangedElsewhere)
+        // The old header is forgotten here too: not even offline does the old password open it any more.
+        assertFalse(there.unlockWithPassword("old password on both devices"))
+        assertTrue(there.unlockWithPassword("new password changed over here"))
+    }
+
+    @Test
+    fun theDeviceThatChangedThePasswordStaysOpen() = runTest {
+        val cloud = FakeCloud()
+        val (here, _, storages) = twoDevices(cloud, "old password on both devices")
+        here.changePassword(storages.first, "old password on both devices", "new password changed over here")
+        // Its own new header and the delete of the old one come back as events.
+        here.headersChanged(storages.first)
+        assertTrue(here.state.value is VaultManager.State.Unlocked)
+    }
+
+    @Test
+    fun aHeaderCheckThatStartedBeforeOwnChangeDoesNotUndoIt() = runTest {
+        val cloud = FakeCloud()
+        val (here, _, storages) = twoDevices(cloud, "old password on both devices")
+        // An event set off a check; it has read the pinned headers (the old one) and is on its way back.
+        val gate = CompletableDeferred<Unit>()
+        val slow = object : StorageBackend by storages.first {
+            override suspend fun pinnedMessages(): List<StoredMessage> = storages.first.pinnedMessages().also { gate.await() }
+        }
+        val check = launch { here.headersChanged(slow) }
+        runCurrent()
+        here.changePassword(storages.first, "old password on both devices", "new password changed over here")
+        gate.complete(Unit)
+        check.join()
+        assertTrue(here.state.value is VaultManager.State.Unlocked)
+        here.lockVault()
+        assertFalse(here.unlockWithPassword("old password on both devices"))
+        assertTrue(here.unlockWithPassword("new password changed over here"))
+    }
+
+    @Test
+    fun aNewHeaderAloneLeavesTheVaultOpen() = runTest {
+        val cloud = FakeCloud()
+        val (here, there, storages) = twoDevices(cloud, "old password on both devices")
+        // A change cut short over there: the new header is pinned, the old one still in place. Both work.
+        val cut = object : StorageBackend by storages.first {
+            override suspend fun delete(ids: Collection<MessageId>) = throw StorageException("connection lost")
+        }
+        runCatching { here.changePassword(cut, "old password on both devices", "new password cut short") }
+        there.headersChanged(storages.second)
+        assertTrue(there.state.value is VaultManager.State.Unlocked)
+    }
+
+    @Test
+    fun withoutAnAnswerFromTelegramTheKnownHeadersAreUsed() = runTest {
+        val cloud = FakeCloud()
+        val (_, there, storages) = twoDevices(cloud, "old password on both devices")
+        there.lockVault()
+        // Telegram never answers: after a short wait the headers this device knows are tried.
+        val silent = object : StorageBackend by storages.second {
+            override suspend fun pinnedMessages(): List<StoredMessage> = kotlinx.coroutines.awaitCancellation()
+        }
+        assertTrue(there.unlockWithPassword("old password on both devices", silent))
+    }
+
     @Test
     fun aChangeCutShortKeepsBothPasswordsWorking() = runTest {
         val cloud = FakeCloud()

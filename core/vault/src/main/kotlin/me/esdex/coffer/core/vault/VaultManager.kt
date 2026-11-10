@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import me.esdex.coffer.core.crypto.Bytes
 import me.esdex.coffer.core.crypto.SecretKey
 import me.esdex.coffer.core.crypto.bip39.Bip39
@@ -34,8 +35,11 @@ class VaultManager(
 
         data object NotFound : State
 
-        /** A vault exists; [masterId] tells which, so a device-unlocked key can be checked against it. */
-        data class Locked(val masterId: Bytes) : State
+        /**
+         * A vault exists; [masterId] tells which, so a device-unlocked key can be checked against it.
+         * [passwordChangedElsewhere]: it was open here and locked because another device changed the password.
+         */
+        data class Locked(val masterId: Bytes, val passwordChangedElsewhere: Boolean = false) : State
 
         data class Unlocked(val vault: UnlockedVault) : State
     }
@@ -94,16 +98,43 @@ class VaultManager(
     }
 
     /**
-     * Unlocks with the vault password. If it fails and [storage] is given, the headers are fetched
-     * again once and the password retried, in case it was changed on another device.
+     * Unlocks with the vault password. With [storage], the headers are read again first, when Telegram
+     * answers in time: a password changed on another device must stop the old one here as well, and an
+     * old header kept on this device would still open the vault with it. Without an answer the headers
+     * this device knows are tried; until it hears of the change, the old password works here.
      */
     suspend fun unlockWithPassword(password: CharSequence, storage: StorageBackend? = null): Boolean {
-        if (tryPassword(password)) return true
-        if (storage == null) return false
-        val before = lock.withLock { headers }
-        locate(storage)
-        return lock.withLock { headers } != before && tryPassword(password)
+        if (storage != null) withTimeoutOrNull(HEADER_REFRESH_MILLIS) { runCatching { locate(storage) } }
+        return tryPassword(password)
     }
+
+    /**
+     * A vault header came or went in Saved Messages: a password changed, here or on another device.
+     * The headers are read again, and a vault open here whose known header is gone locks, so the old
+     * password does not outlive the change on this device. A new header alone (a change still under
+     * way, or cut short) leaves it open: both passwords are good until the old header is deleted.
+     */
+    suspend fun headersChanged(storage: StorageBackend) {
+        val startedAt = lock.withLock { headerWrites }
+        val found = runCatching { VaultHeaders.find(storage) }.getOrNull() ?: return
+        lock.withLock {
+            // This device wrote headers meanwhile (its own password change): what was read may predate it.
+            if (headerWrites != startedAt) return
+            val masterId = headers.firstOrNull()?.header?.masterId ?: return
+            val same = found.filter { it.header.masterId == masterId }
+            if (same.isEmpty()) return
+            val gone = headers.map { it.messageId }.toSet() - same.map { it.messageId }.toSet()
+            remember(same)
+            val current = stateFlow.value
+            if (current is State.Unlocked && gone.isNotEmpty()) {
+                current.vault.close()
+                stateFlow.value = State.Locked(masterId, passwordChangedElsewhere = true)
+            }
+        }
+    }
+
+    /** True if any of [ids] is a vault header this device knows: its delete means a password change. */
+    fun knowsHeader(ids: Collection<me.esdex.coffer.core.storage.MessageId>): Boolean = headers.any { it.messageId in ids }
 
     private suspend fun tryPassword(password: CharSequence): Boolean {
         val candidates = lock.withLock { headers }
@@ -179,7 +210,7 @@ class VaultManager(
     /**
      * SPEC §4.1: a new header under [newPassword] is sent and pinned, then every older header of this
      * vault is deleted. Interrupted after the send, both passwords keep working: unlocking tries every
-     * header with the same master_id. Other devices pick up the new header on their next unlock.
+     * header with the same master_id. Other devices see the header change and lock (see [headersChanged]).
      */
     suspend fun changePassword(storage: StorageBackend, current: CharSequence, newPassword: CharSequence): PasswordChange {
         if (!checkPassword(current)) {
@@ -216,4 +247,9 @@ class VaultManager(
 
     /** The master_id the Keystore-wrapped key must match. */
     fun expectedMasterId(): Bytes? = headers.firstOrNull()?.header?.masterId
+
+    private companion object {
+        /** How long an unlock waits for Telegram to say which headers are current. */
+        const val HEADER_REFRESH_MILLIS = 5_000L
+    }
 }

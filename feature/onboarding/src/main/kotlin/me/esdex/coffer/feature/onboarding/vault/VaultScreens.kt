@@ -78,7 +78,7 @@ fun VaultGate(modifier: Modifier = Modifier, viewModel: VaultViewModel = hiltVie
                 VaultManager.State.Unknown -> Searching(null)
                 is VaultManager.State.Searching -> Searching(s.scanned)
                 VaultManager.State.NotFound -> CreateFlow(viewModel, busy)
-                is VaultManager.State.Locked -> UnlockStep(viewModel, busy)
+                is VaultManager.State.Locked -> UnlockStep(viewModel, busy, s.passwordChangedElsewhere)
                 is VaultManager.State.Unlocked -> OfferDeviceUnlock(viewModel)
             }
             error?.let { ErrorText(it) }
@@ -152,7 +152,7 @@ private tailrec fun Context.fragmentActivity(): FragmentActivity? = when (this) 
 }
 
 @Composable
-private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean) {
+private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean, passwordChangedElsewhere: Boolean = false) {
     var useRecoveryKey by remember { mutableStateOf(false) }
     if (useRecoveryKey) {
         RecoveryKeyUnlock(viewModel, busy) { useRecoveryKey = false }
@@ -174,6 +174,9 @@ private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean) {
     HeroHeader(Hero.VAULT)
     Title(stringResource(R.string.vault_unlock_title))
     Body(stringResource(R.string.vault_unlock_explanation))
+    if (passwordChangedElsewhere) {
+        Text(stringResource(R.string.vault_unlock_password_changed), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+    }
     PasswordField(password, stringResource(R.string.vault_password)) { password = it }
     WideButton(stringResource(R.string.vault_unlock), !busy && password.isNotEmpty()) { viewModel.unlockWithPassword(password) }
     if (busy) Progress()

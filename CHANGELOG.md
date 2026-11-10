@@ -24,7 +24,7 @@
 - Integrity check, weekly and from the menu: finds files with missing parts, brings back files the list missed, removes leftovers of unfinished uploads and deletions, and clears out old operations that are no longer needed.
 - Settings: auto-lock after 1 to 60 minutes or off, unlock with fingerprint on or off, block screenshots, weekly integrity check on or off. Integrity check, rescan and log out moved here; log out asks first.
 - Decrypted copies opened in another app are removed from the phone 10 minutes after opening.
-- Change the vault password, and show the recovery key again; both ask for the current password first.
+- Change the vault password, and show the recovery key again; both ask for the current password first. A password change locks the vault on your other devices, and only the new password opens it there.
 - Share to Coffer from any app: one file or several, into a folder you pick; Coffer returns to the app you shared from.
 - A new look, shared with Arcanum: grouped settings, large collapsing titles, file type icons, a path bar, search in the top bar, one + button for files and folders, sliding transitions, animated progress and results, and a paged welcome.
 - Appearance settings: theme (system, light or dark), pure black for AMOLED screens, and wallpaper colours.
