@@ -26,6 +26,12 @@ import me.esdex.coffer.core.ui.theme.PlayerPrefs
 import me.esdex.coffer.core.ui.theme.PlayerStore
 import me.esdex.coffer.core.ui.theme.TextPrefs
 import me.esdex.coffer.core.ui.theme.TextStore
+import me.esdex.coffer.core.sync.Census
+import java.io.IOException
+import me.esdex.coffer.feature.browser.stats.Breakdown
+import me.esdex.coffer.feature.browser.stats.FileKind
+import me.esdex.coffer.feature.browser.stats.PhoneUsage
+import me.esdex.coffer.feature.browser.stats.VaultStats
 import me.esdex.coffer.core.ui.theme.ThemeMode
 import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.VaultManager
@@ -54,6 +60,7 @@ class SettingsViewModel @Inject constructor(
     private val appearanceStore: AppearanceStore,
     private val playerStore: PlayerStore,
     private val textStore: TextStore,
+    private val stats: VaultStats,
 ) : ViewModel() {
 
     val appearance: StateFlow<Appearance> = appearanceStore.appearance
@@ -65,6 +72,48 @@ class SettingsViewModel @Inject constructor(
     val text: StateFlow<TextPrefs> = textStore.prefs
 
     fun setText(change: (TextPrefs) -> TextPrefs) = textStore.update(change)
+
+    // ── Storage and the phone (pre-release item 6) ──────────────────────────
+
+    /** The vault by kind; null while locked or not yet worked out. */
+    val breakdown: StateFlow<Breakdown?> = stats.breakdown.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun filesOf(kind: FileKind) = stats.filesOf(kind)
+
+    /** Counting Saved Messages: how far it got, then what it found; null before it is asked for. */
+    sealed interface Counting {
+        data class Running(val read: Int) : Counting
+        data class Done(val census: Census) : Counting
+        data object Failed : Counting
+    }
+
+    private val countingFlow = MutableStateFlow<Counting?>(null)
+    val counting: StateFlow<Counting?> = countingFlow.asStateFlow()
+
+    /** Reads the whole of Saved Messages and counts it, unless that is already being done. */
+    fun count() {
+        if (countingFlow.value is Counting.Running) return
+        countingFlow.value = Counting.Running(0)
+        viewModelScope.launch {
+            val census = try {
+                stats.census { read -> countingFlow.value = Counting.Running(read) }
+            } catch (_: StorageException) {
+                null
+            } catch (_: IOException) {
+                null
+            }
+            countingFlow.value = census?.let(Counting::Done) ?: Counting.Failed
+        }
+    }
+
+    private val phoneFlow = MutableStateFlow<PhoneUsage?>(null)
+
+    /** What Coffer takes up on the phone, as last measured. */
+    val phone: StateFlow<PhoneUsage?> = phoneFlow.asStateFlow()
+
+    fun measurePhone() {
+        viewModelScope.launch { phoneFlow.value = stats.phone() }
+    }
 
     private val accountFlow = MutableStateFlow<TelegramAccount?>(null)
 

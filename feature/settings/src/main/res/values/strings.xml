@@ -44,6 +44,41 @@
     <string name="settings_text_render_markdown">Open Markdown formatted</string>
     <string name="settings_text_render_markdown_info">Off, a Markdown file opens as its source. The button in the viewer\'s bar switches either way.</string>
     <string name="settings_text_preview_sample"># Notes\nCoffer colours **Markdown**, JSON, XML,\nconfig files and shell scripts.\n\n    indented, to show the spaces\n- a line long enough to run past the edge of this card\n- `code stays legible`\n\n[a link](https://example.com)</string>
+    <string name="settings_card_storage">Storage</string>
+    <string name="settings_card_storage_desc">What is in the vault</string>
+    <string name="settings_card_phone">On this phone</string>
+    <string name="settings_card_phone_desc">What Coffer keeps here</string>
+    <string name="settings_card_phone_now">%1$s on this phone</string>
+    <string name="settings_storage_by_kind">By kind</string>
+    <string name="settings_storage_pictures">Pictures</string>
+    <string name="settings_storage_videos">Videos</string>
+    <string name="settings_storage_music">Music</string>
+    <string name="settings_storage_documents">Documents</string>
+    <string name="settings_storage_other">Other</string>
+    <string name="settings_storage_root">In the top folder</string>
+    <string name="settings_storage_saved_messages">In Saved Messages</string>
+    <string name="settings_storage_count_failed">Saved Messages could not be read</string>
+    <string name="settings_storage_recount">Count again</string>
+    <string name="settings_storage_parts">Parts of files</string>
+    <string name="settings_storage_parts_info">Your files, encrypted and cut into pieces of up to 512 MB.</string>
+    <string name="settings_storage_operations">Changes</string>
+    <string name="settings_storage_operations_info">Renames, moves and deletes, which is how your other devices hear of them. The integrity check folds old ones away.</string>
+    <string name="settings_storage_snapshots">Index snapshots</string>
+    <string name="settings_storage_snapshots_info">The whole list of files and folders in one message, so a new device need not read every change. The last 3 are kept.</string>
+    <string name="settings_storage_header">Vault header</string>
+    <string name="settings_storage_header_info">The vault\'s keys, locked with your password and with the recovery key.</string>
+    <string name="settings_storage_own">Your own messages</string>
+    <string name="settings_storage_own_info">Everything else in Saved Messages. Coffer does not read it or touch it.</string>
+    <string name="settings_phone_total">Coffer on this phone. Your vault itself is in Saved Messages.</string>
+    <string name="settings_phone_what">What it is</string>
+    <string name="settings_phone_downloads">Downloaded pieces</string>
+    <string name="settings_phone_downloads_info">Encrypted pieces Telegram has fetched for viewing or saving and not let go of yet.</string>
+    <string name="settings_phone_database">Telegram\'s database</string>
+    <string name="settings_phone_database_info">The messages, chats and settings Telegram keeps for this account.</string>
+    <string name="settings_phone_index">Coffer\'s index</string>
+    <string name="settings_phone_index_info">The list of files and folders, so the vault opens without reading Saved Messages. Names are encrypted in it.</string>
+    <string name="settings_phone_temporary">Temporary files</string>
+    <string name="settings_phone_temporary_info">Decrypted copies opened in other apps, removed 10 minutes after opening, and files on their way to Telegram.</string>
     <string name="settings_card_maintenance">Saved Messages</string>
     <string name="settings_card_maintenance_desc">Integrity check, rescan</string>
     <string name="settings_card_account">Account</string>
@@ -170,4 +205,20 @@
 
     <string name="settings_error_network">Could not reach Telegram. Try again.</string>
     <string name="settings_error_flood">Telegram asks to slow down. Try again in a little while.</string>
+    <plurals name="settings_storage_files">
+        <item quantity="one">%d file</item>
+        <item quantity="other">%d files</item>
+    </plurals>
+    <plurals name="settings_storage_folders">
+        <item quantity="one">%d folder</item>
+        <item quantity="other">%d folders</item>
+    </plurals>
+    <plurals name="settings_storage_messages">
+        <item quantity="one">%d message</item>
+        <item quantity="other">%d messages</item>
+    </plurals>
+    <plurals name="settings_storage_counting">
+        <item quantity="one">Counting Saved Messages: %d read</item>
+        <item quantity="other">Counting Saved Messages: %d read</item>
+    </plurals>
 </resources>

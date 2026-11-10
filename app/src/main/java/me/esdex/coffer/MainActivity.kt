@@ -38,6 +38,8 @@ import me.esdex.coffer.feature.onboarding.WelcomeGate
 import me.esdex.coffer.feature.onboarding.vault.VaultGate
 import me.esdex.coffer.debug.DebugTools
 import me.esdex.coffer.feature.browser.BrowserScreen
+import me.esdex.coffer.feature.browser.BrowserViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import me.esdex.coffer.feature.browser.R as BrowserR
 import me.esdex.coffer.feature.browser.ShareScreen
 import me.esdex.coffer.feature.browser.viewer.audio.AudioPlayback
@@ -91,6 +93,8 @@ class MainActivity : FragmentActivity() {
     @Composable
     private fun UnlockedApp() {
         var settingsOpen by rememberSaveable { mutableStateOf(false) }
+        // The same one the browser gets: both are the activity's.
+        val browser: BrowserViewModel = hiltViewModel()
         val sharing by viewModel.sharing.collectAsStateWithLifecycle()
         val page = when {
             sharing -> Page.SHARE
@@ -112,6 +116,11 @@ class MainActivity : FragmentActivity() {
                 // Debug builds get a Debug section in Settings, as in Arcanum; release builds have none.
                 Page.SETTINGS -> SettingsScreen(
                     onBack = { settingsOpen = false },
+                    // From Storage's list of files: back to the browser, in the file's folder.
+                    onShowFolder = { folderId ->
+                        if (folderId == null) browser.goToRoot() else browser.openFolder(folderId)
+                        settingsOpen = false
+                    },
                     debugTools = if (BuildConfig.DEBUG) ({ DebugTools() }) else null,
                 )
                 Page.BROWSER -> BrowserScreen(onLock = viewModel::lock, onSettings = { settingsOpen = true })

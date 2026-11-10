@@ -21,6 +21,11 @@ import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Cloud
+import androidx.compose.material.icons.outlined.PhoneAndroid
+import android.text.format.Formatter
+import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.feature.browser.stats.FileKind
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Sync
 import androidx.compose.material3.SnackbarHostState
@@ -61,6 +66,8 @@ private enum class Screen(val depth: Int) {
     APPEARANCE(1),
     PLAYER(1),
     TEXT(1),
+    STORAGE(1),
+    PHONE(1),
     MAINTENANCE(1),
     ACCOUNT(1),
     ABOUT(1),
@@ -68,6 +75,7 @@ private enum class Screen(val depth: Int) {
     PASSWORD(2),
     RECOVERY(2),
     LICENSES(2),
+    KIND(2),
     OPERATION(3),
     ;
 
@@ -75,6 +83,7 @@ private enum class Screen(val depth: Int) {
         get() = when (this) {
             PASSWORD, RECOVERY -> VAULT
             LICENSES -> ABOUT
+            KIND -> STORAGE
             else -> MAIN
         }
 }
@@ -86,11 +95,14 @@ private enum class Screen(val depth: Int) {
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
+    onShowFolder: (Id?) -> Unit,
     modifier: Modifier = Modifier,
     debugTools: (@Composable () -> Unit)? = null,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     var current by rememberSaveable { mutableStateOf(Screen.MAIN) }
+    // The kind whose files are listed, under Storage.
+    var kind by rememberSaveable { mutableStateOf(FileKind.PICTURES) }
     val operation by viewModel.operation.collectAsStateWithLifecycle()
     // A running or finished vault operation takes the screen until it is dismissed.
     val shown = if (operation != null) Screen.OPERATION else current
@@ -145,6 +157,9 @@ fun SettingsScreen(
             Screen.APPEARANCE -> AppearanceSection(viewModel, back)
             Screen.PLAYER -> PlayerSection(viewModel, back)
             Screen.TEXT -> TextSection(viewModel, back)
+            Screen.STORAGE -> StorageSection(viewModel, back, onKind = { kind = it; current = Screen.KIND })
+            Screen.KIND -> KindPage(viewModel, kind, back, onShowFolder)
+            Screen.PHONE -> PhoneSection(viewModel, back)
             Screen.MAINTENANCE -> MaintenanceSection(viewModel, back)
             Screen.ACCOUNT -> AccountSection(viewModel, back)
             Screen.ABOUT -> AboutSection(back, onLicenses = { current = Screen.LICENSES }, onUnlockDebug = unlockDebug, debugUnlocked = state.debugTools)
@@ -170,6 +185,8 @@ private object SectionHue {
     val Appearance = Hue(Color(0xFFFFB683), Color(0xFF753403))
     val Player = Hue(Color(0xFFFFB1C8), Color(0xFF7B1D44))
     val Text = Hue(Color(0xFFE2E58A), Color(0xFF4A4C00))
+    val Storage = Hue(Color(0xFF9ECAFF), Color(0xFF003258))
+    val Phone = Hue(Color(0xFFB4E1A2), Color(0xFF1F4F12))
     val Maintenance = Hue(Color(0xFF7FD8C8), Color(0xFF00504A))
     val Account = Hue(Color(0xFFD0BCFF), Color(0xFF381E72))
     val About = Hue(Color(0xFFC7C7C7), Color(0xFF474747))
@@ -196,6 +213,21 @@ private fun MainList(onBack: () -> Unit, viewModel: SettingsViewModel, showDebug
             section(Screen.APPEARANCE, Icons.Outlined.Palette, SectionHue.Appearance, R.string.settings_card_appearance, R.string.settings_card_appearance_desc, onOpen)
             section(Screen.PLAYER, Icons.Outlined.PlayCircle, SectionHue.Player, R.string.settings_card_player, R.string.settings_card_player_desc, onOpen)
             section(Screen.TEXT, Icons.Outlined.Description, SectionHue.Text, R.string.settings_card_text, R.string.settings_card_text_desc, onOpen)
+        }
+        Spacer(Modifier.height(16.dp))
+        // Where things are: the vault in Saved Messages, what is on the phone, and keeping the two in step.
+        val breakdown by viewModel.breakdown.collectAsStateWithLifecycle()
+        val phone by viewModel.phone.collectAsStateWithLifecycle()
+        LaunchedEffect(Unit) { viewModel.measurePhone() }
+        val context = LocalContext.current
+        val storageNow = breakdown?.let {
+            pluralStringResource(R.plurals.settings_storage_files, it.files, it.files) + " · " + Formatter.formatShortFileSize(context, it.bytes)
+        } ?: stringResource(R.string.settings_card_storage_desc)
+        val phoneNow = phone?.let { stringResource(R.string.settings_card_phone_now, Formatter.formatShortFileSize(context, it.total)) }
+            ?: stringResource(R.string.settings_card_phone_desc)
+        SettingsGroup(title = null) {
+            section(Screen.STORAGE, Icons.Outlined.Cloud, SectionHue.Storage, R.string.settings_card_storage, storageNow, onOpen)
+            section(Screen.PHONE, Icons.Outlined.PhoneAndroid, SectionHue.Phone, R.string.settings_card_phone, phoneNow, onOpen)
             section(Screen.MAINTENANCE, Icons.Outlined.Sync, SectionHue.Maintenance, R.string.settings_card_maintenance, R.string.settings_card_maintenance_desc, onOpen)
         }
         Spacer(Modifier.height(16.dp))
@@ -214,6 +246,17 @@ private fun GroupBuilder.section(screen: Screen, icon: ImageVector, hue: Hue, ti
         shape,
         title = stringResource(title),
         subtitle = stringResource(subtitle),
+        leading = { GroupedRoundIcon(icon, hue.circle, hue.glyph) },
+        onClick = { onOpen(screen) },
+    )
+}
+
+/** A section whose line under the title is a figure worked out on the spot. */
+private fun GroupBuilder.section(screen: Screen, icon: ImageVector, hue: Hue, title: Int, subtitle: String, onOpen: (Screen) -> Unit) = row { shape ->
+    GroupedRow(
+        shape,
+        title = stringResource(title),
+        subtitle = subtitle,
         leading = { GroupedRoundIcon(icon, hue.circle, hue.glyph) },
         onClick = { onOpen(screen) },
     )

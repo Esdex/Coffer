@@ -222,6 +222,12 @@ class TelegramSession(config: TdlibConfig) {
         )
     }
 
+    /** TDLib's own count of what it keeps on the phone; the quick one, which does not walk the files. */
+    suspend fun usage(): TelegramUsage {
+        val stats = send(TdApi.GetStorageStatisticsFast())
+        return TelegramUsage(stats.filesSize, stats.fileCount, stats.databaseSize + stats.languagePackDatabaseSize + stats.logSize)
+    }
+
     /** Ends the Telegram session on the server and deletes TDLib's local data. */
     suspend fun logOut() {
         send(TdApi.LogOut())

@@ -180,6 +180,7 @@ class Telegram(
     suspend fun submitPassword(password: String) = current().submitPassword(password)
     suspend fun accountName(): String = current().accountName()
     suspend fun account(): TelegramAccount = current().account()
+    suspend fun usage(): TelegramUsage = current().usage()
     suspend fun storage(): TdlibStorageBackend = current().storage()
 
     /**
