@@ -61,6 +61,7 @@ import me.esdex.coffer.core.ui.components.GroupedRow
 import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.ui.components.TypeTile
 import me.esdex.coffer.core.ui.components.fileTypeIcon
+import me.esdex.coffer.feature.browser.rowKey
 import me.esdex.coffer.feature.browser.stats.FileKind
 
 // ── Storage: the vault, in Saved Messages ───────────────────────────────────
@@ -192,7 +193,7 @@ internal fun KindPage(viewModel: SettingsViewModel, kind: FileKind, onBack: () -
             return@CofferScaffold
         }
         LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxWidth()) {
-            items(list, key = { it.first.fileId.toString() }) { (file, path) ->
+            items(list, key = { it.first.fileId.rowKey() }) { (file, path) ->
                 Row(
                     Modifier.fillMaxWidth().clickable { onShowFolder(file.folderId) }.padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,

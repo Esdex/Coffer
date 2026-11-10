@@ -697,7 +697,7 @@ private fun Listing(
         // Room under the last row for the button that floats over it.
         contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 88.dp),
     ) {
-        items(shown.folders, key = { "d" + it.folderId.toByteArray().contentHashCode() }) { folder ->
+        items(shown.folders, key = { "d" + it.folderId.rowKey() }) { folder ->
             FolderRow(
                 folder,
                 selecting = selection.isNotEmpty(),
@@ -708,7 +708,7 @@ private fun Listing(
                 modifier = Modifier.animateItem(),
             )
         }
-        items(shown.files, key = { "f" + it.fileId.toByteArray().contentHashCode() }) { file ->
+        items(shown.files, key = { "f" + it.fileId.rowKey() }) { file ->
             FileRow(
                 file,
                 selecting = selection.isNotEmpty(),
@@ -927,7 +927,7 @@ fun FolderPicker(tree: VaultTree, at: Id?, onAt: (Id?) -> Unit, excluding: Colle
             Text(stringResource(R.string.browser_no_subfolders), style = MaterialTheme.typography.bodySmall)
         } else {
             LazyColumn(Modifier.heightIn(max = 280.dp)) {
-                items(choices, key = { it.toByteArray().contentHashCode() }) { id ->
+                items(choices, key = { it.rowKey() }) { id ->
                     Row(Modifier.fillMaxWidth().clickable { onAt(id) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         TypeTile(FolderIcon, Modifier.size(36.dp))
                         Spacer(Modifier.width(12.dp))
