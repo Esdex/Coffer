@@ -56,6 +56,27 @@ class LocalSealTest {
     }
 
     @Test
+    fun previewSealMatchesTheOracleAndOpensOnlyForItsFile() {
+        val localKey = LocalKeys.derive(realSodium, key(master))
+        val pv = local.getValue("preview").jsonObject
+        val plain = hex(pv.str("plain"))
+        val sodium = ScriptedSodium(hex(pv.str("nonce")))
+        assertEquals(pv.str("sealed"), LocalSealer(sodium, localKey).sealPreview(fileId, plain).toHex())
+        sodium.assertUsedUp()
+        val sealer = LocalSealer(realSodium, localKey)
+        val sealed = hex(pv.str("sealed"))
+        assertEquals(plain.toHex(), sealer.openPreview(fileId, sealed)?.toHex())
+        assertNull(sealer.openPreview(Id.random(realSodium), sealed))
+        assertNull(sealer.openPreview(fileId, sealed.flipped(sealed.size - 1)))
+        assertNull(sealer.openPreview(fileId, sealed.copyOf(CofferFormat.NONCE_BYTES + CofferFormat.TAG_BYTES - 1)))
+        // A file's sealed name is not its preview, nor the other way round.
+        assertNull(sealer.openPreview(fileId, sealer.sealFileMeta(fileId, meta)))
+        assertNull(sealer.openFileMeta(fileId, sealed))
+        // No preview to make: empty, and still sealed.
+        assertEquals(0, sealer.openPreview(fileId, sealer.sealPreview(fileId, ByteArray(0)))?.size)
+    }
+
+    @Test
     fun sealedFolderOpensOnlyForItsRow() {
         val sealer = LocalSealer(realSodium, LocalKeys.derive(realSodium, key(master)))
         val root = LocalFolder("Root level", null)

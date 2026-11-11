@@ -9,12 +9,14 @@ import java.util.Properties
 /**
  * The file cache's settings: the encrypted pieces of files already read are kept on the phone up to
  * [limitMb], so opening them again costs neither time nor traffic. On by default; the cache is
- * emptied on lock only when asked for.
+ * emptied on lock only when asked for. [previews] puts a small picture of each photo, video and song
+ * cover on its icon, kept on the phone like the cache.
  */
 data class CachePrefs(
     val enabled: Boolean = true,
     val limitMb: Int = DEFAULT_LIMIT_MB,
     val clearOnLock: Boolean = false,
+    val previews: Boolean = true,
 ) {
     val limitBytes: Long get() = limitMb.toLong() * 1024 * 1024
 
@@ -40,6 +42,7 @@ class CacheStore(private val file: File) {
         props.setProperty(ENABLED, next.enabled.toString())
         props.setProperty(LIMIT_MB, next.limitMb.toString())
         props.setProperty(CLEAR_ON_LOCK, next.clearOnLock.toString())
+        props.setProperty(PREVIEWS, next.previews.toString())
         file.parentFile?.mkdirs()
         val temp = File(file.path + ".tmp")
         temp.outputStream().use { props.store(it, null) }
@@ -55,6 +58,7 @@ class CacheStore(private val file: File) {
             enabled = props.getProperty(ENABLED)?.toBooleanStrictOrNull() ?: d.enabled,
             limitMb = props.getProperty(LIMIT_MB)?.toIntOrNull()?.takeIf { it in CachePrefs.LIMITS_MB } ?: d.limitMb,
             clearOnLock = props.getProperty(CLEAR_ON_LOCK)?.toBooleanStrictOrNull() ?: d.clearOnLock,
+            previews = props.getProperty(PREVIEWS)?.toBooleanStrictOrNull() ?: d.previews,
         )
     }
 
@@ -62,5 +66,6 @@ class CacheStore(private val file: File) {
         const val ENABLED = "enabled"
         const val LIMIT_MB = "limitMb"
         const val CLEAR_ON_LOCK = "clearOnLock"
+        const val PREVIEWS = "previews"
     }
 }

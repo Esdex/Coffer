@@ -19,6 +19,7 @@ import me.esdex.coffer.feature.browser.transfer.VaultContent
 import me.esdex.coffer.feature.browser.transfer.WorkFiles
 import me.esdex.coffer.feature.browser.transfer.readyStorage
 import java.io.File
+import me.esdex.coffer.feature.browser.preview.Previews
 import javax.inject.Inject
 
 /**
@@ -69,6 +70,7 @@ class VaultStats @Inject constructor(
             telegramDatabase = telegramUsage?.databaseBytes ?: 0L,
             index = listOf(db, File(db.path + "-wal"), File(db.path + "-shm")).sumOf { it.length() },
             temporary = listOf(OpenFiles.dir(context), WorkFiles.upload(context), WorkFiles.snapshot(context), ShareInbox.dir(context)).sumOf(::sizeOf),
+            previews = sizeOf(Previews.dir(context)),
         )
     }
 
@@ -82,8 +84,9 @@ class VaultStats @Inject constructor(
 /**
  * What Coffer takes up on the phone, by where it comes from. [telegramFiles] is what TDLib has downloaded
  * and not yet let go of; [temporary] the decrypted copies opened in other apps and the files on their way
- * to Telegram. None of it is the vault itself, which is in Saved Messages.
+ * to Telegram; [previews] the small pictures on the file icons. None of it is the vault itself, which is
+ * in Saved Messages.
  */
-data class PhoneUsage(val telegramFiles: Long, val telegramDatabase: Long, val index: Long, val temporary: Long) {
-    val total: Long get() = telegramFiles + telegramDatabase + index + temporary
+data class PhoneUsage(val telegramFiles: Long, val telegramDatabase: Long, val index: Long, val temporary: Long, val previews: Long = 0) {
+    val total: Long get() = telegramFiles + telegramDatabase + index + temporary + previews
 }

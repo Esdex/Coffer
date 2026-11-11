@@ -180,6 +180,12 @@ def main(out_path):
     v["local"]["upload"] = {"nonce": n_upload.hex(), "cbor": upload_body.hex(),
                             "sealed": (n_upload + xchacha_seal(local_key, n_upload, upload_body,
                                                                b"coffer/local/v1/upload" + b"u1")).hex()}
+    # A file's preview for the browser: the picture's bytes as they are, sealed under the file's id.
+    preview_body = b"RIFF\x1a\x00\x00\x00WEBPVP8 " + bytes(range(14))
+    n_preview = nonce(0x88)
+    v["local"]["preview"] = {"nonce": n_preview.hex(), "plain": preview_body.hex(),
+                             "sealed": (n_preview + xchacha_seal(local_key, n_preview, preview_body,
+                                                                 b"coffer/local/v1/preview" + file_id)).hex()}
 
     # Index snapshot (SPEC §4.4): state labels, raw deflate, content encryption with IndexKey.
     snapshot_id = bytes(range(0xE0, 0xF0))

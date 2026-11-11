@@ -571,10 +571,12 @@ class VaultContent @Inject constructor(
 
     /**
      * Opens [fileId] for reading in place (see [VaultFileReader]); null while locked, offline for too
-     * long, or when the file is not whole. Closing wipes the file's key and the chunks held, and drops
-     * the encrypted pieces TDLib downloaded for it.
+     * long, or when the file is not whole. Closing wipes the file's key and the chunks held, and hands
+     * the encrypted pieces read to the cache; with [keepInCache] off, as for a preview, those the cache
+     * did not have already are dropped instead: a scroll through a thousand photos would otherwise fill
+     * it with a piece of each and push out the files put there on purpose.
      */
-    suspend fun openFile(fileId: Id): OpenedFile? {
+    suspend fun openFile(fileId: Id, keepInCache: Boolean = true): OpenedFile? {
         val keys = keysFlow.value ?: return null
         val file = index.file(fileId)?.takeIf { it.status == FileStatus.READY } ?: return null
         val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: return null
@@ -585,7 +587,12 @@ class VaultContent @Inject constructor(
         return OpenedFile(meta.name, meta.mime, reader) {
             reader.close()
             transfer.close()
-            leases.close(fileId, reader.partsUsed()) { cache.keep(fileId, it, storage) }
+            leases.close(fileId, reader.partsUsed()) { part ->
+                when {
+                    keepInCache -> cache.keep(fileId, part, storage)
+                    part !in cache.blobs.held.value -> storage.releaseBlob(part)
+                }
+            }
         }
     }
 

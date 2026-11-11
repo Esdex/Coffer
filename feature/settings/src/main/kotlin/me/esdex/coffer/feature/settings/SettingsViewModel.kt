@@ -32,6 +32,7 @@ import me.esdex.coffer.feature.browser.stats.Breakdown
 import me.esdex.coffer.feature.browser.stats.FileKind
 import me.esdex.coffer.feature.browser.stats.PhoneUsage
 import me.esdex.coffer.feature.browser.stats.VaultStats
+import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.FileCache
 import me.esdex.coffer.core.ui.theme.CachePrefs
 import me.esdex.coffer.core.ui.theme.CacheStore
@@ -66,6 +67,7 @@ class SettingsViewModel @Inject constructor(
     private val stats: VaultStats,
     private val cache: FileCache,
     private val cacheStore: CacheStore,
+    private val previews: Previews,
 ) : ViewModel() {
 
     val appearance: StateFlow<Appearance> = appearanceStore.appearance
@@ -130,6 +132,16 @@ class SettingsViewModel @Inject constructor(
         if (after.enabled && after.limitMb >= before.limitMb && before.enabled) return
         viewModelScope.launch {
             telegram.readyStorage()?.let { cache.blobs.trim(it) }
+            phoneFlow.value = stats.phone()
+        }
+    }
+
+    /** Previews on or off; off deletes the ones made, and the figure here follows. */
+    fun setPreviews(on: Boolean) {
+        cacheStore.update { it.copy(previews = on) }
+        if (on) return
+        viewModelScope.launch {
+            previews.clear()
             phoneFlow.value = stats.phone()
         }
     }

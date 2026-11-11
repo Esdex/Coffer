@@ -13,7 +13,8 @@ import me.esdex.coffer.core.crypto.sodium.Sodium
  * and folder names cannot be read while the vault is locked. Not part of the Telegram format and never
  * sent anywhere; it can change with a database migration.
  *
- * `nonce(24) || XChaCha20-Poly1305(LocalKey, CBOR, AD = "coffer/local/v1/<file|folder|upload|target>" || id)`.
+ * `nonce(24) || XChaCha20-Poly1305(LocalKey, CBOR, AD = "coffer/local/v1/<file|folder|upload|target|preview>" || id)`;
+ * a preview is the picture's bytes as they are, not CBOR.
  * The id in the AD keeps one row's sealed metadata from being moved to another row.
  */
 class LocalSealer(private val sodium: Sodium, private val localKey: SecretKey) {
@@ -85,6 +86,15 @@ class LocalSealer(private val sodium: Sodium, private val localKey: SecretKey) {
     fun openTarget(downloadId: String, sealed: ByteArray): String? =
         open(sealed, TARGET_AD + downloadId.toByteArray(Charsets.UTF_8))?.toString(Charsets.UTF_8)
 
+    /**
+     * A file's preview for the browser: a small picture made from it, as decrypted as the file itself, so
+     * sealed like its name. Empty bytes say the file has no preview to make (music without a cover).
+     */
+    fun sealPreview(fileId: Id, picture: ByteArray): ByteArray = seal(picture, PREVIEW_AD + fileId.toByteArray())
+
+    /** Null if [sealed] is damaged, from another vault, or belongs to another file. */
+    fun openPreview(fileId: Id, sealed: ByteArray): ByteArray? = open(sealed, PREVIEW_AD + fileId.toByteArray())
+
     private fun seal(plain: ByteArray, ad: ByteArray): ByteArray {
         val nonce = sodium.randomBytes(CofferFormat.NONCE_BYTES)
         return nonce + localKey.withBytes { sodium.aeadEncrypt(plain, ad, nonce, it) }
@@ -104,6 +114,7 @@ class LocalSealer(private val sodium: Sodium, private val localKey: SecretKey) {
         val FOLDER_AD = "coffer/local/v1/folder".toByteArray(Charsets.US_ASCII)
         val UPLOAD_AD = "coffer/local/v1/upload".toByteArray(Charsets.US_ASCII)
         val TARGET_AD = "coffer/local/v1/target".toByteArray(Charsets.US_ASCII)
+        val PREVIEW_AD = "coffer/local/v1/preview".toByteArray(Charsets.US_ASCII)
     }
 }
 

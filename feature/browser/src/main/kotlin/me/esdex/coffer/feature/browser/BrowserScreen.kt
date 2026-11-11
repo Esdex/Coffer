@@ -25,6 +25,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -105,6 +106,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -113,7 +115,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
@@ -154,6 +158,7 @@ import me.esdex.coffer.core.ui.components.groupShape
 import me.esdex.coffer.core.ui.theme.CachePrefs
 import me.esdex.coffer.core.ui.theme.CofferHazeStyle
 import me.esdex.coffer.core.ui.theme.LocalAmoledMode
+import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.CacheOffer
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.UNDO_MILLIS
@@ -454,6 +459,7 @@ fun BrowserScreen(
                         Listing(
                             shown = shown,
                             padding = padding,
+                            previews = viewModel.previews,
                             selection = selection,
                             onToggle = viewModel::toggleSelected,
                             empty = when {
@@ -693,6 +699,7 @@ private enum class RowAction { OPEN, EXPORT, CACHE, RENAME, MOVE, DELETE }
 private fun Listing(
     shown: Listing,
     padding: PaddingValues,
+    previews: Previews,
     selection: Set<Id>,
     onToggle: (Id) -> Unit,
     empty: Int,
@@ -729,6 +736,7 @@ private fun Listing(
         items(shown.files, key = { "f" + it.fileId.rowKey() }) { file ->
             FileRow(
                 file,
+                previews = previews,
                 selecting = selection.isNotEmpty(),
                 selected = file.fileId in selection,
                 onOpen = { onOpenFile(file) },
@@ -1010,6 +1018,7 @@ private fun FolderRow(
 @Composable
 private fun FileRow(
     file: FileItem,
+    previews: Previews,
     selecting: Boolean,
     selected: Boolean,
     onOpen: () -> Unit,
@@ -1047,7 +1056,12 @@ private fun FileRow(
             .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PickTile(selecting, selected, fileTypeIcon(file.name), cached = file.cached)
+        val previewsOn by previews.enabled.collectAsStateWithLifecycle()
+        // Made while the row is on screen; scrolled away, the work stops with it.
+        val preview by produceState(previews.cached(file.fileId), file.fileId, file.status, previewsOn) {
+            value = if (previewsOn) previews.cached(file.fileId) ?: previews.preview(file) else null
+        }
+        PickTile(selecting, selected, fileTypeIcon(file.name), cached = file.cached, preview = preview)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
@@ -1095,7 +1109,7 @@ private fun selectedBackground(selected: Boolean): Color {
  * on the phone has a green check on the tile's corner.
  */
 @Composable
-private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVector, Color>, cached: Boolean = false) {
+private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVector, Color>, cached: Boolean = false, preview: ImageBitmap? = null) {
     AnimatedContent(targetState = selecting && selected, label = "pick") { picked ->
         if (picked) {
             Box(
@@ -1106,9 +1120,24 @@ private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVect
             }
         } else {
             Box {
-                TypeTile(icon)
+                if (preview != null) PreviewTile(preview, icon) else TypeTile(icon)
                 if (cached) CachedBadge(Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp))
             }
+        }
+    }
+}
+
+/** The file's own picture in the tile's place, with its type still marked on a corner. */
+@Composable
+private fun PreviewTile(preview: ImageBitmap, icon: Pair<ImageVector, Color>) {
+    val (vector, color) = icon
+    Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))) {
+        Image(preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        Box(
+            Modifier.align(Alignment.BottomStart).padding(3.dp).size(16.dp).clip(RoundedCornerShape(5.dp)).background(color),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(vector, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
         }
     }
 }

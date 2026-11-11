@@ -34,6 +34,7 @@ import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.tdlib.Connection
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.ui.theme.CacheStore
+import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.CacheOffer
 import me.esdex.coffer.feature.browser.transfer.FileCache
 import me.esdex.coffer.feature.browser.transfer.PrefetchQueue
@@ -99,6 +100,7 @@ class BrowserViewModel @Inject constructor(
     private val playback: AudioPlayback,
     private val cache: FileCache,
     private val cacheStore: CacheStore,
+    val previews: Previews,
     telegram: Telegram,
 ) : ViewModel() {
 

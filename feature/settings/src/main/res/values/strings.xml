@@ -75,6 +75,11 @@
     <string name="settings_phone_downloads_info">Encrypted pieces of files you opened or saved, kept so they open again without a download. Without the vault\'s keys they cannot be read.</string>
     <string name="settings_phone_cache_limit">Up to %1$s</string>
     <string name="settings_phone_cache_off">Off: nothing is kept</string>
+    <string name="settings_phone_previews">Previews</string>
+    <string name="settings_phone_previews_info">Small pictures of photos, videos and song covers on the file icons, encrypted with this phone\'s key like the names in the index.</string>
+    <string name="settings_previews">Previews</string>
+    <string name="settings_previews_on">Show previews on file icons</string>
+    <string name="settings_previews_on_info">Each is made once, as the file comes into view, from as little of it as will do: about 1 to 3 MB of traffic per file. Off, the ones made so far are deleted.</string>
     <string name="settings_cache">File cache</string>
     <string name="settings_cache_on">Keep opened files on the phone</string>
     <string name="settings_cache_on_info">Opening them again takes no time and no traffic. Off, every opening downloads the file again.</string>

@@ -232,6 +232,7 @@ private val TELEGRAM_FILES = Color(0xFF2AABEE)
 private val TELEGRAM_DATABASE = Color(0xFF0B6FA4)
 private val INDEX = Color(0xFFF59E0B)
 private val TEMPORARY = Color(0xFF9CA3AF)
+private val PREVIEWS = Color(0xFF22C55E)
 
 /**
  * What Coffer takes up on this phone, apart from the vault, which is in Saved Messages (pre-release
@@ -258,7 +259,7 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                     Text(size(usage.total), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                     Text(stringResource(R.string.settings_phone_total), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
-                    Bar(listOf(usage.telegramFiles to TELEGRAM_FILES, usage.telegramDatabase to TELEGRAM_DATABASE, usage.index to INDEX, usage.temporary to TEMPORARY))
+                    Bar(listOf(usage.telegramFiles to TELEGRAM_FILES, usage.telegramDatabase to TELEGRAM_DATABASE, usage.index to INDEX, usage.previews to PREVIEWS, usage.temporary to TEMPORARY))
                 }
             }
         }
@@ -284,7 +285,15 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
             }
             line(TELEGRAM_DATABASE, R.string.settings_phone_database, R.string.settings_phone_database_info, usage.telegramDatabase)
             line(INDEX, R.string.settings_phone_index, R.string.settings_phone_index_info, usage.index)
+            line(PREVIEWS, R.string.settings_phone_previews, R.string.settings_phone_previews_info, usage.previews)
             line(TEMPORARY, R.string.settings_phone_temporary, R.string.settings_phone_temporary_info, usage.temporary)
+        }
+        SettingsGroup(stringResource(R.string.settings_previews)) {
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_previews_on), checked = cache.previews,
+                    info = stringResource(R.string.settings_previews_on_info),
+                    onCheckedChange = { on -> viewModel.setPreviews(on) })
+            }
         }
         SettingsGroup(stringResource(R.string.settings_cache)) {
             row { shape ->
