@@ -182,7 +182,7 @@ fun AudioPlayerScreen(
                             )
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                listOfNotNull(tags?.artist, tags?.album).joinToString(" · "),
+                                tags?.artist.orEmpty(),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                                 maxLines = 1,
@@ -190,6 +190,19 @@ fun AudioPlayerScreen(
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier.fillMaxWidth(),
                             )
+                            // The album on a line of its own, a step quieter: with the artist it cut both short.
+                            tags?.album?.let { album ->
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    album,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
                         }
                     }
                 }
