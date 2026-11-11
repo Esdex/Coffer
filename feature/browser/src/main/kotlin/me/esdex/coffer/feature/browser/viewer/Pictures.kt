@@ -2,6 +2,7 @@ package me.esdex.coffer.feature.browser.viewer
 
 import android.content.res.AssetFileDescriptor
 import android.graphics.ImageDecoder
+import android.os.ParcelFileDescriptor
 import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.Drawable
 import android.os.Handler
@@ -21,20 +22,18 @@ import androidx.core.graphics.withSave
 import kotlin.math.roundToInt
 
 /**
- * Pictures from the vault, decoded straight from a [ReaderFileDescriptor]. Arcanum had to read HEIF
- * and animated images whole into memory, its vault offering no descriptor; here the platform decoder
- * reads the descriptor, so one path takes JPEG, PNG, WebP, HEIF and GIF, animated ones included,
- * turned the right way up by their EXIF orientation.
+ * Pictures from the vault, decoded from their copy in memory (see [MemoryCopy]): one path takes JPEG,
+ * PNG, WebP, HEIF and GIF, animated ones included, turned the right way up by their EXIF orientation.
  */
 internal object Pictures {
 
     /**
-     * Decodes [fd], no larger than [maxDimension] on a side: a 50 MP photo is not held at full size
+     * Decodes [descriptor], no larger than [maxDimension] on a side: a 50 MP photo is not held at full size
      * for a phone screen. A still comes back as a BitmapDrawable, an animated one as an
      * AnimatedImageDrawable. Null when the decoder refuses the file.
      */
-    fun decode(fd: ReaderFileDescriptor, maxDimension: Int): Drawable? = try {
-        val source = ImageDecoder.createSource { AssetFileDescriptor(fd.descriptor, 0, AssetFileDescriptor.UNKNOWN_LENGTH) }
+    fun decode(descriptor: ParcelFileDescriptor, maxDimension: Int): Drawable? = try {
+        val source = ImageDecoder.createSource { AssetFileDescriptor(descriptor, 0, AssetFileDescriptor.UNKNOWN_LENGTH) }
         ImageDecoder.decodeDrawable(source) { decoder, info, _ ->
             var sample = 1
             while (info.size.width / sample > maxDimension || info.size.height / sample > maxDimension) sample *= 2

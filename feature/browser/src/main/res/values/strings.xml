@@ -101,6 +101,8 @@
     <string name="viewer_pdf_unreadable">This PDF cannot be opened</string>
     <string name="viewer_pdf_not_available">This PDF cannot be read right now</string>
     <string name="viewer_pdf_not_available_hint">Telegram cannot be reached, or the file is not whole.</string>
+    <string name="viewer_pdf_too_large">This PDF is too big to open here</string>
+    <string name="viewer_pdf_too_large_hint">Coffer holds a PDF in memory while it is open, up to %1$s. Open this one in another app from the menu above.</string>
     <string name="viewer_text_too_large">This file is too large to show here</string>
     <string name="viewer_text_too_large_hint">Coffer shows text files up to %1$s. Open it in another app from the menu above.</string>
     <string name="viewer_text_not_text">This file is not text</string>

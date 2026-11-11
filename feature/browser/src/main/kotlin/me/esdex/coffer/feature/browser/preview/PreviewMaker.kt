@@ -21,7 +21,7 @@ import kotlin.math.sqrt
  * the whole picture if it is not too big; a frame near the start of a video; a song's cover from its
  * tags. Square, [SIZE] pixels a side, WebP. Blocking: call it off the main thread.
  *
- * Everything is read through streams and MediaDataSource, never through a ReaderFileDescriptor: that
+ * Everything is read through streams and MediaDataSource, never through a ProxyFileDescriptor: that
  * one is served by a thread of this same process, and a process killed with a decoder waiting on it can
  * never exit; Android then will not start Coffer again until the phone restarts (seen 2026-11-11).
  * Several ideas here are Arcanum's ThumbnailManager: decoding a photo from a stream in two passes, HEIF

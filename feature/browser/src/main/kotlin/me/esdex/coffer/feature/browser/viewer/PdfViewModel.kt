@@ -1,6 +1,5 @@
 package me.esdex.coffer.feature.browser.viewer
 
-import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.pdf.PdfRenderer
@@ -9,7 +8,7 @@ import androidx.core.graphics.createBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,19 +27,27 @@ import me.esdex.coffer.feature.browser.transfer.VaultContent
 import javax.inject.Inject
 
 /**
- * A PDF read in place from Saved Messages (pre-release item 5), after Arcanum's PdfViewerViewModel:
- * the system renderer reads the document through a [ReaderFileDescriptor], so opening it costs the
- * cross-reference table and each page costs only the chunks it lives in.
+ * A PDF from Saved Messages (pre-release item 5), after Arcanum's PdfViewerViewModel. The system
+ * renderer reads only a real descriptor, so the document is decrypted whole into memory first (see
+ * [MemoryCopy]); reading it in place through a descriptor this process serves could leave Coffer
+ * unable to start after a kill. Up to [MemoryCopy.MAX_BYTES]; larger ones open in another app.
  */
 @HiltViewModel
 class PdfViewModel @Inject constructor(
     private val content: VaultContent,
-    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
-    enum class Failure { PASSWORD_PROTECTED, UNREADABLE, NOT_AVAILABLE }
+    enum class Failure { PASSWORD_PROTECTED, UNREADABLE, NOT_AVAILABLE, TOO_LARGE }
 
-    data class State(val fileId: Id? = null, val loading: Boolean = true, val pageCount: Int = 0, val failure: Failure? = null)
+    /** [loaded] of [size] bytes are in memory while [loading]. */
+    data class State(
+        val fileId: Id? = null,
+        val loading: Boolean = true,
+        val pageCount: Int = 0,
+        val failure: Failure? = null,
+        val loaded: Long = 0,
+        val size: Long = 0,
+    )
 
     /** A page's size in points, so its place in the list has the right shape before it is drawn. */
     data class PageShape(val width: Int, val height: Int)
@@ -59,7 +66,7 @@ class PdfViewModel @Inject constructor(
 
     // Read outside the lock by close(), which must not wait for a page to get at it.
     @Volatile private var file: VaultContent.OpenedFile? = null
-    private var descriptor: ReaderFileDescriptor? = null
+    private var copy: MemoryCopy? = null
     private var renderer: PdfRenderer? = null
     private val shapes = HashMap<Int, PageShape>()
 
@@ -83,16 +90,35 @@ class PdfViewModel @Inject constructor(
                 ++session
             }
             val opened = content.openFile(fileId)
+            // Outside the lock: a close has to be able to cut the copy short by closing the file under it.
+            file = opened
+            var failure: Failure? = null
+            val memory = opened?.let {
+                try {
+                    MemoryCopy.of(it.reader) { done, size -> progress(fileId, done, size) }
+                } catch (e: CancellationException) {
+                    it.close()
+                    throw e
+                } catch (_: MemoryCopy.TooLargeException) {
+                    failure = Failure.TOO_LARGE
+                    null
+                } catch (_: Exception) {
+                    failure = Failure.NOT_AVAILABLE
+                    null
+                }
+            }
+            // Copied or not, the vault file is done with, and its pieces go to the cache.
+            opened?.close()
+            file = null
             val result: Pair<Failure?, Int> = lock.withLock {
                 if (session != mine) {
-                    opened?.close()
+                    memory?.close()
                     return@withLock null to 0
                 }
-                if (opened == null) return@withLock Failure.NOT_AVAILABLE to 0
-                file = opened
+                if (memory == null) return@withLock (failure ?: Failure.NOT_AVAILABLE) to 0
+                copy = memory
                 try {
-                    val fd = ReaderFileDescriptor(context, opened.reader).also { descriptor = it }
-                    val open = PdfRenderer(fd.descriptor)
+                    val open = PdfRenderer(memory.descriptor)
                     renderer = open
                     null to open.pageCount
                 } catch (_: SecurityException) {
@@ -109,6 +135,10 @@ class PdfViewModel @Inject constructor(
                 stateFlow.value = it.copy(loading = false, pageCount = result.second, failure = result.first)
             }
         }
+    }
+
+    private fun progress(fileId: Id, done: Long, size: Long) {
+        stateFlow.value.takeIf { it.fileId == fileId && it.loading }?.let { stateFlow.value = it.copy(loaded = done, size = size) }
     }
 
     /** The page's shape in points, read once and remembered. */
@@ -146,8 +176,8 @@ class PdfViewModel @Inject constructor(
     private fun closeDocument() {
         runCatching { renderer?.close() }
         renderer = null
-        descriptor?.close()
-        descriptor = null
+        copy?.close()
+        copy = null
         file?.close()
         file = null
         shapes.clear()

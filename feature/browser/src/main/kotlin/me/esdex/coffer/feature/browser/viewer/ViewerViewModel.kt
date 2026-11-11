@@ -66,14 +66,8 @@ class ViewerViewModel @Inject constructor(
     val locked: StateFlow<Boolean> = content.keys.map { it == null }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /** An animated picture keeps reading frames from its file for as long as it plays. */
-    private class Held(val file: VaultContent.OpenedFile, val fd: ReaderFileDescriptor) {
-        fun close() {
-            fd.close()
-            file.close()
-        }
-    }
-
-    private val held = HashMap<Id, Held>()
+    // An animation reads its frames as it plays: its copy in memory stays while it is shown.
+    private val held = HashMap<Id, MemoryCopy>()
     private val jobs = HashMap<Id, Job>()
 
     // Big enough to zoom into a little, small enough that three pages do not fill the heap.
@@ -109,26 +103,28 @@ class ViewerViewModel @Inject constructor(
         job.start()
     }
 
+    /**
+     * The picture read whole into memory first (see [MemoryCopy]), then decoded from there: the decoder
+     * reads a still whole anyway. The vault file is let go as soon as it is copied.
+     */
     private suspend fun decode(fileId: Id): Drawable? {
         val file = content.openFile(fileId) ?: return null
-        val fd = try {
-            ReaderFileDescriptor(context, file.reader)
-        } catch (e: Exception) {
-            file.close()
+        val copy = try {
+            MemoryCopy.of(file.reader)
+        } catch (_: Exception) {
             return null
+        } finally {
+            file.close()
         }
-        val drawable = Pictures.decode(fd, maxDimension)
+        val drawable = Pictures.decode(copy.descriptor, maxDimension)
         val keep = drawable is AnimatedImageDrawable
         // Let go at once unless it animates; and when the page went away while decoding, either way.
         val stillWanted = synchronized(held) {
             val wanted = jobs.containsKey(fileId) && picturesFlow.value.containsKey(fileId)
-            if (keep && wanted) held[fileId] = Held(file, fd)
+            if (keep && wanted) held[fileId] = copy
             wanted
         }
-        if (!keep || !stillWanted) {
-            fd.close()
-            file.close()
-        }
+        if (!keep || !stillWanted) copy.close()
         return drawable?.takeIf { stillWanted }
     }
 

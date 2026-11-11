@@ -1,6 +1,7 @@
 package me.esdex.coffer.feature.browser.viewer
 
 import android.graphics.Bitmap
+import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +39,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -64,6 +67,7 @@ import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -92,6 +96,7 @@ fun PdfViewerScreen(
     LaunchedEffect(page.fileId) { viewModel.open(page.fileId) }
     // Left in any way, the vault locking included: the document and its file are let go.
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
+    val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     val locked by viewModel.locked.collectAsStateWithLifecycle()
     LaunchedEffect(locked) { if (locked) onClose() }
@@ -171,6 +176,20 @@ fun PdfViewerScreen(
             ) {
                 val failure = state.failure
                 when {
+                    // The whole document comes first (see MemoryCopy): how much of it, once its size is known.
+                    state.loading && state.size > 0 -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 48.dp)) {
+                        LinearProgressIndicator(progress = { state.loaded.toFloat() / state.size }, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            stringResource(
+                                R.string.transfers_amount,
+                                Formatter.formatShortFileSize(context, state.loaded),
+                                Formatter.formatShortFileSize(context, state.size),
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     state.loading -> CircularProgressIndicator()
                     failure != null -> EmptyStateView(
                         title = stringResource(
@@ -178,12 +197,14 @@ fun PdfViewerScreen(
                                 PdfViewModel.Failure.PASSWORD_PROTECTED -> R.string.viewer_pdf_password
                                 PdfViewModel.Failure.NOT_AVAILABLE -> R.string.viewer_pdf_not_available
                                 PdfViewModel.Failure.UNREADABLE -> R.string.viewer_pdf_unreadable
+                                PdfViewModel.Failure.TOO_LARGE -> R.string.viewer_pdf_too_large
                             },
                         ),
                         subtitle = when (failure) {
                             PdfViewModel.Failure.PASSWORD_PROTECTED -> stringResource(R.string.viewer_pdf_password_hint)
                             PdfViewModel.Failure.NOT_AVAILABLE -> stringResource(R.string.viewer_pdf_not_available_hint)
                             PdfViewModel.Failure.UNREADABLE -> null
+                            PdfViewModel.Failure.TOO_LARGE -> stringResource(R.string.viewer_pdf_too_large_hint, Formatter.formatShortFileSize(context, MemoryCopy.MAX_BYTES))
                         },
                         modifier = Modifier.padding(horizontal = 32.dp),
                     )
