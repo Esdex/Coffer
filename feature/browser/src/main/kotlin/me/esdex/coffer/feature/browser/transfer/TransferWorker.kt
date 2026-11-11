@@ -67,6 +67,8 @@ class TransferWorker @AssistedInject constructor(
     } catch (_: StorageException) {
         Result.retry()
     } finally {
+        // First, so a late report cannot put the progress back.
+        endProgress()
         registry.finished(id)
     }
 
@@ -147,8 +149,25 @@ class TransferWorker @AssistedInject constructor(
     private var lastPercent = -1
     private var lastPhase: TransferRegistry.Phase? = null
     private var lastNotified = 0L
+    private var ended = false
 
+    /**
+     * No progress is shown after this, and what was shown goes. TDLib reports progress from its own
+     * thread and can do so after the transfer has returned: on a small file the last 100% then came
+     * after WorkManager had taken the notice down, and stayed in the shade for good (seen 2026-11-11).
+     */
+    private fun endProgress() {
+        val shown = synchronized(this) {
+            ended = true
+            lastPhase != null
+        }
+        // Only a progress notice: a paused one is meant to stay.
+        if (shown) runCatching { notifications().cancel(id.hashCode()) }
+    }
+
+    @Synchronized
     private fun report(done: Long, total: Long, stage: TransferStage) {
+        if (ended) return
         val phase = if (stage == TransferStage.PREPARING) TransferRegistry.Phase.PREPARING else TransferRegistry.Phase.MOVING
         val progress = TransferRegistry.Progress(done, total, phase)
         registry.progress(id, done, total, phase)
