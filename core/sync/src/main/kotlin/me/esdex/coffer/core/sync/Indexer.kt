@@ -181,7 +181,7 @@ class Indexer(
 
     private suspend fun load(messageId: MessageId, payload: IndexPayload): Boolean {
         val state = try {
-            storage.openBlob(messageId).use { keys.snapshots.decode(payload.snapshotId, payload.plainSize, it) }
+            storage.openBlob(messageId).use { keys.snapshots.decode(payload.snapshotId, payload.plainSize, it, payload.padded) }
         } catch (e: StorageException) {
             // Another device may have just deleted it as one of the old ones: then look further. A message
             // that is still there failed for another reason, such as the network, and the catch-up stops.
@@ -212,7 +212,7 @@ class Indexer(
                     complete -> FileStatus.READY
                     else -> FileStatus.INCOMPLETE
                 }
-                IndexedFile(file.fileId, file.plainSize, file.partCount, keys.local.sealFileMeta(file.fileId, file.meta), status, parts)
+                IndexedFile(file.fileId, file.plainSize, file.partCount, keys.local.sealFileMeta(file.fileId, file.meta), status, parts, file.padded)
             },
             orphanParts = state.orphans.associate { orphan -> orphan.fileId to orphan.parts.mapValues { MessageId(it.value) } },
             folders = state.folders.map { IndexedFolder(it.folderId, keys.local.sealFolder(it.folderId, LocalFolder(it.name, it.parentId))) },
@@ -232,10 +232,10 @@ class Indexer(
         val known = content.files.map { it.fileId }.toSet()
         val orphans = content.orphanParts.toMutableMap()
         val carried = index.files().filter { it.fileId in uploading && it.fileId !in known }.map { row ->
-            IndexedFile(row.fileId, row.plainSize, row.partCount, row.sealedMeta, FileStatus.UPLOADING, orphans.remove(row.fileId).orEmpty())
+            IndexedFile(row.fileId, row.plainSize, row.partCount, row.sealedMeta, FileStatus.UPLOADING, orphans.remove(row.fileId).orEmpty(), row.padded)
         }
         val files = content.files.map { file ->
-            if (file.fileId in uploading) IndexedFile(file.fileId, file.plainSize, file.partCount, file.sealedMeta, FileStatus.UPLOADING, file.parts) else file
+            if (file.fileId in uploading) IndexedFile(file.fileId, file.plainSize, file.partCount, file.sealedMeta, FileStatus.UPLOADING, file.parts, file.padded) else file
         }
         return IndexContent(
             content.lastApplied, content.contentVersion, files + carried, orphans,
@@ -280,8 +280,8 @@ class Indexer(
         if (meta != null) {
             val sealed = keys.local.sealFileMeta(fileId, meta)
             // This device's own uploads already have a row, whose status the uploader owns.
-            if (!index.updateFileMeta(fileId, payload.plainSize, payload.partCount, sealed)) {
-                index.putFile(fileId, payload.plainSize, payload.partCount, sealed, FileStatus.INCOMPLETE)
+            if (!index.updateFileMeta(fileId, payload.plainSize, payload.partCount, sealed, payload.padded)) {
+                index.putFile(fileId, payload.plainSize, payload.partCount, sealed, FileStatus.INCOMPLETE, payload.padded)
             }
         }
         refreshStatus(fileId)
@@ -344,7 +344,7 @@ class Indexer(
     private suspend fun changeFile(fileId: Id, change: (FileMeta) -> FileMeta) {
         val file = index.file(fileId) ?: return
         val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: return
-        index.updateFileMeta(fileId, file.plainSize, file.partCount, keys.local.sealFileMeta(fileId, change(meta)))
+        index.updateFileMeta(fileId, file.plainSize, file.partCount, keys.local.sealFileMeta(fileId, change(meta)), file.padded)
     }
 
     private suspend fun forget(fileId: Id) {
@@ -399,7 +399,7 @@ class Indexer(
             },
             files = files.mapNotNull { f ->
                 val meta = keys.local.openFileMeta(f.fileId, f.sealedMeta) ?: return@mapNotNull null
-                SnapshotFile(f.fileId, f.plainSize, meta, f.parts.mapValues { it.value.value }, f.status == FileStatus.DAMAGED)
+                SnapshotFile(f.fileId, f.plainSize, meta, f.parts.mapValues { it.value.value }, f.status == FileStatus.DAMAGED, f.padded)
             },
             orphans = index.allParts().filterKeys { it !in known && it !in deletedFiles }.map { (id, parts) ->
                 SnapshotOrphan(id, parts.mapValues { it.value.value })

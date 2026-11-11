@@ -10,6 +10,7 @@ import me.esdex.coffer.core.crypto.ContentDecryptor
 import me.esdex.coffer.core.crypto.ContentEncryptor
 import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.Padme
 import me.esdex.coffer.core.crypto.SecretKey
 import me.esdex.coffer.core.crypto.sodium.Sodium
 import java.io.ByteArrayInputStream
@@ -34,8 +35,10 @@ data class SnapshotFile(
     val meta: FileMeta,
     val parts: Map<Int, Long>,
     val damaged: Boolean,
+    /** Its content runs on in zeros to the padded size (SPEC §4.5); only a version 2 snapshot says so. */
+    val padded: Boolean = false,
 ) {
-    val partCount: Int get() = ContentLayout.partCount(plainSize)
+    val partCount: Int get() = ContentLayout.partCount(Padme.contentSize(plainSize, padded))
 
     init {
         require(plainSize in 0..CofferFormat.MAX_PLAIN_SIZE) { "size out of range" }
@@ -73,43 +76,50 @@ data class IndexState(
 
 /**
  * Encodes and encrypts snapshots, SPEC §4.4: `deflate(CBOR(state))`, raw deflate, encrypted like file
- * content (§3.4) with IndexKey and the snapshot id. A snapshot is a single part.
+ * content (§3.4) with IndexKey and the snapshot id. A snapshot is a single part. A version 2 snapshot is
+ * [padded][encode] like a file (§4.5), as its size would otherwise tell how many files the vault holds,
+ * and may mark padded files; a version 1 snapshot may not.
  */
 class SnapshotCodec(private val sodium: Sodium, private val indexKey: SecretKey) {
 
     /** The encrypted document and the length of the deflated plaintext, for the caption's `plain_size`. */
     class Sealed(val bytes: ByteArray, val plainSize: Long)
 
-    fun encode(snapshotId: Id, state: IndexState): Sealed {
+    fun encode(snapshotId: Id, state: IndexState, padded: Boolean = true): Sealed {
+        require(padded || state.files.none { it.padded }) { "a version 1 snapshot cannot hold padded files" }
         val deflated = deflate(stateCbor(state))
         require(deflated.size <= MAX_DEFLATED) { "snapshot too large" }
         val out = ByteArrayOutputStream()
-        ContentEncryptor(sodium, indexKey, snapshotId, deflated.size.toLong()).encryptPart(0, ByteArrayInputStream(deflated), out)
+        ContentEncryptor(sodium, indexKey, snapshotId, deflated.size.toLong(), padded).encryptPart(0, ByteArrayInputStream(deflated), out)
         return Sealed(out.toByteArray(), deflated.size.toLong())
     }
 
     /**
      * Null if the document does not decrypt with this vault's IndexKey, does not inflate, or breaks the
      * format: such a snapshot is treated as damaged and an older one, or a full rescan, is used instead.
+     * [padded] is what its caption's version says.
      */
-    fun decode(snapshotId: Id, plainSize: Long, input: InputStream, maxInflated: Int = MAX_INFLATED): IndexState? {
+    fun decode(snapshotId: Id, plainSize: Long, input: InputStream, padded: Boolean, maxInflated: Int = MAX_INFLATED): IndexState? {
         if (plainSize !in 0..MAX_DEFLATED.toLong()) return null
+        // One part: its padded size must still be a single part.
+        if (Padme.contentSize(plainSize, padded) > MAX_DEFLATED) return null
         val deflated = ByteArrayOutputStream()
         try {
-            ContentDecryptor(sodium, indexKey, snapshotId, plainSize).decryptPart(0, input, deflated)
+            ContentDecryptor(sodium, indexKey, snapshotId, plainSize, padded).decryptPart(0, input, deflated)
         } catch (_: Exception) {
             return null
         }
         val cbor = inflate(deflated.toByteArray(), maxInflated) ?: return null
-        return decodeState(cbor)
+        return decodeState(cbor, version2 = padded)
     }
 
     /** The CBOR before deflate; public for the format's test vectors. */
     fun stateCbor(state: IndexState): ByteArray = CanonicalCbor.encode(StateCbor.serializer(), state.toCbor())
 
-    /** Strict reading of the CBOR after inflate (SPEC §4.0, §4.4). */
-    fun decodeState(cbor: ByteArray): IndexState? {
+    /** Strict reading of the CBOR after inflate (SPEC §4.0, §4.4); only [version2] may mark padded files. */
+    fun decodeState(cbor: ByteArray, version2: Boolean = true): IndexState? {
         val c = CanonicalCbor.decode(StateCbor.serializer(), cbor) ?: return null
+        if (!version2 && c.files.any { it.padded != null }) return null
         return validated { c.toModel() }
     }
 
@@ -191,6 +201,7 @@ private fun IndexState.toCbor() = StateCbor(
             wrappedDek = it.meta.wrappedDek.toByteArray(),
             parts = it.parts.sortedParts(),
             damaged = if (it.damaged) true else null,
+            padded = if (it.padded) true else null,
         )
     },
     orphans = orphans.sortedWith(compareBy(byId) { it.fileId }).map { OrphanCbor(it.fileId.toByteArray(), it.parts.sortedParts()) },
@@ -218,9 +229,11 @@ private fun StateCbor.model() = IndexState(
     folders = folders.map { SnapshotFolder(Id.of(it.folderId), it.parentId?.let(Id::of), it.name) },
     files = files.map {
         require(it.chunkSize == CofferFormat.CHUNK_SIZE) { "chunk size" }
-        require(it.partCount == ContentLayout.partCount(it.plainSize)) { "part count does not match size" }
-        // Absent means not damaged; an explicit false would be a second encoding of the same state.
+        require(it.plainSize in 0..CofferFormat.MAX_PLAIN_SIZE) { "size out of range" }
+        // Absent means not damaged, or not padded; an explicit false would be a second encoding of the same state.
         require(it.damaged != false) { "damaged written as false" }
+        require(it.padded != false) { "padded written as false" }
+        require(it.partCount == ContentLayout.partCount(Padme.contentSize(it.plainSize, it.padded == true))) { "part count does not match size" }
         SnapshotFile(
             fileId = Id.of(it.fileId),
             plainSize = it.plainSize,
@@ -230,6 +243,7 @@ private fun StateCbor.model() = IndexState(
             ),
             parts = it.parts,
             damaged = it.damaged == true,
+            padded = it.padded == true,
         )
     },
     orphans = orphans.map { SnapshotOrphan(Id.of(it.fileId), it.parts) },
@@ -271,6 +285,7 @@ private class FileCbor(
     @CborLabel(12) val wrappedDek: ByteArray,
     @CborLabel(13) val parts: Map<Int, Long>,
     @CborLabel(14) @EncodeDefault(EncodeDefault.Mode.NEVER) val damaged: Boolean? = null,
+    @CborLabel(15) @EncodeDefault(EncodeDefault.Mode.NEVER) val padded: Boolean? = null,
 )
 
 @Serializable

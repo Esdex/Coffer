@@ -5,6 +5,7 @@ import me.esdex.coffer.core.crypto.Bytes
 import me.esdex.coffer.core.crypto.CofferFormat
 import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.Padme
 
 // The model classes validate in init, so a decoded payload that breaks the format never exists as an object.
 
@@ -46,17 +47,23 @@ data class FileMeta(
     }
 }
 
-/** Caption payload of one file part, SPEC §4.2. [meta] is present exactly on part 0. */
+/**
+ * Caption payload of one file part, SPEC §4.2. [meta] is present exactly on part 0. A [padded] file's
+ * content runs on in zeros to its padded size (§4.5), and its parts are counted from that.
+ */
 data class BlobPayload(
     val fileId: Id,
     val partIndex: Int,
     val partCount: Int,
     val plainSize: Long,
     val meta: FileMeta?,
+    val padded: Boolean = false,
 ) {
+    val contentSize: Long get() = Padme.contentSize(plainSize, padded)
+
     init {
         require(plainSize in 0..CofferFormat.MAX_PLAIN_SIZE) { "size out of range" }
-        require(partCount == ContentLayout.partCount(plainSize)) { "part count does not match size" }
+        require(partCount == ContentLayout.partCount(contentSize)) { "part count does not match size" }
         require(partIndex in 0 until partCount) { "part index out of range" }
         require((partIndex == 0) == (meta != null)) { "metadata belongs to part 0 only" }
     }
@@ -100,12 +107,13 @@ sealed interface Op {
     }
 }
 
-/** Caption payload of an index snapshot, SPEC §4.4. */
+/** Caption payload of an index snapshot, SPEC §4.4. A version 2 snapshot is [padded] (§4.5). */
 data class IndexPayload(
     val snapshotId: Id,
     val lastAppliedMessageId: Long,
     val createdAt: Long,
     val plainSize: Long,
+    val padded: Boolean = false,
 ) {
     init {
         require(lastAppliedMessageId >= 0) { "negative message id" }

@@ -49,6 +49,7 @@ data class SettingsState(
     val autoLockMinutes: Int? = null,
     val blockScreenshots: Boolean = false,
     val weeklyCheck: Boolean = true,
+    val hideSizes: Boolean = true,
     val deviceUnlockAvailable: Boolean = false,
     val deviceUnlockOn: Boolean = false,
     val debugTools: Boolean = false,
@@ -205,7 +206,7 @@ class SettingsViewModel @Inject constructor(
     private val deviceTick = MutableStateFlow(0)
 
     val state: StateFlow<SettingsState> = combine(store.changes, deviceTick) { _, _ ->
-        SettingsState(store.autoLockMinutes, store.blockScreenshots, store.weeklyCheck, device.isAvailable(), device.isEnabled, store.debugTools)
+        SettingsState(store.autoLockMinutes, store.blockScreenshots, store.weeklyCheck, store.hideSizes, device.isAvailable(), device.isEnabled, store.debugTools)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
     /** Messages read so far by a check or rescan in progress; null when idle. */
@@ -227,6 +228,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setWeeklyCheck(on: Boolean) {
         store.weeklyCheck = on
+    }
+
+    fun setHideSizes(on: Boolean) {
+        store.hideSizes = on
     }
 
     fun setDebugTools(on: Boolean) {

@@ -31,13 +31,15 @@ class MigrationTest {
             db.execSQL("INSERT INTO uploads VALUES ('u1', ?, NULL, '', NULL)", arrayOf(byteArrayOf(4, 5)))
             db.execSQL("INSERT INTO sync_state VALUES ('lastAppliedMessageId', 1048576)")
         }
-        // Validates the migrated schema against 3.json.
-        helper.runMigrationsAndValidate(name, 3, true).close()
+        // Validates the migrated schema against 4.json.
+        helper.runMigrationsAndValidate(name, 4, true).close()
 
         val index = RoomVaultIndex(context, name)
         runBlocking {
             val file = index.files().single()
             assertEquals(10L, file.plainSize)
+            // Written before format v2: not padded.
+            assertEquals(false, file.padded)
             assertEquals(FileStatus.READY, file.status)
             assertEquals(1048576L, file.parts.getValue(0).value)
             assertArrayEquals(byteArrayOf(4, 5), index.uploads().single().sealedRequest)

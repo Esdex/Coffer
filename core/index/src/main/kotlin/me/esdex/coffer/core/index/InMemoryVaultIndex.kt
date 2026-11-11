@@ -10,7 +10,7 @@ import me.esdex.coffer.core.storage.MessageId
 
 /** [VaultIndex] in memory, for sync tests on the JVM. Same behaviour as the Room one. */
 class InMemoryVaultIndex : VaultIndex {
-    private class Row(val plainSize: Long, val partCount: Int, val sealedMeta: ByteArray, val status: FileStatus)
+    private class Row(val plainSize: Long, val partCount: Int, val sealedMeta: ByteArray, val status: FileStatus, val padded: Boolean)
 
     private data class State(
         val files: Map<Id, Row> = emptyMap(),
@@ -33,7 +33,7 @@ class InMemoryVaultIndex : VaultIndex {
 
     private fun State.indexed(): List<IndexedFile> = files.map { (id, row) ->
         val own = parts.filterKeys { it.first == id }.mapKeys { it.key.second }
-        IndexedFile(id, row.plainSize, row.partCount, row.sealedMeta, row.status, own)
+        IndexedFile(id, row.plainSize, row.partCount, row.sealedMeta, row.status, own, row.padded)
     }
 
     private fun State.indexedFolders(): List<IndexedFolder> = folders.map { (id, sealed) -> IndexedFolder(id, sealed.copyOf()) }
@@ -42,19 +42,19 @@ class InMemoryVaultIndex : VaultIndex {
     override suspend fun files(): List<IndexedFile> = state.value.indexed()
     override suspend fun file(fileId: Id): IndexedFile? = state.value.indexed().find { it.fileId == fileId }
 
-    override suspend fun putFile(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray, status: FileStatus) =
-        update { it.copy(files = it.files + (fileId to Row(plainSize, partCount, sealedMeta.copyOf(), status))) }
+    override suspend fun putFile(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray, status: FileStatus, padded: Boolean) =
+        update { it.copy(files = it.files + (fileId to Row(plainSize, partCount, sealedMeta.copyOf(), status, padded))) }
 
-    override suspend fun updateFileMeta(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray): Boolean =
+    override suspend fun updateFileMeta(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray, padded: Boolean): Boolean =
         lock.withLock {
             val row = state.value.files[fileId] ?: return false
-            state.value = state.value.copy(files = state.value.files + (fileId to Row(plainSize, partCount, sealedMeta.copyOf(), row.status)))
+            state.value = state.value.copy(files = state.value.files + (fileId to Row(plainSize, partCount, sealedMeta.copyOf(), row.status, padded)))
             true
         }
 
     override suspend fun setStatus(fileId: Id, status: FileStatus) = update { s ->
         val row = s.files[fileId] ?: return@update s
-        s.copy(files = s.files + (fileId to Row(row.plainSize, row.partCount, row.sealedMeta, status)))
+        s.copy(files = s.files + (fileId to Row(row.plainSize, row.partCount, row.sealedMeta, status, row.padded)))
     }
 
     override suspend fun removeFile(fileId: Id) = update { s ->
@@ -113,7 +113,7 @@ class InMemoryVaultIndex : VaultIndex {
         val parts = content.files.flatMap { f -> f.parts.map { (i, m) -> (f.fileId to i) to m } } +
             content.orphanParts.flatMap { (id, parts) -> parts.map { (i, m) -> (id to i) to m } }
         State(
-            files = content.files.associate { it.fileId to Row(it.plainSize, it.partCount, it.sealedMeta.copyOf(), it.status) },
+            files = content.files.associate { it.fileId to Row(it.plainSize, it.partCount, it.sealedMeta.copyOf(), it.status, it.padded) },
             parts = parts.toMap(),
             deleted = content.deletedFiles,
             folders = content.folders.associate { it.folderId to it.sealedMeta.copyOf() },

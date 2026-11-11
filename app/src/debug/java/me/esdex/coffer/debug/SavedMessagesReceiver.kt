@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import me.esdex.coffer.core.crypto.format.Captions
 import me.esdex.coffer.core.storage.MessageContent
 import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
@@ -80,15 +81,18 @@ class SavedMessagesReceiver : BroadcastReceiver() {
         return "${message.id.value} $time ${kind(message)}$size${if (pinned) " pinned" else ""}"
     }
 
-    /** The word after `coffer:v1:`, which anyone reading the chat sees anyway; "foreign" for the rest. */
+    /**
+     * Kind, format version and caption length, which anyone reading the chat sees anyway (SPEC §4.5 makes
+     * the length one per kind in version 2); "foreign" for the rest.
+     */
     private fun kind(message: StoredMessage): String {
         val text = when (val content = message.content) {
             is MessageContent.Text -> content.text
             is MessageContent.Blob -> content.caption
             MessageContent.Other -> return "foreign"
         }
-        if (!text.startsWith(PREFIX)) return "foreign"
-        return text.substring(PREFIX.length).substringBefore(':').takeIf { it.isNotEmpty() && it.length <= 16 } ?: "unknown"
+        val record = Captions.parse(text) ?: return "foreign"
+        return "${record.kind.tag} v${record.version} c${text.length}"
     }
 
     private companion object {
@@ -97,7 +101,6 @@ class SavedMessagesReceiver : BroadcastReceiver() {
         const val DEFAULT_LIMIT = 100
         const val MAX_LIMIT = 5_000
         const val TIMEOUT_MS = 50_000L
-        const val PREFIX = "coffer:v1:"
         val TIME: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault())
     }
 }

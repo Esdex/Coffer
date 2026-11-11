@@ -1,5 +1,7 @@
 package me.esdex.coffer.core.sync
 
+import me.esdex.coffer.core.crypto.format.Captions
+import me.esdex.coffer.core.crypto.format.RecordKind
 import kotlinx.coroutines.runBlocking
 import me.esdex.coffer.core.crypto.Bytes
 import me.esdex.coffer.core.crypto.Id
@@ -44,7 +46,7 @@ class MaintenanceTest {
 
     private fun lastId() = cloud.allMessages().maxOf { it.id }
 
-    private fun indexBlobs() = cloud.allMessages().filter { (it.content as? MessageContent.Blob)?.caption?.startsWith("coffer:v1:index:") == true }
+    private fun indexBlobs() = cloud.allMessages().filter { Captions.parse((it.content as? MessageContent.Blob)?.caption)?.kind == RecordKind.INDEX }
 
     /** Sends one part's caption over a few dummy bytes, as another client might. */
     private suspend fun Device.sendPart(fileId: Id, partIndex: Int, meta: FileMeta?): MessageId {

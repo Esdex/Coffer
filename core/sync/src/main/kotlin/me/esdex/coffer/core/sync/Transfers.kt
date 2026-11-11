@@ -9,6 +9,7 @@ import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.ContentSizeException
 import me.esdex.coffer.core.crypto.FileKeys
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.Padme
 import me.esdex.coffer.core.crypto.format.BlobPayload
 import me.esdex.coffer.core.crypto.format.FileMeta
 import me.esdex.coffer.core.crypto.format.FileNames
@@ -59,8 +60,16 @@ class FileDeleter(private val storage: StorageBackend, private val index: VaultI
     }
 }
 
-/** Step 2 of an upload (SPEC §6): needs the unlocked vault. */
-class UploadPreparer(private val keys: VaultKeys, private val index: VaultIndex, private val clock: () -> Long) {
+/**
+ * Step 2 of an upload (SPEC §6): needs the unlocked vault. [padSizes] pads the file's content so its
+ * exact size does not show (SPEC §4.5); the user's setting, on by default.
+ */
+class UploadPreparer(
+    private val keys: VaultKeys,
+    private val index: VaultIndex,
+    private val padSizes: Boolean = true,
+    private val clock: () -> Long,
+) {
     private val sodium: Sodium get() = keys.sodium
 
     class Prepared(val upload: PendingUpload, val keys: TransferKeys)
@@ -77,15 +86,15 @@ class UploadPreparer(private val keys: VaultKeys, private val index: VaultIndex,
         val now = clock()
         val name = FileNames.fitForImport(request.name).takeIf(FileNames::isValid) ?: FALLBACK_NAME
         val meta = FileMeta(name, request.folderId, MimeTypes.normalize(request.mime), now, now, hash, keys.wrapDek(dek, fileId))
-        val partCount = ContentLayout.partCount(size)
+        val partCount = ContentLayout.partCount(Padme.contentSize(size, padSizes))
         val captions = (0 until partCount).map { part ->
-            keys.meta.encodeBlob(BlobPayload(fileId, part, partCount, size, if (part == 0) meta else null))
+            keys.meta.encodeBlob(BlobPayload(fileId, part, partCount, size, if (part == 0) meta else null, padSizes))
         }
         val abandon = keys.meta.encodeOp(Op.FileDelete(Id.random(sodium), now, fileId))
         // The upload first: a file row at UPLOADING with no upload is taken for a stale one and repaired.
         val prepared = PendingUpload(upload.uploadId, upload.sealedRequest, fileId, captions, abandon)
         index.putUpload(prepared)
-        index.putFile(fileId, size, partCount, keys.local.sealFileMeta(fileId, meta), FileStatus.UPLOADING)
+        index.putFile(fileId, size, partCount, keys.local.sealFileMeta(fileId, meta), FileStatus.UPLOADING, padSizes)
         return Prepared(prepared, TransferKeys(dek, hash))
     }
 
@@ -131,8 +140,8 @@ class UploadRunner(
         val fileId = checkNotNull(upload.fileId) { "upload not prepared" }
         val file = checkNotNull(index.file(fileId)) { "upload has no index entry" }
         val plainSize = file.plainSize
-        val encryptor = ContentEncryptor(sodium, keys.dek, fileId, plainSize)
-        val sizes = (0 until encryptor.partCount).map { ContentLayout.encryptedPartSize(plainSize, it) }
+        val encryptor = ContentEncryptor(sodium, keys.dek, fileId, plainSize, file.padded)
+        val sizes = (0 until encryptor.partCount).map { ContentLayout.encryptedPartSize(file.contentSize, it) }
         val total = sizes.sum()
         val hasher = ContentHasher(sodium)
         val sent = index.parts(fileId)
@@ -223,8 +232,8 @@ class DownloadRunner(
 
     suspend fun run(fileId: Id, keys: TransferKeys, output: OutputStream, onProgress: (done: Long, total: Long) -> Unit = { _, _ -> }) {
         val file = checkNotNull(index.file(fileId)) { "file not in the index" }
-        val decryptor = ContentDecryptor(sodium, keys.dek, fileId, file.plainSize)
-        val sizes = (0 until file.partCount).map { ContentLayout.encryptedPartSize(file.plainSize, it) }
+        val decryptor = ContentDecryptor(sodium, keys.dek, fileId, file.plainSize, file.padded)
+        val sizes = (0 until file.partCount).map { ContentLayout.encryptedPartSize(file.contentSize, it) }
         val total = sizes.sum()
         val hasher = ContentHasher(sodium)
         var done = 0L
@@ -258,7 +267,7 @@ class PrefetchRunner(
 ) {
     suspend fun run(fileId: Id, onProgress: (done: Long, total: Long) -> Unit = { _, _ -> }) {
         val file = checkNotNull(index.file(fileId)) { "file not in the index" }
-        val sizes = (0 until file.partCount).map { ContentLayout.encryptedPartSize(file.plainSize, it) }
+        val sizes = (0 until file.partCount).map { ContentLayout.encryptedPartSize(file.contentSize, it) }
         val total = sizes.sum()
         var done = 0L
         onProgress(done, total)

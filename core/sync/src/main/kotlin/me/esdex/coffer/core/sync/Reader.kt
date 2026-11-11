@@ -30,7 +30,8 @@ class VaultFileReader(
 ) : AutoCloseable {
     val size: Long = file.plainSize
 
-    private val decryptor = ContentDecryptor(sodium, keys.dek, file.fileId, file.plainSize)
+    // A padded file's chunks are laid out over its padded size; the zeros after the file are never read.
+    private val decryptor = ContentDecryptor(sodium, keys.dek, file.fileId, file.plainSize, file.padded)
 
     // One fetch at a time; the chunks and the closed flag under the monitor, held only briefly, so
     // close() never waits on the network.
@@ -69,7 +70,7 @@ class VaultFileReader(
         }
         val part = ContentLayout.partOfChunk(index)
         val messageId = file.parts[part] ?: throw MissingPartException(part)
-        val sealedSize = ContentLayout.chunkPlainSize(size, index) + CofferFormat.ENCRYPTED_CHUNK_OVERHEAD
+        val sealedSize = ContentLayout.chunkPlainSize(file.contentSize, index) + CofferFormat.ENCRYPTED_CHUNK_OVERHEAD
         synchronized(cache) { used += messageId }
         val sealed = ByteArray(sealedSize)
         storage.openBlob(messageId, ContentLayout.offsetInPart(index), sealedSize.toLong()).use { input ->

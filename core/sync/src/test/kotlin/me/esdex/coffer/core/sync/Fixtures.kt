@@ -40,9 +40,9 @@ import kotlin.random.Random
 
 internal val sodium = LazySodiumAdapter(LazySodiumJava(SodiumJava()))
 
-internal fun keysOf(master: SecretKey): VaultKeys {
+internal fun keysOf(master: SecretKey, writeVersion: Int = 2): VaultKeys {
     val ring = KeyRing.derive(sodium, master)
-    return VaultKeys(sodium, ring.metaKey, ring.indexKey, ring.wrapKey, LocalKeys.derive(sodium, master))
+    return VaultKeys(sodium, ring.metaKey, ring.indexKey, ring.wrapKey, LocalKeys.derive(sodium, master), writeVersion)
 }
 
 internal class BytesSource(private val bytes: ByteArray) : UploadSource {
@@ -129,8 +129,9 @@ internal class Device(private val cloud: FakeCloud, val keys: VaultKeys, temp: j
         return preparer.prepare(queued, request, source)
     }
 
-    suspend fun upload(name: String, source: UploadSource, mime: String? = "application/octet-stream", folderId: Id? = null): Id {
-        val prepared = prepare(name, source, mime, folderId)
+    suspend fun upload(name: String, source: UploadSource, mime: String? = "application/octet-stream", folderId: Id? = null, padSizes: Boolean = true): Id {
+        val (queued, request) = queued(name, mime, folderId)
+        val prepared = UploadPreparer(keys, index, padSizes) { 1_762_531_200_000 }.prepare(queued, request, source)
         runner.run(prepared.upload, prepared.keys, source)
         return prepared.upload.fileId!!
     }

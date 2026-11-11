@@ -46,7 +46,7 @@ class CensusTest {
 
     @Test
     fun theUsersOwnLookalikesAreTheirs() = runBlocking {
-        post(MessageContent.Text("coffer:v2:op:x"))
+        post(MessageContent.Text("coffer:v3:op:x"))
         post(MessageContent.Text("coffer:v1:unknown:x"))
         post(MessageContent.Text("coffer:v1:op"))
         post(MessageContent.Blob("Coffer:v1:blob:x", "x", 10))

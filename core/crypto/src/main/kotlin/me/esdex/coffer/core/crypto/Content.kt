@@ -6,7 +6,28 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 
-/** Where chunks and parts of a file of a given size live, SPEC §3.4, §3.5. Pure arithmetic. */
+/**
+ * PADMÉ (Nikitin et al., 2019), SPEC §4.5: a size rounded up so that only its order of magnitude and a
+ * few leading bits show. At most about 12% more, and much less on large files.
+ */
+object Padme {
+    fun pad(size: Long): Long {
+        require(size >= 0) { "negative size" }
+        if (size < 2) return size
+        val e = 63 - java.lang.Long.numberOfLeadingZeros(size)
+        val s = 32 - Integer.numberOfLeadingZeros(e)
+        val mask = (1L shl (e - s)) - 1
+        return (size + mask) and mask.inv()
+    }
+
+    /** What is encrypted for a file of [plainSize]: the file, then zeros up to the padded size if [padded]. */
+    fun contentSize(plainSize: Long, padded: Boolean): Long = if (padded) pad(plainSize) else plainSize
+}
+
+/**
+ * Where chunks and parts of encrypted content of a given size live, SPEC §3.4, §3.5. Pure arithmetic. The
+ * size is the content's: the file's own, or its padded size (§4.5).
+ */
 object ContentLayout {
 
     /** At least one chunk: an empty file is a single empty chunk. */
@@ -97,25 +118,31 @@ class ContentSizeException(message: String) : IOException(message)
 
 /**
  * Encrypts a file part by part (SPEC §6, step 3). Parts may be produced in any order,
- * which is what resuming an interrupted upload needs.
+ * which is what resuming an interrupted upload needs. [padded] adds zeros after the file up to its
+ * padded size (SPEC §4.5), inside the encryption.
  */
-class ContentEncryptor(sodium: Sodium, dek: SecretKey, fileId: Id, val plainSize: Long) {
+class ContentEncryptor(sodium: Sodium, dek: SecretKey, fileId: Id, val plainSize: Long, padded: Boolean = false) {
     private val cipher = ChunkCipher(sodium, dek, fileId)
-    private val lastChunk = ContentLayout.chunkCount(plainSize) - 1
+    private val contentSize = Padme.contentSize(plainSize, padded)
+    private val lastChunk = ContentLayout.chunkCount(contentSize) - 1
 
-    val partCount: Int = ContentLayout.partCount(plainSize)
+    val partCount: Int = ContentLayout.partCount(contentSize)
 
     /**
      * Reads exactly this part's plaintext from [input] and writes the encrypted part to [output].
-     * After the last part the input must be exhausted. [hasher], when given, sees the plaintext,
-     * so a caller encrypting all parts in order can confirm the file still matches its content hash.
+     * After the last part the input must be exhausted. [hasher], when given, sees the plaintext and not
+     * the padding, so a caller encrypting all parts in order can confirm the file still matches its
+     * content hash.
      */
     fun encryptPart(partIndex: Int, input: InputStream, output: OutputStream, hasher: ContentHasher? = null) {
         val buffer = ByteArray(CofferFormat.CHUNK_SIZE)
-        for (chunk in ContentLayout.chunksOfPart(plainSize, partIndex)) {
-            val length = ContentLayout.chunkPlainSize(plainSize, chunk)
-            readFully(input, buffer, length)
-            hasher?.update(buffer, length)
+        for (chunk in ContentLayout.chunksOfPart(contentSize, partIndex)) {
+            val length = ContentLayout.chunkPlainSize(contentSize, chunk)
+            val start = chunk * CofferFormat.CHUNK_SIZE
+            val real = (plainSize - start).coerceIn(0, length.toLong()).toInt()
+            readFully(input, buffer, real)
+            buffer.fill(0, real, length)
+            hasher?.update(buffer, real)
             output.write(cipher.encrypt(chunk, chunk == lastChunk, buffer.copyOf(length)))
         }
         buffer.fill(0)
@@ -135,24 +162,39 @@ class ContentEncryptor(sodium: Sodium, dek: SecretKey, fileId: Id, val plainSize
     }
 }
 
-/** Decrypts whole parts or single chunks, SPEC §3.4, §6. */
-class ContentDecryptor(sodium: Sodium, dek: SecretKey, fileId: Id, val plainSize: Long) {
+/**
+ * Decrypts whole parts or single chunks, SPEC §3.4, §6. A [padded] file's content runs past [plainSize]
+ * in zeros (§4.5): they are checked and left out.
+ */
+class ContentDecryptor(sodium: Sodium, dek: SecretKey, fileId: Id, val plainSize: Long, padded: Boolean = false) {
     private val cipher = ChunkCipher(sodium, dek, fileId)
-    private val lastChunk = ContentLayout.chunkCount(plainSize) - 1
+    private val contentSize = Padme.contentSize(plainSize, padded)
+    private val lastChunk = ContentLayout.chunkCount(contentSize) - 1
 
-    val partCount: Int = ContentLayout.partCount(plainSize)
+    val partCount: Int = ContentLayout.partCount(contentSize)
 
-    /** Random access: chunk `i` decrypts on its own. */
+    /**
+     * Random access: chunk `i` decrypts on its own. Only the file's own bytes come back, so a chunk of
+     * nothing but padding comes back empty; padding that is not zeros means the file is damaged.
+     */
     fun decryptChunk(chunkIndex: Long, sealed: ByteArray): ByteArray {
-        val expected = ContentLayout.chunkPlainSize(plainSize, chunkIndex) + CofferFormat.ENCRYPTED_CHUNK_OVERHEAD
-        if (sealed.size != expected) throw AuthenticationException("chunk $chunkIndex has wrong size")
-        return cipher.decrypt(chunkIndex, chunkIndex == lastChunk, sealed)
+        val length = ContentLayout.chunkPlainSize(contentSize, chunkIndex)
+        if (sealed.size != length + CofferFormat.ENCRYPTED_CHUNK_OVERHEAD) throw AuthenticationException("chunk $chunkIndex has wrong size")
+        val plain = cipher.decrypt(chunkIndex, chunkIndex == lastChunk, sealed)
+        val real = (plainSize - chunkIndex * CofferFormat.CHUNK_SIZE).coerceIn(0, length.toLong()).toInt()
+        if (real == length) return plain
+        var padding = 0
+        for (i in real until length) padding = padding or plain[i].toInt()
+        val own = plain.copyOf(real)
+        plain.fill(0)
+        if (padding != 0) throw AuthenticationException("chunk $chunkIndex has padding that is not zeros")
+        return own
     }
 
     /** Reads one encrypted part from [input], which must hold exactly that part, and writes the plaintext. */
     fun decryptPart(partIndex: Int, input: InputStream, output: OutputStream, hasher: ContentHasher? = null) {
-        for (chunk in ContentLayout.chunksOfPart(plainSize, partIndex)) {
-            val sealed = ByteArray(ContentLayout.chunkPlainSize(plainSize, chunk) + CofferFormat.ENCRYPTED_CHUNK_OVERHEAD)
+        for (chunk in ContentLayout.chunksOfPart(contentSize, partIndex)) {
+            val sealed = ByteArray(ContentLayout.chunkPlainSize(contentSize, chunk) + CofferFormat.ENCRYPTED_CHUNK_OVERHEAD)
             var read = 0
             while (read < sealed.size) {
                 val n = input.read(sealed, read, sealed.size - read)

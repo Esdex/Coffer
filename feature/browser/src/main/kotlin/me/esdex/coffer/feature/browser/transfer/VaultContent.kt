@@ -248,7 +248,7 @@ class VaultContent @Inject constructor(
             if (registry.failures.value.containsKey(upload.uploadId)) continue
             val request = keys.local.openUpload(upload.uploadId, upload.sealedRequest) ?: continue
             val fileId = upload.fileId ?: try {
-                val prepared = UploadPreparer(keys, index, System::currentTimeMillis)
+                val prepared = UploadPreparer(keys, index, store.hideSizes, System::currentTimeMillis)
                     .prepare(upload, request, ContentUriSource(context, request.source))
                 registry.put(prepared.upload.fileId!!, TransferRegistry.Entry(prepared.keys, source = request.source, displayName = request.name))
                 prepared.upload.fileId!!
@@ -669,7 +669,7 @@ class VaultContent @Inject constructor(
             val bytes = runCatching { storage.localBytes(part) }.getOrDefault(0L)
             when {
                 // Come whole as the cancel went out: the cache has it, or is about to.
-                bytes >= ContentLayout.encryptedPartSize(file.plainSize, index) -> cache.keep(item.fileId, part, storage)
+                bytes >= ContentLayout.encryptedPartSize(file.contentSize, index) -> cache.keep(item.fileId, part, storage)
                 bytes > 0 && part !in held -> runCatching { storage.releaseBlob(part) }
             }
         }

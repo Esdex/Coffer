@@ -2,6 +2,7 @@ package me.esdex.coffer.core.index
 
 import android.content.Context
 import androidx.room.AutoMigration
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
@@ -32,6 +33,8 @@ internal class FileRow(
     val partCount: Int,
     val sealedMeta: ByteArray,
     val status: String,
+    // Rows from before format v2 (SPEC §4.5) are files that were not padded.
+    @ColumnInfo(defaultValue = "0") val padded: Boolean,
 )
 
 @Entity(tableName = "parts", primaryKeys = ["fileId", "partIndex"], indices = [Index("messageId", unique = true)])
@@ -72,8 +75,8 @@ internal interface IndexDao {
     @Query("SELECT * FROM files WHERE fileId = :fileId") suspend fun file(fileId: String): FileRow?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putFile(row: FileRow)
     @Query("UPDATE files SET status = :status WHERE fileId = :fileId") suspend fun setStatus(fileId: String, status: String)
-    @Query("UPDATE files SET plainSize = :plainSize, partCount = :partCount, sealedMeta = :sealedMeta WHERE fileId = :fileId")
-    suspend fun updateMeta(fileId: String, plainSize: Long, partCount: Int, sealedMeta: ByteArray): Int
+    @Query("UPDATE files SET plainSize = :plainSize, partCount = :partCount, sealedMeta = :sealedMeta, padded = :padded WHERE fileId = :fileId")
+    suspend fun updateMeta(fileId: String, plainSize: Long, partCount: Int, sealedMeta: ByteArray, padded: Boolean): Int
     @Query("DELETE FROM files WHERE fileId = :fileId") suspend fun deleteFile(fileId: String)
 
     @Query("SELECT * FROM parts") fun observeParts(): Flow<List<PartRow>>
@@ -135,9 +138,9 @@ internal interface IndexDao {
         FileRow::class, PartRow::class, DeletedRow::class, FolderRow::class, DeletedFolderRow::class,
         SnapshotRow::class, SyncRow::class, UploadRow::class, DownloadRow::class,
     ],
-    version = 3,
-    // Only new tables so far: the queue of transfers survives the update.
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    version = 4,
+    // Only new tables and columns so far: the queue of transfers survives the update.
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 internal abstract class IndexDatabase : RoomDatabase() {
     abstract fun dao(): IndexDao
@@ -157,6 +160,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         sealedMeta = sealedMeta,
         status = FileStatus.valueOf(status),
         parts = parts.associate { it.partIndex to MessageId(it.messageId) },
+        padded = padded,
     )
 
     private fun join(files: List<FileRow>, parts: List<PartRow>): List<IndexedFile> {
@@ -170,11 +174,11 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
 
     override suspend fun file(fileId: Id): IndexedFile? = dao.file(fileId.hex())?.indexed(dao.parts(fileId.hex()))
 
-    override suspend fun putFile(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray, status: FileStatus) =
-        dao.putFile(FileRow(fileId.hex(), plainSize, partCount, sealedMeta, status.name))
+    override suspend fun putFile(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray, status: FileStatus, padded: Boolean) =
+        dao.putFile(FileRow(fileId.hex(), plainSize, partCount, sealedMeta, status.name, padded))
 
-    override suspend fun updateFileMeta(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray): Boolean =
-        dao.updateMeta(fileId.hex(), plainSize, partCount, sealedMeta) > 0
+    override suspend fun updateFileMeta(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray, padded: Boolean): Boolean =
+        dao.updateMeta(fileId.hex(), plainSize, partCount, sealedMeta, padded) > 0
 
     override suspend fun setStatus(fileId: Id, status: FileStatus) = dao.setStatus(fileId.hex(), status.name)
 
@@ -241,7 +245,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         dao.deleteAllSnapshots()
         dao.deleteSync(LAST_APPLIED)
         dao.deleteSync(CONTENT_VERSION)
-        dao.insertFiles(content.files.map { FileRow(it.fileId.hex(), it.plainSize, it.partCount, it.sealedMeta, it.status.name) })
+        dao.insertFiles(content.files.map { FileRow(it.fileId.hex(), it.plainSize, it.partCount, it.sealedMeta, it.status.name, it.padded) })
         val parts = content.files.associate { it.fileId to it.parts } + content.orphanParts
         dao.insertParts(parts.flatMap { (id, byIndex) -> byIndex.map { (i, m) -> PartRow(id.hex(), i, m.value) } })
         dao.insertDeletedFiles(content.deletedFiles.map { DeletedRow(it.hex()) })

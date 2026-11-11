@@ -1,5 +1,7 @@
 package me.esdex.coffer.core.sync
 
+import me.esdex.coffer.core.crypto.format.Captions
+import me.esdex.coffer.core.crypto.format.RecordKind
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -36,7 +38,7 @@ class SnapshotSyncTest {
 
     private fun bytes(text: String) = BytesSource(text.toByteArray())
 
-    private fun indexBlobs() = cloud.allMessages().filter { (it.content as? MessageContent.Blob)?.caption?.startsWith("coffer:v1:index:") == true }
+    private fun indexBlobs() = cloud.allMessages().filter { Captions.parse((it.content as? MessageContent.Blob)?.caption)?.kind == RecordKind.INDEX }
 
     /** A device that reads everything from scratch, snapshots aside: the reference (SPEC §11). */
     private suspend fun rescanned(): View {
@@ -134,7 +136,7 @@ class SnapshotSyncTest {
         val sealed = here.keys.snapshots.encode(snapshotId, state)
         here.storage.sendBlob(
             temp.newFile("cfr_dddddddddddd.bin").apply { writeBytes(sealed.bytes) },
-            here.keys.meta.encodeIndex(IndexPayload(snapshotId, state.lastAppliedMessageId + 1, 1, sealed.plainSize)),
+            here.keys.meta.encodeIndex(IndexPayload(snapshotId, state.lastAppliedMessageId + 1, 1, sealed.plainSize, padded = true)),
         )
         here.upload("b.txt", bytes("b"))
 
@@ -202,7 +204,7 @@ class SnapshotSyncTest {
         val last = here.index.lastApplied()!!.value
         here.storage.sendBlob(
             temp.newFile("cfr_cccccccccccc.bin").apply { writeBytes(Random(1).nextBytes(500)) },
-            here.keys.meta.encodeIndex(IndexPayload(Id.random(sodium), last, 1, 460)),
+            here.keys.meta.encodeIndex(IndexPayload(Id.random(sodium), last, 1, 460, padded = true)),
         )
 
         val there = device()

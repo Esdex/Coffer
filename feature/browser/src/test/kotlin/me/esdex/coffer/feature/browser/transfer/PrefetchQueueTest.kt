@@ -82,6 +82,15 @@ class PrefetchQueueTest {
     }
 
     @Test
+    fun aPaddedFileIsWholeOnlyWithItsPadding() {
+        // 1000 bytes padded to 1024 (SPEC §4.5): Telegram holds one chunk of 1024, not of 1000.
+        val padded = IndexedFile(id(1), 1000, 1, ByteArray(1), FileStatus.READY, mapOf(0 to p0), padded = true)
+        assertEquals(1024L + 24 + 16, padded.encryptedSize())
+        assertFalse(padded.isCached(mapOf(p0 to 1000L + 24 + 16)))
+        assertTrue(padded.isCached(mapOf(p0 to 1024L + 24 + 16)))
+    }
+
+    @Test
     fun aFileNotWholeInSavedMessagesIsNeverCached() {
         val held = mapOf(p0 to bigPart, p1 to smallPart)
         assertFalse(file(1, twoParts, 2, mapOf(0 to p0)).isCached(held))

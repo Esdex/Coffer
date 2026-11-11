@@ -26,7 +26,8 @@ class Snapshotter(
         val pending = indexer.pendingSnapshot() ?: return false
         val snapshotId = Id.random(keys.sodium)
         val sealed = keys.snapshots.encode(snapshotId, pending.state)
-        val caption = keys.meta.encodeIndex(IndexPayload(snapshotId, pending.state.lastAppliedMessageId, clock(), sealed.plainSize))
+        // Version 2 and padded always (SPEC §4.5): its size would otherwise tell how many files there are.
+        val caption = keys.meta.encodeIndex(IndexPayload(snapshotId, pending.state.lastAppliedMessageId, clock(), sealed.plainSize, padded = true))
         tempDir.mkdirs()
         val temp = File(tempDir, "cfr_" + keys.sodium.randomBytes(6).joinToString("") { "%02x".format(it) } + ".bin")
         try {

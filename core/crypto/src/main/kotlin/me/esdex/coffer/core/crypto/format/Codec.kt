@@ -1,5 +1,7 @@
 package me.esdex.coffer.core.crypto.format
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.cbor.Cbor
@@ -50,15 +52,24 @@ object VaultHeaderCodec {
 }
 
 /**
- * Encrypted captions and texts, SPEC §4: `coffer:v1:<kind>:<enc>` with
- * `<enc> = base64url(nonce(24) || XChaCha20-Poly1305(MetaKey, CBOR, AD = "coffer/v1/<kind>"))`.
+ * Encrypted captions and texts, SPEC §4: `coffer:v<n>:<kind>:<enc>` with
+ * `<enc> = base64url(nonce(24) || XChaCha20-Poly1305(MetaKey, P, AD = "coffer/v<n>/<kind>"))`. In
+ * version 1, P is the CBOR; in version 2 (§4.5) it is a two-byte length, the CBOR and zeros up to a
+ * fixed size per kind, so a caption shows neither the length of a name nor which part of a file it is.
+ * Both versions are read; [writeVersion] is what is written, 2 but for the version 1 test vectors.
  *
  * Decoders return null for anything that does not authenticate or breaks the format: such a record is
  * either from another vault or damaged, and sync treats both the same way.
  */
-class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey) {
+class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey, private val writeVersion: Int = Captions.V2) {
+
+    init {
+        require(writeVersion == Captions.V1 || writeVersion == Captions.V2) { "no such version" }
+    }
 
     fun encodeBlob(payload: BlobPayload): String {
+        require(!payload.padded || writeVersion == Captions.V2) { "version 1 has no padding" }
+        val padded = if (payload.padded) true else null
         val meta = payload.meta
         val cbor = if (meta == null) {
             CanonicalCbor.encode(
@@ -69,6 +80,7 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey) {
                     partCount = payload.partCount,
                     chunkSize = CofferFormat.CHUNK_SIZE,
                     plainSize = payload.plainSize,
+                    padded = padded,
                 ),
             )
         } else {
@@ -87,6 +99,7 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey) {
                     modifiedAt = meta.modifiedAt,
                     contentHash = meta.contentHash.toByteArray(),
                     wrappedDek = meta.wrappedDek.toByteArray(),
+                    padded = padded,
                 ),
             )
         }
@@ -94,11 +107,19 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey) {
     }
 
     fun decodeBlob(record: RawRecord): BlobPayload? {
-        val bytes = open(RecordKind.BLOB, record) ?: return null
+        val opened = open(RecordKind.BLOB, record) ?: return null
+        val bytes = opened.cbor
+        // Absent means not padded; written false would be a second encoding, and version 1 has no such field.
+        fun paddedOf(padded: Boolean?): Boolean? = when {
+            padded == false -> null
+            padded == true && opened.version == Captions.V1 -> null
+            else -> padded == true
+        }
         val head = CanonicalCbor.sniff(BlobHeadCbor.serializer(), bytes) ?: return null
         return if (head.partIndex == 0) {
             val c = CanonicalCbor.decode(BlobFirstPartCbor.serializer(), bytes) ?: return null
             if (c.chunkSize != CofferFormat.CHUNK_SIZE) return null
+            val padded = paddedOf(c.padded) ?: return null
             validated {
                 BlobPayload(
                     fileId = Id.of(c.fileId),
@@ -114,12 +135,14 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey) {
                         contentHash = Bytes.of(c.contentHash),
                         wrappedDek = Bytes.of(c.wrappedDek),
                     ),
+                    padded = padded,
                 )
             }
         } else {
             val c = CanonicalCbor.decode(BlobPartCbor.serializer(), bytes) ?: return null
             if (c.chunkSize != CofferFormat.CHUNK_SIZE) return null
-            validated { BlobPayload(Id.of(c.fileId), c.partIndex, c.partCount, c.plainSize, meta = null) }
+            val padded = paddedOf(c.padded) ?: return null
+            validated { BlobPayload(Id.of(c.fileId), c.partIndex, c.partCount, c.plainSize, meta = null, padded = padded) }
         }
     }
 
@@ -159,7 +182,7 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey) {
     }
 
     fun decodeOp(record: RawRecord): Op? {
-        val bytes = open(RecordKind.OP, record) ?: return null
+        val bytes = open(RecordKind.OP, record)?.cbor ?: return null
         val type = CanonicalCbor.sniff(OpHeadCbor.serializer(), bytes)?.type ?: return null
         return validated {
             when (type) {
@@ -189,33 +212,71 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey) {
         }
     }
 
-    fun encodeIndex(payload: IndexPayload): String = seal(
-        RecordKind.INDEX,
-        CanonicalCbor.encode(
-            IndexCbor.serializer(),
-            IndexCbor(payload.snapshotId.toByteArray(), payload.lastAppliedMessageId, payload.createdAt, payload.plainSize),
-        ),
-    )
+    /** A version 2 snapshot is padded and a version 1 one is not: [payload] must say what is written. */
+    fun encodeIndex(payload: IndexPayload): String {
+        require(payload.padded == (writeVersion == Captions.V2)) { "a version 2 snapshot, and only that, is padded" }
+        return seal(
+            RecordKind.INDEX,
+            CanonicalCbor.encode(
+                IndexCbor.serializer(),
+                IndexCbor(payload.snapshotId.toByteArray(), payload.lastAppliedMessageId, payload.createdAt, payload.plainSize),
+            ),
+        )
+    }
 
     fun decodeIndex(record: RawRecord): IndexPayload? {
-        val bytes = open(RecordKind.INDEX, record) ?: return null
-        val c = CanonicalCbor.decode(IndexCbor.serializer(), bytes) ?: return null
-        return validated { IndexPayload(Id.of(c.snapshotId), c.lastAppliedMessageId, c.createdAt, c.plainSize) }
+        val opened = open(RecordKind.INDEX, record) ?: return null
+        val c = CanonicalCbor.decode(IndexCbor.serializer(), opened.cbor) ?: return null
+        return validated {
+            IndexPayload(Id.of(c.snapshotId), c.lastAppliedMessageId, c.createdAt, c.plainSize, padded = opened.version == Captions.V2)
+        }
     }
 
     private fun seal(kind: RecordKind, cbor: ByteArray): String {
+        val plain = if (writeVersion == Captions.V2) framed(kind, cbor) else cbor
         val nonce = sodium.randomBytes(CofferFormat.NONCE_BYTES)
-        val sealed = metaKey.withBytes { sodium.aeadEncrypt(cbor, AssociatedData.meta(kind), nonce, it) }
-        return Captions.format(kind, Base64Url.encode(nonce + sealed))
+        val sealed = metaKey.withBytes { sodium.aeadEncrypt(plain, AssociatedData.meta(kind, writeVersion), nonce, it) }
+        return Captions.format(kind, Base64Url.encode(nonce + sealed), writeVersion)
     }
 
-    private fun open(kind: RecordKind, record: RawRecord): ByteArray? {
+    private class Opened(val version: Int, val cbor: ByteArray)
+
+    private fun open(kind: RecordKind, record: RawRecord): Opened? {
         if (record.kind != kind) return null
         val raw = Base64Url.decode(record.body) ?: return null
         if (raw.size < CofferFormat.NONCE_BYTES + CofferFormat.TAG_BYTES) return null
         val nonce = raw.copyOfRange(0, CofferFormat.NONCE_BYTES)
         val body = raw.copyOfRange(CofferFormat.NONCE_BYTES, raw.size)
-        return metaKey.withBytes { sodium.aeadDecrypt(body, AssociatedData.meta(kind), nonce, it) }
+        val plain = metaKey.withBytes { sodium.aeadDecrypt(body, AssociatedData.meta(kind, record.version), nonce, it) } ?: return null
+        val cbor = if (record.version == Captions.V2) unframed(kind, plain) ?: return null else plain
+        return Opened(record.version, cbor)
+    }
+
+    private fun framed(kind: RecordKind, cbor: ByteArray): ByteArray {
+        val room = roomOf(kind)
+        require(cbor.size <= room) { "${kind.tag} payload larger than its version 2 size" }
+        val out = ByteArray(2 + room)
+        out[0] = (cbor.size ushr 8).toByte()
+        out[1] = cbor.size.toByte()
+        cbor.copyInto(out, 2)
+        return out
+    }
+
+    /** Exactly the kind's size, a length that fits, and nothing but zeros after the CBOR: one encoding only. */
+    private fun unframed(kind: RecordKind, plain: ByteArray): ByteArray? {
+        val room = roomOf(kind)
+        if (plain.size != 2 + room) return null
+        val length = ((plain[0].toInt() and 0xFF) shl 8) or (plain[1].toInt() and 0xFF)
+        if (length > room) return null
+        for (i in 2 + length until plain.size) if (plain[i] != 0.toByte()) return null
+        return plain.copyOfRange(2, 2 + length)
+    }
+
+    private fun roomOf(kind: RecordKind): Int = when (kind) {
+        RecordKind.BLOB -> CofferFormat.V2_BLOB_PAYLOAD
+        RecordKind.OP -> CofferFormat.V2_OP_PAYLOAD
+        RecordKind.INDEX -> CofferFormat.V2_INDEX_PAYLOAD
+        RecordKind.VAULT -> throw IllegalArgumentException("the vault header is not encrypted")
     }
 }
 
@@ -276,6 +337,7 @@ private class BlobHeadCbor(
     @CborLabel(2) val partIndex: Int,
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 private class BlobPartCbor(
     @CborLabel(1) val fileId: ByteArray,
@@ -283,8 +345,10 @@ private class BlobPartCbor(
     @CborLabel(3) val partCount: Int,
     @CborLabel(4) val chunkSize: Int,
     @CborLabel(5) val plainSize: Long,
+    @CborLabel(13) @EncodeDefault(EncodeDefault.Mode.NEVER) val padded: Boolean? = null,
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 private class BlobFirstPartCbor(
     @CborLabel(1) val fileId: ByteArray,
@@ -300,6 +364,7 @@ private class BlobFirstPartCbor(
     @CborLabel(10) val modifiedAt: Long,
     @CborLabel(11) val contentHash: ByteArray,
     @CborLabel(12) val wrappedDek: ByteArray,
+    @CborLabel(13) @EncodeDefault(EncodeDefault.Mode.NEVER) val padded: Boolean? = null,
 )
 
 @Serializable

@@ -63,11 +63,11 @@ class PrefetchQueue(private val file: File, private val newId: () -> String = { 
 }
 
 /** What Telegram holds of this file: the parts as sent, a little more than the file itself. */
-fun IndexedFile.encryptedSize(): Long = (0 until partCount).sumOf { ContentLayout.encryptedPartSize(plainSize, it) }
+fun IndexedFile.encryptedSize(): Long = (0 until partCount).sumOf { ContentLayout.encryptedPartSize(contentSize, it) }
 
 /** Bytes still to download for every part to be on the phone whole, by the cache's account of what is ([held]). */
 fun IndexedFile.missingBytes(held: Map<MessageId, Long>): Long = (0 until partCount).sumOf { part ->
-    val size = ContentLayout.encryptedPartSize(plainSize, part)
+    val size = ContentLayout.encryptedPartSize(contentSize, part)
     val have = parts[part]?.let(held::get) ?: 0L
     if (have >= size) 0L else size
 }

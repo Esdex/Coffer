@@ -162,6 +162,62 @@ def main(out_path):
         "fileDelete": sealed_caption("op", {1: op_id, 2: "file.delete", 3: 1006, 4: file_id}, 0x26),
         "index": sealed_caption("index", {1: folder_id, 2: 123456789012, 3: 1762531200789, 4: 98765}, 0x30),
     }
+    # Format v2 (SPEC §4.5): captions padded to a fixed size per kind, content padded with PADMÉ.
+    def padme(size):
+        # Nikitin et al. 2019, written out from the paper with plain loops rather than bit tricks.
+        if size < 2:
+            return size
+        e = 0
+        while 2 ** (e + 1) <= size:
+            e += 1
+        s = 0
+        while 2 ** (s + 1) <= e:
+            s += 1
+        s += 1
+        step = 2 ** (e - s)
+        return -(-size // step) * step
+
+    def parts_of(content_size):
+        chunks = max(1, -(-content_size // 1048576))
+        return -(-chunks // 512)
+
+    rooms = {"blob": 600, "op": 352, "index": 64}
+
+    def v2_caption(kind, payload, seed):
+        body = cbor(payload)
+        framed = struct.pack(">H", len(body)) + body + b"\0" * (rooms[kind] - len(body))
+        n = nonce(seed)
+        enc = n + xchacha_seal(meta_key, n, framed, b"coffer/v2/" + kind.encode())
+        return {"kind": kind, "nonce": n.hex(), "cbor": body.hex(), "caption": f"coffer:v2:{kind}:{b64url(enc)}"}
+
+    big = 1_100_000_000
+    big_parts = parts_of(padme(big))
+    padded_plain = pattern(1000)
+    n_padded = nonce(0x90)
+    padded_content = padded_plain + b"\0" * (padme(1000) - 1000)
+    chunk_ad = b"coffer/v1/chunk" + file_id + struct.pack(">Q", 0) + bytes([1])
+    v["v2"] = {
+        "padme": [[size, padme(size)] for size in [0, 1, 2, 3, 7, 8, 9, 100, 1000, 1023, 1024, 1025, 40_000,
+                                                  3_500_000, 1048576, 1048577, big, 4_000_000_000,
+                                                  2 ** 50 - 1, 2 ** 50]],
+        "rooms": rooms,
+        "records": {
+            "blobFirstPadded": v2_caption("blob", {
+                1: file_id, 2: 0, 3: big_parts, 4: 1048576, 5: big, 6: "Отчёт 2026.pdf", 7: None,
+                8: "application/pdf", 9: 1762531200123, 10: 1762531200456, 11: content_hash, 12: wrapped_dek, 13: True}, 0x50),
+            "blobLaterPadded": v2_caption("blob", {1: file_id, 2: big_parts - 1, 3: big_parts, 4: 1048576, 5: big, 13: True}, 0x51),
+            "blobFirstPlain": v2_caption("blob", {
+                1: file_id, 2: 0, 3: 1, 4: 1048576, 5: 0, 6: "empty.txt", 7: folder_id,
+                8: "text/plain; charset=utf-8", 9: 1, 10: 2, 11: content_hash, 12: wrapped_dek}, 0x52),
+            "fileRename": v2_caption("op", {1: op_id, 2: "file.rename", 3: 1004, 4: file_id, 7: "new name.bin"}, 0x53),
+            "index": v2_caption("index", {1: folder_id, 2: 123456789012, 3: 1762531200789, 4: 98765}, 0x54),
+        },
+        # A 1000-byte file padded to one chunk of padme(1000): the file, then zeros, encrypted as one.
+        "paddedContent": {"plainSize": 1000, "contentSize": padme(1000), "nonce": n_padded.hex(),
+                          "sealed": (n_padded + xchacha_seal(dek, n_padded, padded_content, chunk_ad)).hex()},
+    }
+    assert v["v2"]["padme"][-1] == [2 ** 50, 2 ** 50] and padme(2 ** 50 - 1) <= 2 ** 50
+
     # Device-only sealing of the local index (SPEC §8): not part of the Telegram format, checked all the same.
     local_key = kdf(master, 1, b"coflocal")
     local_body = cbor({1: "Отчёт 2026.pdf", 2: None, 3: "application/pdf", 4: 1762531200123, 5: 1762531200456,

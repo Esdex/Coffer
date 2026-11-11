@@ -2,6 +2,7 @@ package me.esdex.coffer.core.index
 
 import kotlinx.coroutines.flow.Flow
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.Padme
 import me.esdex.coffer.core.storage.MessageId
 
 enum class FileStatus {
@@ -28,7 +29,12 @@ class IndexedFile(
     val sealedMeta: ByteArray,
     val status: FileStatus,
     val parts: Map<Int, MessageId>,
-)
+    /** Its content runs on in zeros to the padded size (SPEC §4.5); parts are counted from [contentSize]. */
+    val padded: Boolean = false,
+) {
+    /** What was encrypted: the file, and the padding if any. */
+    val contentSize: Long get() = Padme.contentSize(plainSize, padded)
+}
 
 /** A folder in the local index: name and parent are in [sealedMeta] (SPEC §8). */
 class IndexedFolder(val folderId: Id, val sealedMeta: ByteArray)
@@ -82,12 +88,12 @@ interface VaultIndex {
     suspend fun file(fileId: Id): IndexedFile?
 
     /** Inserts or replaces the file row; parts are kept. */
-    suspend fun putFile(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray, status: FileStatus)
+    suspend fun putFile(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray, status: FileStatus, padded: Boolean = false)
     /**
      * Replaces size and sealed metadata of an existing row, leaving its status alone, so it cannot undo a
      * status another writer set meanwhile. False if there is no such row.
      */
-    suspend fun updateFileMeta(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray): Boolean
+    suspend fun updateFileMeta(fileId: Id, plainSize: Long, partCount: Int, sealedMeta: ByteArray, padded: Boolean = false): Boolean
     suspend fun setStatus(fileId: Id, status: FileStatus)
     suspend fun removeFile(fileId: Id)
 

@@ -2,7 +2,7 @@ package me.esdex.coffer.core.crypto.format
 
 import java.util.Base64
 
-/** Message kinds of format v1, SPEC §4. The tag is part of the prefix and of the AD. */
+/** Message kinds, SPEC §4. The tag is part of the prefix and of the AD. */
 enum class RecordKind(val tag: String) {
     VAULT("vault"),
     BLOB("blob"),
@@ -10,26 +10,39 @@ enum class RecordKind(val tag: String) {
     INDEX("index"),
 }
 
-/** An app message split into kind and body, before any decoding. */
-data class RawRecord(val kind: RecordKind, val body: String)
+/** An app message split into format version, kind and body, before any decoding. */
+data class RawRecord(val kind: RecordKind, val body: String, val version: Int = 1)
 
-/** The `coffer:v1:<kind>:<body>` prefix on captions and texts, SPEC §4. */
+/**
+ * The `coffer:v<version>:<kind>:<body>` prefix on captions and texts, SPEC §4. Version 2 (§4.5) hides
+ * sizes; the vault header has only version 1.
+ */
 object Captions {
-    const val PREFIX = "coffer:v1:"
+    const val V1 = 1
+    const val V2 = 2
 
-    fun format(kind: RecordKind, body: String): String = "$PREFIX${kind.tag}:$body"
+    fun format(kind: RecordKind, body: String, version: Int = V1): String {
+        require(version == V1 || (version == V2 && kind != RecordKind.VAULT)) { "no such version of ${kind.tag}" }
+        return "coffer:v$version:${kind.tag}:$body"
+    }
 
     /**
-     * Returns null for anything that is not an app message of a known kind: such messages are the
-     * user's own content and are ignored (SPEC §4).
+     * Returns null for anything that is not an app message of a known version and kind: such messages
+     * are the user's own content and are ignored (SPEC §4).
      */
     fun parse(text: String?): RawRecord? {
-        if (text == null || !text.startsWith(PREFIX)) return null
-        val rest = text.substring(PREFIX.length)
+        if (text == null) return null
+        val version = when {
+            text.startsWith("coffer:v1:") -> V1
+            text.startsWith("coffer:v2:") -> V2
+            else -> return null
+        }
+        val rest = text.substring("coffer:v1:".length)
         val colon = rest.indexOf(':')
         if (colon < 0) return null
         val kind = RecordKind.entries.firstOrNull { it.tag == rest.substring(0, colon) } ?: return null
-        return RawRecord(kind, rest.substring(colon + 1))
+        if (kind == RecordKind.VAULT && version != V1) return null
+        return RawRecord(kind, rest.substring(colon + 1), version)
     }
 }
 

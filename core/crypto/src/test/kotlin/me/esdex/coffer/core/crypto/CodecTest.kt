@@ -40,7 +40,8 @@ class CodecTest {
     fun captionsOfOtherContentAreIgnored() {
         assertNull(Captions.parse(null))
         assertNull(Captions.parse("holiday photo"))
-        assertNull(Captions.parse("coffer:v2:blob:abc"))
+        assertNull(Captions.parse("coffer:v3:blob:abc"))
+        assertNull(Captions.parse("coffer:v2:vault:abc"))
         assertNull(Captions.parse("coffer:v1:unknown:abc"))
         assertNull(Captions.parse("coffer:v1:blob"))
         assertEquals(RawRecord(RecordKind.OP, "xyz"), Captions.parse("coffer:v1:op:xyz"))

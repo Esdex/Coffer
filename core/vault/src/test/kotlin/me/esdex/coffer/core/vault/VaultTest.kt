@@ -553,15 +553,19 @@ class VaultStoreTest {
         assertFalse(store.blockScreenshots)
         assertTrue(store.weeklyCheck)
         assertFalse(store.debugTools)
+        // SPEC §4.5: sizes hidden unless turned off.
+        assertTrue(store.hideSizes)
         val before = store.changes.value
         store.blockScreenshots = true
         store.weeklyCheck = false
         store.debugTools = true
-        assertEquals(before + 3, store.changes.value)
+        store.hideSizes = false
+        assertEquals(before + 4, store.changes.value)
         val reread = VaultStore(temp.root)
         assertTrue(reread.blockScreenshots)
         assertFalse(reread.weeklyCheck)
         assertTrue(reread.debugTools)
+        assertFalse(reread.hideSizes)
         store.clear()
         assertFalse(VaultStore(temp.root).blockScreenshots)
         assertTrue(VaultStore(temp.root).weeklyCheck)

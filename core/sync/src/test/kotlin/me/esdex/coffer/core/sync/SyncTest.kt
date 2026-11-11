@@ -1,5 +1,6 @@
 package me.esdex.coffer.core.sync
 
+import me.esdex.coffer.core.crypto.Padme
 import com.goterl.lazysodium.LazySodiumJava
 import com.goterl.lazysodium.SodiumJava
 import kotlinx.coroutines.CoroutineScope
@@ -122,8 +123,10 @@ class SyncTest {
         var transfers = 0
         cloud.onTransfer = { if (++transfers == 2) throw StorageException("connection lost") }
         val prepared = here.prepare("big.bin", source)
-        val first = ContentLayout.encryptedPartSize(size, 0)
-        val total = first + ContentLayout.encryptedPartSize(size, 1)
+        // Padded, as uploads are by default (SPEC §4.5).
+        val content = Padme.pad(size)
+        val first = ContentLayout.encryptedPartSize(content, 0)
+        val total = first + ContentLayout.encryptedPartSize(content, 1)
 
         val before = mutableListOf<Pair<TransferStage, Long>>()
         runCatching { here.runner.run(prepared.upload, prepared.keys, source) { done, _, stage -> before += stage to done } }

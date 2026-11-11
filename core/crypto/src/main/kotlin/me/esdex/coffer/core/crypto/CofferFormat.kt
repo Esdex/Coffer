@@ -24,6 +24,14 @@ object CofferFormat {
     /** 1 PiB. Keeps part counts in Int range; a payload above it is invalid. */
     const val MAX_PLAIN_SIZE = 1L shl 50
 
+    /**
+     * Version 2 captions are this long inside the encryption, whatever they hold (SPEC §4.5): a two-byte
+     * length, the CBOR, then zeros. Each is the worst case of its kind and a little more.
+     */
+    const val V2_BLOB_PAYLOAD = 600
+    const val V2_OP_PAYLOAD = 352
+    const val V2_INDEX_PAYLOAD = 64
+
     const val MAX_NAME_BYTES = 255
     const val MAX_MIME_BYTES = 127
     const val FALLBACK_MIME = "application/octet-stream"
@@ -51,5 +59,5 @@ internal object AssociatedData {
         return out
     }
 
-    fun meta(kind: RecordKind): ByteArray = ascii("coffer/v1/${kind.tag}")
+    fun meta(kind: RecordKind, version: Int): ByteArray = ascii("coffer/v$version/${kind.tag}")
 }

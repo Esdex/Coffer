@@ -167,6 +167,15 @@ internal fun SecuritySection(
                     onCheckedChange = viewModel::setBlockScreenshots,
                 )
             }
+            row { shape ->
+                GroupedSwitch(
+                    shape,
+                    title = stringResource(R.string.settings_hide_sizes),
+                    checked = state.hideSizes,
+                    info = stringResource(R.string.settings_hide_sizes_summary),
+                    onCheckedChange = viewModel::setHideSizes,
+                )
+            }
         }
     }
 }

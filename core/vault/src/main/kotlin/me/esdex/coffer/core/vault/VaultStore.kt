@@ -66,6 +66,15 @@ class VaultStore(private val dir: File) {
 
         @Synchronized set(value) = updatePrefs { it.setProperty(WEEKLY_CHECK, value.toString()) }
 
+    /**
+     * New uploads padded so their exact size does not show in Telegram (SPEC §4.5): on by default, as
+     * agreed with Esdex 2026-11-11. Files already uploaded keep what they were sent with.
+     */
+    var hideSizes: Boolean
+        @Synchronized get() = prefs().getProperty(HIDE_SIZES) != "false"
+
+        @Synchronized set(value) = updatePrefs { it.setProperty(HIDE_SIZES, value.toString()) }
+
     /** Debug builds: the Debug section of Settings, shown after six taps on the icon in About and the screen lock. */
     var debugTools: Boolean
         @Synchronized get() = prefs().getProperty(DEBUG_TOOLS) == "true"
@@ -100,6 +109,7 @@ class VaultStore(private val dir: File) {
         const val BIOMETRIC_OFFERED = "biometricOffered"
         const val BLOCK_SCREENSHOTS = "blockScreenshots"
         const val WEEKLY_CHECK = "weeklyCheck"
+        const val HIDE_SIZES = "hideSizes"
         const val DEBUG_TOOLS = "debugTools"
         const val DEFAULT_AUTO_LOCK_MINUTES = 5
     }

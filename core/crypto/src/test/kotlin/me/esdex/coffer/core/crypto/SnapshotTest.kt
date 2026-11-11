@@ -17,6 +17,7 @@ import me.esdex.coffer.core.crypto.format.SnapshotOrphan
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.ByteArrayInputStream
 
@@ -70,7 +71,7 @@ class SnapshotTest {
     fun oracleDocumentAndCaptionDecode() {
         val deflated = hex(snap.str("deflated"))
         val document = hex(snap.str("document"))
-        val state = codec.decode(snapshotId, deflated.size.toLong(), ByteArrayInputStream(document))
+        val state = codec.decode(snapshotId, deflated.size.toLong(), ByteArrayInputStream(document), padded = false)
         assertEquals(expected, state)
 
         val caption = snap.getValue("caption").jsonObject.str("caption")
@@ -91,11 +92,46 @@ class SnapshotTest {
 
     @Test
     fun ownSnapshotRoundTrips() {
-        val sealed = codec.encode(snapshotId, expected)
-        assertEquals(expected, codec.decode(snapshotId, sealed.plainSize, ByteArrayInputStream(sealed.bytes)))
-        val empty = IndexState(0, emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
-        val sealedEmpty = codec.encode(snapshotId, empty)
-        assertEquals(empty, codec.decode(snapshotId, sealedEmpty.plainSize, ByteArrayInputStream(sealedEmpty.bytes)))
+        for (padded in listOf(false, true)) {
+            val sealed = codec.encode(snapshotId, expected, padded)
+            assertEquals(expected, codec.decode(snapshotId, sealed.plainSize, ByteArrayInputStream(sealed.bytes), padded))
+            // Read as the other version, it is not a snapshot.
+            assertNull(codec.decode(snapshotId, sealed.plainSize, ByteArrayInputStream(sealed.bytes), !padded))
+            val empty = IndexState(0, emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+            val sealedEmpty = codec.encode(snapshotId, empty, padded)
+            assertEquals(empty, codec.decode(snapshotId, sealedEmpty.plainSize, ByteArrayInputStream(sealedEmpty.bytes), padded))
+        }
+    }
+
+    @Test
+    fun paddedFilesAreCountedFromTheirPaddedSizeAndOnlyInVersion2() {
+        // Past 64 GiB PADMÉ rounds by more than a part: 2^36 + 1 bytes is 129 parts, padded 130.
+        val size = (1L shl 36) + 1
+        val meta = expected.files.first().meta
+        val padded = SnapshotFile(Id.of(ByteArray(16) { -1 }), size, meta, mapOf(129 to 99L), damaged = false, padded = true)
+        assertEquals(130, padded.partCount)
+        assertEquals(129, padded.copy(padded = false, parts = emptyMap()).partCount)
+        // The largest id: last in order, as the decoder lists them.
+        val state = expected.copy(files = expected.files + padded)
+        val cbor = codec.stateCbor(state)
+        assertEquals(state, codec.decodeState(cbor, version2 = true))
+        // A version 1 snapshot has no label 15, and cannot be written with a padded file.
+        assertNull(codec.decodeState(cbor, version2 = false))
+        assertThrows(IllegalArgumentException::class.java) { codec.encode(snapshotId, state, padded = false) }
+        val sealed = codec.encode(snapshotId, state, padded = true)
+        assertEquals(state, codec.decode(snapshotId, sealed.plainSize, ByteArrayInputStream(sealed.bytes), padded = true))
+        // "padded": false written out is a second encoding of "not padded". On a small file, so the part
+        // count is the same either way and only that rule can refuse it.
+        val small = expected.copy(files = expected.files.map { if (it.plainSize == 1048577L) it.copy(padded = true) else it })
+        val smallCbor = codec.stateCbor(small)
+        assertEquals(small, codec.decodeState(smallCbor))
+        val label = smallCbor.indices.single { smallCbor[it] == 0x0F.toByte() && smallCbor[it + 1] == 0xF5.toByte() }
+        assertNull(codec.decodeState(smallCbor.copyOf().also { it[label + 1] = 0xF4.toByte() }))
+        // The part count of the plain size, 129, under a padded file: refused. Its last part, 129, is
+        // still in range, so it is the count that is wrong.
+        val count = cbor.indices.filter { cbor[it] == 0x03.toByte() && cbor[it + 1] == 0x18.toByte() && cbor[it + 2] == 130.toByte() }
+        assertEquals(1, count.size)
+        assertNull(codec.decodeState(cbor.copyOf().also { it[count.single() + 2] = 129.toByte() }))
     }
 
     @Test
@@ -112,7 +148,7 @@ class SnapshotTest {
         val document = hex(snap.str("document"))
         val size = deflated.size.toLong()
         fun decode(codec: SnapshotCodec = this.codec, id: Id = snapshotId, plainSize: Long = size, bytes: ByteArray = document) =
-            codec.decode(id, plainSize, ByteArrayInputStream(bytes))
+            codec.decode(id, plainSize, ByteArrayInputStream(bytes), padded = false)
         assertNotNull(decode())
         assertNull(decode(codec = SnapshotCodec(realSodium, ring.metaKey)))
         assertNull(decode(id = Id.random(realSodium)))

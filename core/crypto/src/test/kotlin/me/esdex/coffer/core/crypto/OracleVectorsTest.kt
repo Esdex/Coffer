@@ -136,7 +136,7 @@ class OracleVectorsTest {
             for ((name, payload) in cases) {
                 val expected = records.obj(name)
                 val sodium = ScriptedSodium(expected.bytes("nonce"))
-                val codec = MetaCodec(sodium, ring.metaKey)
+                val codec = MetaCodec(sodium, ring.metaKey, writeVersion = Captions.V1)
                 val caption = when (payload) {
                     is BlobPayload -> codec.encodeBlob(payload)
                     is Op -> codec.encodeOp(payload)
@@ -166,7 +166,7 @@ class OracleVectorsTest {
             FileMeta(w.str("name"), folderId, w.str("mime"), big, big, contentHash, wrappedDek),
         )
         KeyRing.derive(realSodium, key(master)).use { ring ->
-            val caption = MetaCodec(ScriptedSodium(w.bytes("nonce")), ring.metaKey).encodeBlob(payload)
+            val caption = MetaCodec(ScriptedSodium(w.bytes("nonce")), ring.metaKey, writeVersion = Captions.V1).encodeBlob(payload)
             assertEquals(w.str("caption"), caption)
             // Telegram counts UTF-16 units; the caption is ASCII, so length is the count.
             assertTrue("caption is ${caption.length} chars", caption.length <= 1024)
