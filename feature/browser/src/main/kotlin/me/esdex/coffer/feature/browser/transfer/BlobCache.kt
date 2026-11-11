@@ -91,6 +91,21 @@ class BlobCache(
         if (all.isEmpty() && idle()) runCatching { purge() }
     }
 
+    /**
+     * Crosses out pieces not [known] to the index whose message is [gone]. A file deleted, here or on
+     * another device, has its pieces deleted from the phone by TDLib along with their messages; still in
+     * the ledger they would take up room under the limit, and push out files that are there, until their
+     * turn to go came. Not being in the index is not enough: a rescan empties it before reading the
+     * history again. A piece whose message cannot be asked about now stays.
+     */
+    suspend fun retain(known: Set<MessageId>, gone: suspend (MessageId) -> Boolean) = lock.withLock {
+        val all = load()
+        val strays = all.keys.filter { it !in known }.filter { runCatching { gone(it) }.getOrDefault(false) }
+        if (strays.isEmpty()) return@withLock
+        all.keys.removeAll(strays.toSet())
+        save(all)
+    }
+
     /** Signed out: TDLib has deleted its files itself, and the list of them goes too. */
     suspend fun forget() = lock.withLock {
         entries = HashMap()

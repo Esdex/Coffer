@@ -4,8 +4,13 @@ import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.index.VaultIndex
@@ -23,6 +28,7 @@ import javax.inject.Singleton
  * The file cache for the whole app: the viewers and the player read through [leases], saving a copy
  * reads whole parts, and all of it ends up in [blobs] rather than being dropped (see [BlobCache]).
  */
+@OptIn(FlowPreview::class)
 @Singleton
 class FileCache @Inject constructor(
     @ApplicationContext context: Context,
@@ -52,6 +58,18 @@ class FileCache @Inject constructor(
                 }
             }
         }
+        // A file deleted takes its pieces out of the ledger (see BlobCache.retain). After a pause, so a
+        // rescan or a burst of deletes asks Telegram once rather than at every step.
+        scope.launch {
+            index.observeFiles()
+                .map { files -> files.flatMapTo(HashSet()) { it.parts.values } }
+                .distinctUntilChanged()
+                .debounce(RETAIN_DELAY_MS)
+                .collectLatest { known ->
+                    val storage = telegram.readyStorage() ?: return@collectLatest
+                    blobs.retain(known) { storage.message(it) == null }
+                }
+        }
     }
 
     /**
@@ -67,3 +85,5 @@ class FileCache @Inject constructor(
     /** [part] of [fileId] was read whole for a copy and is done with. */
     fun keep(fileId: Id, part: MessageId, storage: StorageBackend) = blobs.keep(fileId, listOf(part), storage)
 }
+
+private const val RETAIN_DELAY_MS = 2_000L

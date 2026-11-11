@@ -216,6 +216,32 @@ class BlobCacheTest {
     }
 
     @Test
+    fun aDeletedFileStopsTakingRoom() = runTest {
+        val ledger = temp.root.resolve("ledger")
+        val cache = cache(ledger)
+        val (a, b, c) = List(3) { blob().also { read(it) } }
+        now = 10; cache.keep(fileId(), listOf(a), phone); runCurrent()
+        now = 20; cache.keep(fileId(), listOf(b), phone); runCurrent()
+        // A rescan empties the index first: nothing is gone from Telegram, so nothing is crossed out.
+        cache.retain(emptySet()) { false }
+        assertEquals(setOf(a, b), cache.held.value.keys)
+        // Asking Telegram failed: nothing is crossed out either.
+        cache.retain(emptySet()) { throw java.io.IOException("offline") }
+        assertEquals(setOf(a, b), cache.held.value.keys)
+        // b's file is deleted: its piece leaves the index, Telegram and the phone (TDLib's doing).
+        phone.releaseBlob(b)
+        // What the index still knows is not even asked about.
+        cache.retain(setOf(a, c)) { true }
+        assertEquals(piece.toLong(), cache.size())
+        assertEquals(setOf(a), cache.held.value.keys)
+        assertEquals(setOf(a), cache(ledger).let { runCurrent(); it.held.value.keys })
+        // Two pieces fit: a, read longest ago, is not pushed out by a piece that is no longer there.
+        now = 30; cache.keep(fileId(), listOf(c), phone); runCurrent()
+        assertTrue(phone.held(a) && phone.held(c))
+        assertEquals(2L * piece, cache.size())
+    }
+
+    @Test
     fun signingOutForgetsTheLedger() = runTest {
         val ledger = temp.root.resolve("ledger")
         val cache = cache(ledger)
