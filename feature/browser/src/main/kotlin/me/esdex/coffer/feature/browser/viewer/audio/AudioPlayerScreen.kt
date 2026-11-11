@@ -99,6 +99,7 @@ fun AudioPlayerScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val prefs by viewModel.prefs.collectAsStateWithLifecycle()
+    val waveform by viewModel.waveform.collectAsStateWithLifecycle()
     // Back folds the player away while music plays, closes it otherwise; Stop in the menu always closes.
     val onClose = viewModel::back
     BackHandler(onBack = onClose)
@@ -214,21 +215,37 @@ fun AudioPlayerScreen(
 
                     val duration = state.durationMs
                     val fraction = if (scrubbing) scrubFraction else if (duration > 0L) (positionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
-                    Slider(
-                        value = fraction,
-                        onValueChange = {
-                            scrubbing = true
-                            scrubFraction = it
-                        },
-                        onValueChangeFinished = {
-                            val to = (scrubFraction * duration).toLong()
-                            viewModel.seekTo(to)
-                            positionMs = to
-                            scrubbing = false
-                        },
-                        enabled = duration > 0L,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    val scrubTo: (Float) -> Unit = {
+                        scrubbing = true
+                        scrubFraction = it
+                    }
+                    val seekToScrub = {
+                        val to = (scrubFraction * duration).toLong()
+                        viewModel.seekTo(to)
+                        positionMs = to
+                        scrubbing = false
+                    }
+                    if (prefs.waveform) {
+                        // Only this track's: the last one's stays nowhere while the next is worked out.
+                        val shown = waveform?.takeIf { it.fileId == state.track?.fileId }
+                        WaveformBar(
+                            bars = shown?.bars.orEmpty(),
+                            complete = shown?.complete == true,
+                            progress = fraction,
+                            enabled = duration > 0L,
+                            onScrub = scrubTo,
+                            onScrubEnd = seekToScrub,
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                        )
+                    } else {
+                        Slider(
+                            value = fraction,
+                            onValueChange = scrubTo,
+                            onValueChangeFinished = seekToScrub,
+                            enabled = duration > 0L,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         val shown = if (scrubbing) (scrubFraction * duration).toLong() else positionMs
                         Text(formatTime(shown), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))

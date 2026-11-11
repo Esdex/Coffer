@@ -54,6 +54,9 @@ class AudioViewModel @Inject constructor(private val playback: AudioPlayback) : 
 
     val prefs: StateFlow<PlayerPrefs> = playback.prefs
 
+    /** The waveform of the track playing, as far as it has been worked out. */
+    val waveform: StateFlow<Waveforms.Shown?> = playback.waveform
+
     val player: Player get() = playback.player
 
     private var tagsJob: Job? = null

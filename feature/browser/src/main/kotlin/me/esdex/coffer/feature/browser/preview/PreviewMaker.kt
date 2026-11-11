@@ -4,14 +4,12 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.Matrix
-import android.media.MediaDataSource
 import android.media.MediaMetadataRetriever
 import androidx.core.graphics.scale
 import androidx.exifinterface.media.ExifInterface
-import kotlinx.coroutines.runBlocking
 import me.esdex.coffer.core.sync.VaultFileReader
+import me.esdex.coffer.feature.browser.viewer.ReaderMediaSource
 import java.io.ByteArrayOutputStream
-import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.sqrt
@@ -175,20 +173,3 @@ internal object PreviewMaker {
 }
 
 private fun VaultFileReader.stream(failed: AtomicBoolean) = ReaderInputStream(size, failed) { at, into, offset, length -> read(at, into, offset, length) }
-
-/** What MediaMetadataRetriever reads a vault file through: any offset, on demand, as the video player does. */
-private class ReaderMediaSource(private val reader: VaultFileReader, private val failed: AtomicBoolean) : MediaDataSource() {
-    override fun getSize(): Long = reader.size
-
-    override fun readAt(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
-        if (position >= reader.size) return -1
-        return try {
-            runBlocking { reader.read(position, buffer, offset, size) }
-        } catch (e: Exception) {
-            failed.set(true)
-            throw IOException(e)
-        }
-    }
-
-    override fun close() {}
-}

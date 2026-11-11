@@ -242,6 +242,12 @@ def main(out_path):
     v["local"]["preview"] = {"nonce": n_preview.hex(), "plain": preview_body.hex(),
                              "sealed": (n_preview + xchacha_seal(local_key, n_preview, preview_body,
                                                                  b"coffer/local/v1/preview" + file_id)).hex()}
+    # A song's waveform for the player: 80 bar heights, sealed under the file's id.
+    waveform_body = bytes((i * 37) % 256 for i in range(80))
+    n_waveform = nonce(0x98)
+    v["local"]["waveform"] = {"nonce": n_waveform.hex(), "plain": waveform_body.hex(),
+                              "sealed": (n_waveform + xchacha_seal(local_key, n_waveform, waveform_body,
+                                                                   b"coffer/local/v1/waveform" + file_id)).hex()}
 
     # Index snapshot (SPEC §4.4): state labels, raw deflate, content encryption with IndexKey.
     snapshot_id = bytes(range(0xE0, 0xF0))

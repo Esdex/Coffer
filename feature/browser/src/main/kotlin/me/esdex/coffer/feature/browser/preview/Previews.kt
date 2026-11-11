@@ -12,6 +12,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -79,17 +80,7 @@ class Previews @Inject constructor(
         scope.launch { content.keys.collect { if (it == null) memory.evictAll() } }
         // Turned off, the ones made so far go too.
         scope.launch { enabled.collect { on -> if (!on) clear() } }
-        scope.launch { telegram.state.collect { if (it == AuthState.LoggingOut) store.clear() } }
-        // Previews of files deleted go after them; not during a catch-up or a rescan, when the index is
-        // still being filled and would seem to have lost them.
-        scope.launch {
-            combine(index.observeFiles(), content.catchingUp) { files, catchingUp -> if (catchingUp == null) files else null }
-                .filterNotNull()
-                .map { files -> files.mapTo(HashSet()) { it.fileId } }
-                .distinctUntilChanged()
-                .debounce(RETAIN_DELAY_MS)
-                .collect { store.retain(it) }
-        }
+        scope.keepWithFiles(store, index, content.catchingUp, telegram)
     }
 
     /** Deletes every preview, in memory and on the phone. */
@@ -142,9 +133,28 @@ class Previews @Inject constructor(
         private val NONE = Any()
         // 144 px a side is about 83 KB decoded: some 16 MB at most.
         private const val MEMORY_ITEMS = 200
-        private const val RETAIN_DELAY_MS = 2_000L
 
         /** Where previews are kept: no_backup, as they are this phone's alone. */
         fun dir(context: Context) = File(context.noBackupFilesDir, "previews")
     }
 }
+
+/**
+ * What this phone made from vault files and keeps in [store], previews or waveforms: it goes after the
+ * files deleted, though not during a catch-up or a rescan, when the index is still being filled and would
+ * seem to have lost them; and all of it goes on sign-out.
+ */
+@OptIn(FlowPreview::class)
+internal fun CoroutineScope.keepWithFiles(store: PreviewStore, index: VaultIndex, catchingUp: Flow<Int?>, telegram: Telegram) {
+    launch { telegram.state.collect { if (it == AuthState.LoggingOut) store.clear() } }
+    launch {
+        combine(index.observeFiles(), catchingUp) { files, busy -> if (busy == null) files else null }
+            .filterNotNull()
+            .map { files -> files.mapTo(HashSet()) { it.fileId } }
+            .distinctUntilChanged()
+            .debounce(RETAIN_DELAY_MS)
+            .collect { store.retain(it) }
+    }
+}
+
+private const val RETAIN_DELAY_MS = 2_000L

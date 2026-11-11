@@ -77,6 +77,24 @@ class LocalSealTest {
     }
 
     @Test
+    fun waveformSealMatchesTheOracleAndOpensOnlyForItsFile() {
+        val localKey = LocalKeys.derive(realSodium, key(master))
+        val wv = local.getValue("waveform").jsonObject
+        val plain = hex(wv.str("plain"))
+        val sodium = ScriptedSodium(hex(wv.str("nonce")))
+        assertEquals(wv.str("sealed"), LocalSealer(sodium, localKey).sealWaveform(fileId, plain).toHex())
+        sodium.assertUsedUp()
+        val sealer = LocalSealer(realSodium, localKey)
+        val sealed = hex(wv.str("sealed"))
+        assertEquals(plain.toHex(), sealer.openWaveform(fileId, sealed)?.toHex())
+        assertNull(sealer.openWaveform(Id.random(realSodium), sealed))
+        assertNull(sealer.openWaveform(fileId, sealed.flipped(sealed.size - 1)))
+        // A preview is not a waveform, nor the other way round.
+        assertNull(sealer.openPreview(fileId, sealed))
+        assertNull(sealer.openWaveform(fileId, sealer.sealPreview(fileId, plain)))
+    }
+
+    @Test
     fun sealedFolderOpensOnlyForItsRow() {
         val sealer = LocalSealer(realSodium, LocalKeys.derive(realSodium, key(master)))
         val root = LocalFolder("Root level", null)

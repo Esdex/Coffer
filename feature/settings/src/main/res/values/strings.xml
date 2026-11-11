@@ -27,6 +27,8 @@
     <string name="settings_player_background_info">Music goes on when you leave Coffer or the screen turns off, with its controls in a notification. It goes on after the vault locks too, until you stop it: the tracks queued keep their own keys, which are wiped when the music stops, or ten minutes after it pauses with the vault locked.</string>
     <string name="settings_player_show_playing">Show what is playing outside Coffer</string>
     <string name="settings_player_show_playing_info">Off, the notification, the lock screen and headset displays say only Coffer. On, they show the title, artist and cover from the file\'s tags.</string>
+    <string name="settings_player_waveform">Waveform</string>
+    <string name="settings_player_waveform_info">The song\'s loudness as bars in place of the plain progress bar, worked out from the whole song as soon as it plays. The first time, the song is downloaded whole for it, even if you skip it; then it is shown at once. Kept on the phone, encrypted.</string>
     <string name="settings_card_text">Text viewer</string>
     <string name="settings_card_text_desc">Font, line numbers, colours, Markdown</string>
     <string name="settings_text_group_text">Text</string>
@@ -76,7 +78,7 @@
     <string name="settings_phone_cache_limit">Up to %1$s</string>
     <string name="settings_phone_cache_off">Off: nothing is kept</string>
     <string name="settings_phone_previews">Previews</string>
-    <string name="settings_phone_previews_info">Small pictures of photos, videos and song covers on the file icons, encrypted with this phone\'s key like the names in the index.</string>
+    <string name="settings_phone_previews_info">Small pictures of photos, videos and song covers on the file icons, and the waveforms of songs played, encrypted with this phone\'s key like the names in the index.</string>
     <string name="settings_previews">Previews</string>
     <string name="settings_previews_on">Show previews on file icons</string>
     <string name="settings_previews_on_info">Each is made once, as the file comes into view, from as little of it as will do: about 1 to 3 MB of traffic per file. Off, the ones made so far are deleted.</string>

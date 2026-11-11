@@ -21,6 +21,8 @@ data class PlayerPrefs(
     val backgroundAudio: Boolean = true,
     // Off by default: a notification, the lock screen and anything listening to media sessions are outside Coffer.
     val showPlaying: Boolean = false,
+    /** The song's waveform in place of the plain progress bar, worked out from what the player has loaded. */
+    val waveform: Boolean = true,
 )
 
 /** Where [PlayerPrefs] is kept: a file of its own beside the appearance, kept over a sign-out. */
@@ -54,6 +56,7 @@ class PlayerStore(private val file: File) {
             loop = flag(LOOP, d.loop),
             backgroundAudio = flag(BACKGROUND_AUDIO, d.backgroundAudio),
             showPlaying = flag(SHOW_PLAYING, d.showPlaying),
+            waveform = flag(WAVEFORM, d.waveform),
         )
     }
 
@@ -66,6 +69,7 @@ class PlayerStore(private val file: File) {
         const val LOOP = "loop"
         const val BACKGROUND_AUDIO = "backgroundAudio"
         const val SHOW_PLAYING = "showPlaying"
+        const val WAVEFORM = "waveform"
         val KEYS: List<Pair<String, (PlayerPrefs) -> Boolean>> = listOf(
             SWIPE_VOLUME to { it.swipeVolume },
             SWIPE_BRIGHTNESS to { it.swipeBrightness },
@@ -75,6 +79,7 @@ class PlayerStore(private val file: File) {
             LOOP to { it.loop },
             BACKGROUND_AUDIO to { it.backgroundAudio },
             SHOW_PLAYING to { it.showPlaying },
+            WAVEFORM to { it.waveform },
         )
     }
 }

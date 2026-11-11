@@ -266,6 +266,11 @@ internal fun PlayerSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                     info = stringResource(R.string.settings_player_show_playing_info),
                     onCheckedChange = { on -> viewModel.setPlayer { it.copy(showPlaying = on) } })
             }
+            row { shape ->
+                GroupedSwitch(shape, title = stringResource(R.string.settings_player_waveform), checked = prefs.waveform,
+                    info = stringResource(R.string.settings_player_waveform_info),
+                    onCheckedChange = { on -> viewModel.setPlayer { it.copy(waveform = on) } })
+            }
         }
     }
 }

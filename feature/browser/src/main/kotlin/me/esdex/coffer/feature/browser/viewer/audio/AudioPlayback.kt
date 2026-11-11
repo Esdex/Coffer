@@ -45,8 +45,12 @@ class AudioPlayback @Inject constructor(
     private val content: VaultContent,
     telegram: Telegram,
     playerStore: PlayerStore,
+    private val waveforms: Waveforms,
 ) {
     val prefs: StateFlow<PlayerPrefs> = playerStore.prefs
+
+    /** The waveform of the track playing, as far as it has been worked out (see [Waveforms]). */
+    val waveform: StateFlow<Waveforms.Shown?> = waveforms.shown
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -99,7 +103,10 @@ class AudioPlayback @Inject constructor(
             player.addListener(object : Player.Listener {
                 override fun onEvents(player: Player, events: Player.Events) {
                     playingFlow.value = player.playWhenReady && player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE
-                    if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) || events.contains(Player.EVENT_TIMELINE_CHANGED)) closeOthers(player)
+                    if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) || events.contains(Player.EVENT_TIMELINE_CHANGED)) {
+                        closeOthers(player)
+                        followWaveform(player)
+                    }
                 }
             })
         }
@@ -124,6 +131,7 @@ class AudioPlayback @Inject constructor(
             prepare()
             playWhenReady = true
         }
+        followWaveform(player)
         context.startService(Intent(context, AudioService::class.java))
         return true
     }
@@ -135,6 +143,8 @@ class AudioPlayback @Inject constructor(
     @MainThread
     fun stop() {
         if (held.isEmpty() && queueFlow.value.isEmpty() && (exo?.mediaItemCount ?: 0) == 0) return
+        // Its reader goes before the keys it reads with.
+        waveforms.follow(null)
         exo?.run {
             stop()
             clearMediaItems()
@@ -159,6 +169,10 @@ class AudioPlayback @Inject constructor(
             return file.open().also { readers[index] = it }.reader
         }
     }
+
+    /** The waveform follows the track playing. */
+    @MainThread
+    private fun followWaveform(player: Player) = waveforms.follow(held.getOrNull(player.currentMediaItemIndex))
 
     /** Readers of tracks that are neither playing nor next are closed, so a long queue holds two at most. */
     private fun closeOthers(player: Player) {

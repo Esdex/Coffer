@@ -20,6 +20,7 @@ import me.esdex.coffer.feature.browser.transfer.WorkFiles
 import me.esdex.coffer.feature.browser.transfer.readyStorage
 import java.io.File
 import me.esdex.coffer.feature.browser.preview.Previews
+import me.esdex.coffer.feature.browser.viewer.audio.Waveforms
 import javax.inject.Inject
 
 /**
@@ -70,7 +71,7 @@ class VaultStats @Inject constructor(
             telegramDatabase = telegramUsage?.databaseBytes ?: 0L,
             index = listOf(db, File(db.path + "-wal"), File(db.path + "-shm")).sumOf { it.length() },
             temporary = listOf(OpenFiles.dir(context), WorkFiles.upload(context), WorkFiles.snapshot(context), ShareInbox.dir(context)).sumOf(::sizeOf),
-            previews = sizeOf(Previews.dir(context)),
+            previews = sizeOf(Previews.dir(context)) + sizeOf(Waveforms.dir(context)),
         )
     }
 
