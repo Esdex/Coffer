@@ -39,18 +39,28 @@ class FileCache @Inject constructor(
 
     val blobs = BlobCache(scope, File(context.noBackupFilesDir, "file-cache"), store.prefs::value, leases::isOpen)
 
+    /** Files the user asked to have on the phone, waiting or being brought down (see [PrefetchQueue]). */
+    val queue = PrefetchQueue(File(context.noBackupFilesDir, "cache-queue"))
+
     init {
-        // Logging out deletes TDLib's files and the next account has other message ids: the list goes too.
-        scope.launch { telegram.state.collect { if (it == AuthState.LoggingOut) blobs.forget() } }
+        // Logging out deletes TDLib's files and the next account has other message ids: the lists go too.
+        scope.launch {
+            telegram.state.collect {
+                if (it == AuthState.LoggingOut) {
+                    queue.clear()
+                    blobs.forget()
+                }
+            }
+        }
     }
 
     /**
-     * Empties the cache; with nothing open and no copy being saved, also of the pieces it never knew
-     * about, so the phone's figure comes down to what open files still hold.
+     * Empties the cache; with nothing open, no copy being saved and nothing being cached, also of the
+     * pieces it never knew about, so the phone's figure comes down to what open files still hold.
      */
     suspend fun clear(storage: StorageBackend) = blobs.clear(
         storage,
-        idle = { !leases.anyOpen() && index.downloads().isEmpty() },
+        idle = { !leases.anyOpen() && index.downloads().isEmpty() && queue.items.value.isEmpty() },
         purge = { telegram.dropDownloads() },
     )
 

@@ -197,6 +197,25 @@ class BlobCacheTest {
     }
 
     @Test
+    fun whatIsHeldIsPublishedForTheCheckMarks() = runTest {
+        val ledger = temp.root.resolve("ledger")
+        val cache = cache(ledger)
+        val (a, b, c) = List(3) { blob().also { read(it) } }
+        now = 10; cache.keep(fileId(), listOf(a), phone); runCurrent()
+        now = 15; cache.keep(fileId(), listOf(b), phone); runCurrent()
+        assertEquals(mapOf(a to piece.toLong(), b to piece.toLong()), cache.held.value)
+        // Over the limit: the one read longest ago goes from the list too.
+        now = 20; cache.keep(fileId(), listOf(c), phone); runCurrent()
+        assertEquals(setOf(b, c), cache.held.value.keys)
+        // A new process knows it from the ledger before anything is kept.
+        val next = cache(ledger)
+        runCurrent()
+        assertEquals(setOf(b, c), next.held.value.keys)
+        next.forget()
+        assertTrue(next.held.value.isEmpty())
+    }
+
+    @Test
     fun signingOutForgetsTheLedger() = runTest {
         val ledger = temp.root.resolve("ledger")
         val cache = cache(ledger)

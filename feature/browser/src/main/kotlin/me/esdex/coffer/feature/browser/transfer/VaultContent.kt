@@ -1,5 +1,6 @@
 package me.esdex.coffer.feature.browser.transfer
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -41,6 +42,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.crypto.format.LocalUpload
@@ -277,6 +279,11 @@ class VaultContent @Inject constructor(
             }
             enqueue(TransferWorker.download(download.downloadId))
         }
+        // These need no key; this only starts again what Android stopped while Coffer was away.
+        for (item in cache.queue.items.value) {
+            if (registry.failures.value.containsKey(item.id)) continue
+            enqueue(TransferWorker.prefetch(item.id))
+        }
     }
 
     /** Sends a snapshot if anything changed since the newest one; a failure waits for the next change. */
@@ -419,6 +426,24 @@ class VaultContent @Inject constructor(
         val id = UUID.randomUUID().toString()
         index.putDownload(PendingDownload(id, fileId, target?.let { keys.local.sealTarget(id, it.toString()) }))
         pendingWork.trySend(Unit)
+    }
+
+    /** What caching [fileIds] would take, for the user to agree to first; null while locked. */
+    // usableSpace, as for uploads: the room other apps' caches would free comes only through allocateBytes,
+    // which TDLib does not call as it writes.
+    @SuppressLint("UsableSpace")
+    suspend fun cacheOffer(fileIds: List<Id>): CacheOffer? {
+        if (keysFlow.value == null) return null
+        val files = fileIds.mapNotNull { index.file(it) }
+        return CacheOffer.of(files, cache.blobs.held.value, context.noBackupFilesDir.usableSpace, cache.prefs.value)
+    }
+
+    /**
+     * Brings [fileIds] onto the phone whole, into the file cache (see [PrefetchQueue]). Needs no key, so
+     * it goes on after the vault locks, like any transfer.
+     */
+    fun cacheFiles(fileIds: List<Id>) {
+        for (item in cache.queue.add(fileIds)) enqueue(TransferWorker.prefetch(item.id))
     }
 
     suspend fun delete(fileId: Id) {
@@ -618,10 +643,35 @@ class VaultContent @Inject constructor(
         registry.clearFailure(downloadId)
     }
 
+    /**
+     * Stops caching a file. Parts that came whole stay in the cache like any other; one cut off halfway
+     * is dropped, as nothing would account for it, unless a viewer is reading the file right now.
+     */
+    suspend fun cancelPrefetch(id: String) {
+        WorkManager.getInstance(context).cancelUniqueWork(TransferWorker.prefetchName(id))
+        TransferWorker.dismiss(context, id)
+        val item = cache.queue.find(id)
+        cache.queue.remove(id)
+        registry.finished(id)
+        registry.clearFailure(id)
+        if (item == null || leases.isOpen(item.fileId)) return
+        val file = index.file(item.fileId) ?: return
+        val storage = telegram.readyStorage() ?: return
+        val held = cache.blobs.held.value
+        for ((index, part) in file.parts) {
+            val bytes = runCatching { storage.localBytes(part) }.getOrDefault(0L)
+            when {
+                // Come whole as the cancel went out: the cache has it, or is about to.
+                bytes >= ContentLayout.encryptedPartSize(file.plainSize, index) -> cache.keep(item.fileId, part, storage)
+                bytes > 0 && part !in held -> runCatching { storage.releaseBlob(part) }
+            }
+        }
+    }
+
     /** A failed transfer, tried again. */
     fun retry(id: String) {
         registry.clearFailure(id)
-        pendingWork.trySend(Unit)
+        if (cache.queue.find(id) != null) enqueue(TransferWorker.prefetch(id)) else pendingWork.trySend(Unit)
     }
 
     /** Signing out (SPEC §9): stop everything and forget the index. */

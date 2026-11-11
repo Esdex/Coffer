@@ -276,7 +276,7 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                 GroupedRow(
                     shape,
                     title = stringResource(R.string.settings_phone_downloads),
-                    subtitle = if (cache.enabled) stringResource(R.string.settings_phone_cache_limit, limitLabel(cache.limitMb)) else stringResource(R.string.settings_phone_cache_off),
+                    subtitle = if (cache.enabled) stringResource(R.string.settings_phone_cache_limit, CachePrefs.limitLabel(cache.limitMb)) else stringResource(R.string.settings_phone_cache_off),
                     info = stringResource(R.string.settings_phone_downloads_info),
                     leading = { Dot(TELEGRAM_FILES) },
                     trailing = { Text(size(usage.telegramFiles), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
@@ -305,7 +305,7 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                                 enabled = cache.enabled,
                                 shape = SegmentedButtonDefaults.itemShape(index = i, count = limits.size),
                                 icon = {},
-                                label = { Text(limitLabel(mb), style = MaterialTheme.typography.labelSmall, maxLines = 1) },
+                                label = { Text(CachePrefs.limitLabel(mb), style = MaterialTheme.typography.labelSmall, maxLines = 1) },
                             )
                         }
                     }
@@ -333,8 +333,6 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
 }
 
 /** A cache limit as offered: whole megabytes or gigabytes of 1024, as the choices were made, not Android's 1000s. */
-private fun limitLabel(mb: Int): String = if (mb < 1024) "$mb MB" else "${mb / 1024} GB"
-
 // ── Drawing ──────────────────────────────────────────────────────────────────
 
 /** A ring of [segments] by share, drawn in on first show, with [center] in the hole and [under] below. */

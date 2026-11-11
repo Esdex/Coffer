@@ -245,6 +245,35 @@ class DownloadRunner(
     }
 }
 
+/**
+ * Brings every part of a file onto the phone whole, as Telegram holds it, for the file cache ("Cache
+ * on this phone"). Nothing is decrypted, so no key is needed and it runs while the vault is locked.
+ * A part already whole is not asked for again, so a stopped run picks up where it was; every part, new
+ * or not, is handed to [partDone] to be written down as just used.
+ */
+class PrefetchRunner(
+    private val storage: StorageBackend,
+    private val index: VaultIndex,
+    private val partDone: suspend (MessageId) -> Unit,
+) {
+    suspend fun run(fileId: Id, onProgress: (done: Long, total: Long) -> Unit = { _, _ -> }) {
+        val file = checkNotNull(index.file(fileId)) { "file not in the index" }
+        val sizes = (0 until file.partCount).map { ContentLayout.encryptedPartSize(file.plainSize, it) }
+        val total = sizes.sum()
+        var done = 0L
+        onProgress(done, total)
+        for (part in 0 until file.partCount) {
+            val messageId = file.parts[part] ?: throw MissingPartException(part)
+            if (storage.localBytes(messageId) < sizes[part]) {
+                storage.openBlob(messageId, onProgress = { onProgress(done + it.done, total) }).close()
+            }
+            partDone(messageId)
+            done += sizes[part]
+            onProgress(done, total)
+        }
+    }
+}
+
 /** The DEK and content hash of an indexed file, for a transfer to hold. Needs the unlocked vault. */
 fun VaultKeys.transferKeys(fileId: Id, sealedMeta: ByteArray): TransferKeys? {
     val meta = local.openFileMeta(fileId, sealedMeta) ?: return null

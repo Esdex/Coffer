@@ -33,7 +33,12 @@ import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.tdlib.Connection
 import me.esdex.coffer.core.tdlib.Telegram
+import me.esdex.coffer.core.ui.theme.CacheStore
+import me.esdex.coffer.feature.browser.transfer.CacheOffer
+import me.esdex.coffer.feature.browser.transfer.FileCache
+import me.esdex.coffer.feature.browser.transfer.PrefetchQueue
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
+import me.esdex.coffer.feature.browser.transfer.isCached
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
 import me.esdex.coffer.feature.browser.viewer.audio.AudioPlayback
@@ -49,6 +54,8 @@ data class FileItem(
     val status: FileStatus,
     /** Its delete is on the way to Telegram. */
     val deleting: Boolean = false,
+    /** Whole on this phone: it opens at once, with no network. */
+    val cached: Boolean = false,
 ) {
     /** An upload is left alone until it is done (SPEC §5.2), and a delete on its way is final. */
     val selectable: Boolean get() = status != FileStatus.UPLOADING && !deleting
@@ -80,6 +87,8 @@ data class TransferItem(
     val progress: TransferRegistry.Progress?,
     val failure: TransferRegistry.Failure?,
     val preparing: Boolean,
+    /** Brought onto the phone for the cache, not decrypted anywhere. */
+    val caching: Boolean = false,
 )
 
 @HiltViewModel
@@ -88,6 +97,8 @@ class BrowserViewModel @Inject constructor(
     private val index: VaultIndex,
     private val registry: TransferRegistry,
     private val playback: AudioPlayback,
+    private val cache: FileCache,
+    private val cacheStore: CacheStore,
     telegram: Telegram,
 ) : ViewModel() {
 
@@ -257,10 +268,19 @@ class BrowserViewModel @Inject constructor(
     /** The whole tree, for picking where to move something; null while locked. */
     val tree: StateFlow<VaultTree?> = contents.map { it?.tree }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** The folder shown, or everything matching the search across all folders. */
-    private val goingAway = combine(content.deleting, content.hidden) { deleting, hidden -> deleting to hidden }
+    /** Files whole on the phone, by the cache's ledger. */
+    private val cached: Flow<Set<Id>> = combine(index.observeFiles(), cache.blobs.held) { files, held ->
+        files.filter { it.isCached(held) }.mapTo(HashSet()) { it.fileId }
+    }.flowOn(Dispatchers.Default)
 
-    val listing: StateFlow<Listing> = combine(contents, folderFlow, queryFlow, sortingFlow, goingAway) { contents, folder, query, sorting, (deleting, hidden) ->
+    private class Marks(val deleting: Set<Id>, val hidden: Set<Id>, val cached: Set<Id>)
+
+    private val marks = combine(content.deleting, content.hidden, cached, ::Marks)
+
+    /** The folder shown, or everything matching the search across all folders. */
+    val listing: StateFlow<Listing> = combine(contents, folderFlow, queryFlow, sortingFlow, marks) { contents, folder, query, sorting, marks ->
+        val deleting = marks.deleting
+        val hidden = marks.hidden
         if (contents == null) return@combine Listing()
         val tree = contents.tree
         // Deleted and waiting for the undo to pass: out of sight, and so is everything inside a folder that is.
@@ -274,7 +294,7 @@ class BrowserViewModel @Inject constructor(
             .filterNot(::hiddenFolder)
         val files = (if (needle.isEmpty()) tree.childFiles(current).mapNotNull(contents.files::get) else contents.files.values.filter { it.name.contains(needle, ignoreCase = true) })
             .filterNot { it.fileId in hidden || hiddenFolder(tree.folderOf(it.fileId)) }
-            .map { if (it.fileId in deleting) it.copy(deleting = true) else it }
+            .map { it.copy(deleting = it.fileId in deleting, cached = it.fileId in marks.cached) }
 
         // Folders are listed by name whatever the sorting; they have no size or date of their own.
         val folderItems = folders.map { FolderItem(it, tree.folders.getValue(it).name, deleting = it in deleting) }
@@ -290,19 +310,22 @@ class BrowserViewModel @Inject constructor(
 
     val catchingUp: StateFlow<Int?> = content.catchingUp
 
+    private class Queued(val uploads: List<PendingUpload>, val downloads: List<PendingDownload>, val caching: List<PrefetchQueue.Item>)
+
     val transfers: StateFlow<List<TransferItem>> = combine(
-        index.observeUploads(),
-        index.observeDownloads(),
+        combine(index.observeUploads(), index.observeDownloads(), cache.queue.items, ::Queued),
         contents,
         registry.progress,
         registry.failures,
-    ) { uploads: List<PendingUpload>, downloads: List<PendingDownload>, contents, progress, failures ->
+    ) { queued, contents, progress, failures ->
         val names = contents?.files?.mapValues { it.value.name }.orEmpty()
-        uploads.map {
+        queued.uploads.map {
             val name = it.fileId?.let(names::get) ?: content.keys.value?.local?.openUpload(it.uploadId, it.sealedRequest)?.name
             TransferItem(it.uploadId, true, name, progress[it.uploadId], failures[it.uploadId], it.fileId == null)
-        } + downloads.map {
+        } + queued.downloads.map {
             TransferItem(it.downloadId, false, names[it.fileId], progress[it.downloadId], failures[it.downloadId], false)
+        } + queued.caching.map {
+            TransferItem(it.id, false, names[it.fileId], progress[it.id], failures[it.id], false, caching = true)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -377,8 +400,54 @@ class BrowserViewModel @Inject constructor(
     fun deleteFolder(folderId: Id) = deleteLater(listOf(folderId), emptyList())
 
 
+    private val cacheOfferFlow = MutableStateFlow<CacheOffer?>(null)
+
+    /** "Cache on this phone" waiting for the user's word, with what it would take. */
+    val cacheOffer: StateFlow<CacheOffer?> = cacheOfferFlow.asStateFlow()
+
+    fun cacheFile(fileId: Id) = offerCache(emptyList(), listOf(fileId))
+
+    fun cacheFolder(folderId: Id) = offerCache(listOf(folderId), emptyList())
+
+    fun cacheSelected() {
+        val (folders, files) = takeSelection()
+        offerCache(folders, files)
+    }
+
+    /** Folders with everything in them, then the files picked by themselves, in the order shown. */
+    private fun offerCache(folders: List<Id>, files: List<Id>) {
+        val tree = tree.value ?: return
+        val all = (folders.flatMap { tree.subtree(it).second } + files).distinct()
+        viewModelScope.launch {
+            val offer = content.cacheOffer(all) ?: return@launch
+            when {
+                offer.fileIds.isEmpty() -> messagesFlow.emit(R.string.browser_cache_nothing)
+                offer.alreadyCached && offer.prefs.enabled -> messagesFlow.emit(R.string.browser_cache_already)
+                else -> cacheOfferFlow.value = offer
+            }
+        }
+    }
+
+    /** Agreed: the cache turned on if it was off, its limit raised to [limitMb] if asked, and the files queued. */
+    fun acceptCacheOffer(limitMb: Int? = null) {
+        val offer = cacheOfferFlow.value ?: return
+        cacheOfferFlow.value = null
+        cacheStore.update { it.copy(enabled = true, limitMb = limitMb ?: it.limitMb) }
+        content.cacheFiles(offer.fileIds)
+    }
+
+    fun dismissCacheOffer() {
+        cacheOfferFlow.value = null
+    }
+
     // Cancelling an upload deletes what it sent, so it talks to Telegram too.
-    fun cancel(item: TransferItem) = act { if (item.isUpload) content.cancelUpload(item.id) else content.cancelDownload(item.id) }
+    fun cancel(item: TransferItem) = act {
+        when {
+            item.isUpload -> content.cancelUpload(item.id)
+            item.caching -> content.cancelPrefetch(item.id)
+            else -> content.cancelDownload(item.id)
+        }
+    }
 
     fun retry(item: TransferItem) = content.retry(item.id)
 }

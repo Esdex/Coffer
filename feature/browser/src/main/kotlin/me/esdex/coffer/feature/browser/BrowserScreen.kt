@@ -40,12 +40,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -57,6 +59,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DownloadForOffline
 import androidx.compose.material.icons.outlined.DriveFolderUpload
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileOpen
@@ -148,8 +151,10 @@ import me.esdex.coffer.core.ui.components.TopBarSearchField
 import me.esdex.coffer.core.ui.components.TypeTile
 import me.esdex.coffer.core.ui.components.fileTypeIcon
 import me.esdex.coffer.core.ui.components.groupShape
+import me.esdex.coffer.core.ui.theme.CachePrefs
 import me.esdex.coffer.core.ui.theme.CofferHazeStyle
 import me.esdex.coffer.core.ui.theme.LocalAmoledMode
+import me.esdex.coffer.feature.browser.transfer.CacheOffer
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.UNDO_MILLIS
 import me.esdex.coffer.feature.browser.transfer.VaultContent
@@ -193,6 +198,7 @@ fun BrowserScreen(
     val catchingUp by viewModel.catchingUp.collectAsStateWithLifecycle()
     val connection by viewModel.connection.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
+    val cacheOffer by viewModel.cacheOffer.collectAsStateWithLifecycle()
     val selecting = selection.isNotEmpty()
     var movingSelection by remember { mutableStateOf(false) }
     var deletingSelection by remember { mutableStateOf(false) }
@@ -422,6 +428,7 @@ fun BrowserScreen(
                             // Folders go with what is in them; files that are not whole are left out and said so.
                             canSave = true,
                             onSave = { exportTree.launch(null) },
+                            onCache = { askForNotifications(); viewModel.cacheSelected() },
                             onDelete = { deletingSelection = true },
                         )
                     }
@@ -464,6 +471,10 @@ fun BrowserScreen(
                                         savingFolder = item.folderId
                                         exportTree.launch(null)
                                     }
+                                    RowAction.CACHE -> {
+                                        askForNotifications()
+                                        viewModel.cacheFolder(item.folderId)
+                                    }
                                     else -> Unit
                                 }
                             },
@@ -487,6 +498,10 @@ fun BrowserScreen(
                                     RowAction.RENAME -> renaming = Target.File(item)
                                     RowAction.MOVE -> moving = Target.File(item)
                                     RowAction.DELETE -> deletingFile = item
+                                    RowAction.CACHE -> {
+                                        askForNotifications()
+                                        viewModel.cacheFile(item.fileId)
+                                    }
                                     else -> Unit
                                 }
                             },
@@ -593,6 +608,9 @@ fun BrowserScreen(
             dismissButton = { TextButton(onClick = { deletingSelection = false }) { Text(stringResource(R.string.browser_cancel)) } },
         )
     }
+    cacheOffer?.let { offer ->
+        CacheOfferDialog(offer, onCache = viewModel::acceptCacheOffer, onDismiss = viewModel::dismissCacheOffer)
+    }
     deletingFolder?.let { folder ->
         val (folders, files) = currentTree?.subtree(folder.folderId) ?: (emptyList<Id>() to emptyList())
         AppDialog(
@@ -669,7 +687,7 @@ private fun FileItem.isReadable() = mime == PDF || TextFiles.isText(name, mime)
 
 private const val PDF = "application/pdf"
 
-private enum class RowAction { OPEN, EXPORT, RENAME, MOVE, DELETE }
+private enum class RowAction { OPEN, EXPORT, CACHE, RENAME, MOVE, DELETE }
 
 @Composable
 private fun Listing(
@@ -981,6 +999,7 @@ private fun FolderRow(
                 MenuItem(Icons.Outlined.Edit, R.string.browser_rename) { menu = false; onAction(RowAction.RENAME) }
                 MenuItem(Icons.AutoMirrored.Outlined.DriveFileMove, R.string.browser_move) { menu = false; onAction(RowAction.MOVE) }
                 MenuItem(Icons.Outlined.SaveAlt, R.string.browser_save_folder) { menu = false; onAction(RowAction.EXPORT) }
+                MenuItem(Icons.Outlined.DownloadForOffline, R.string.browser_cache) { menu = false; onAction(RowAction.CACHE) }
                 MenuItem(Icons.Outlined.Delete, R.string.browser_delete, destructive = true) { menu = false; onAction(RowAction.DELETE) }
             }
         }
@@ -1028,7 +1047,7 @@ private fun FileRow(
             .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PickTile(selecting, selected, fileTypeIcon(file.name))
+        PickTile(selecting, selected, fileTypeIcon(file.name), cached = file.cached)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
@@ -1050,6 +1069,7 @@ private fun FileRow(
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 MenuItem(Icons.Outlined.FileOpen, R.string.browser_open, enabled = ready) { menu = false; onOpen() }
                 MenuItem(Icons.Outlined.SaveAlt, R.string.browser_export, enabled = ready) { menu = false; export.launch(file.name) }
+                MenuItem(Icons.Outlined.DownloadForOffline, R.string.browser_cache, enabled = ready && !file.cached) { menu = false; onAction(RowAction.CACHE) }
                 MenuItem(Icons.Outlined.Edit, R.string.browser_rename, enabled = settled) { menu = false; onAction(RowAction.RENAME) }
                 MenuItem(Icons.AutoMirrored.Outlined.DriveFileMove, R.string.browser_move, enabled = settled) { menu = false; onAction(RowAction.MOVE) }
                 MenuItem(Icons.Outlined.Delete, R.string.browser_delete, enabled = settled, destructive = true) { menu = false; onAction(RowAction.DELETE) }
@@ -1070,9 +1090,12 @@ private fun selectedBackground(selected: Boolean): Color {
     return color
 }
 
-/** The type tile, or while picking a check box in its place, as in Arcanum's file manager. */
+/**
+ * The type tile, or while picking a check box in its place, as in Arcanum's file manager. A file whole
+ * on the phone has a green check on the tile's corner.
+ */
 @Composable
-private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVector, Color>) {
+private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVector, Color>, cached: Boolean = false) {
     AnimatedContent(targetState = selecting && selected, label = "pick") { picked ->
         if (picked) {
             Box(
@@ -1082,10 +1105,26 @@ private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVect
                 Icon(Icons.Outlined.Check, stringResource(R.string.browser_cd_picked), tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
             }
         } else {
-            TypeTile(icon)
+            Box {
+                TypeTile(icon)
+                if (cached) CachedBadge(Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp))
+            }
         }
     }
 }
+
+/** A small green check in a ring of the background, so it stands apart from the tile under it. */
+@Composable
+private fun CachedBadge(modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(17.dp).clip(CircleShape).background(MaterialTheme.colorScheme.background).padding(1.5.dp).clip(CircleShape).background(CachedGreen),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Icons.Outlined.Check, stringResource(R.string.browser_cd_cached), tint = Color.White, modifier = Modifier.size(11.dp))
+    }
+}
+
+private val CachedGreen = Color(0xFF22C55E)
 
 /** While picking: how many, and what applies to all of them; Rename only when there is one. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1120,7 +1159,7 @@ private fun SelectionTopBar(
 
 /** The actions on everything picked, each with its name under it. */
 @Composable
-private fun SelectionActions(onMove: () -> Unit, canSave: Boolean, onSave: () -> Unit, onDelete: () -> Unit) {
+private fun SelectionActions(onMove: () -> Unit, canSave: Boolean, onSave: () -> Unit, onCache: () -> Unit, onDelete: () -> Unit) {
     Surface(tonalElevation = 3.dp, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
@@ -1129,6 +1168,7 @@ private fun SelectionActions(onMove: () -> Unit, canSave: Boolean, onSave: () ->
         ) {
             SelectionAction(R.string.browser_move, Icons.AutoMirrored.Outlined.DriveFileMove, onMove)
             SelectionAction(R.string.browser_save, Icons.Outlined.SaveAlt, onSave, enabled = canSave)
+            SelectionAction(R.string.browser_cache_short, Icons.Outlined.DownloadForOffline, onCache)
             SelectionAction(R.string.browser_delete, Icons.Outlined.Delete, onDelete, tint = MaterialTheme.colorScheme.error)
         }
     }
@@ -1185,7 +1225,11 @@ fun TransfersScreen(
                         Spacer(Modifier.width(12.dp))
                         Text(
                             stringResource(
-                                if (item.isUpload) R.string.browser_transfer_upload else R.string.browser_transfer_download,
+                                when {
+                                    item.isUpload -> R.string.browser_transfer_upload
+                                    item.caching -> R.string.browser_transfer_caching
+                                    else -> R.string.browser_transfer_download
+                                },
                                 item.name ?: stringResource(R.string.browser_transfer_unnamed),
                             ),
                             maxLines = 1,
@@ -1205,6 +1249,51 @@ fun TransfersScreen(
             }
         }
     }
+}
+
+/**
+ * What caching the picked files would take, before it starts: their size, and a word when the cache is
+ * off, too small to hold them all, or the phone has no room. Too small offers the limit that would do.
+ */
+@Composable
+private fun CacheOfferDialog(offer: CacheOffer, onCache: (Int?) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    fun size(bytes: Long) = Formatter.formatShortFileSize(context, bytes)
+    val count = offer.fileIds.size
+    val raiseTo = offer.raiseTo
+    AppDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.browser_cache_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val amount = pluralStringResource(R.plurals.browser_cache_amount, count, count, size(offer.totalBytes))
+                val missing = if (offer.missingBytes < offer.totalBytes) " " + stringResource(R.string.browser_cache_to_download, size(offer.missingBytes)) else ""
+                Text(amount + missing)
+                Text(stringResource(R.string.browser_cache_info))
+                if (!offer.prefs.enabled) Text(stringResource(R.string.browser_cache_off))
+                if (!offer.fits) Text(stringResource(R.string.browser_cache_over_limit, CachePrefs.limitLabel(offer.prefs.limitMb)), color = MaterialTheme.colorScheme.primary)
+                if (!offer.enoughSpace) Text(stringResource(R.string.browser_cache_no_space, size(offer.freeBytes)), color = MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton = {
+            if (raiseTo != null) {
+                TextButton(onClick = { onCache(raiseTo) }, enabled = offer.enoughSpace) {
+                    Text(stringResource(R.string.browser_cache_raise, CachePrefs.limitLabel(raiseTo)))
+                }
+            } else {
+                TextButton(onClick = { onCache(null) }, enabled = offer.enoughSpace) {
+                    Text(stringResource(if (offer.fits) R.string.browser_cache_confirm else R.string.browser_cache_anyway))
+                }
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.browser_cancel)) }
+                // Too much for the present limit: raising it is offered first, keeping it stays possible.
+                if (raiseTo != null) TextButton(onClick = { onCache(null) }, enabled = offer.enoughSpace) { Text(stringResource(R.string.browser_cache_anyway)) }
+            }
+        },
+    )
 }
 
 private fun Connection.label() = when (this) {

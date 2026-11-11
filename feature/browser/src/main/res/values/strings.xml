@@ -137,6 +137,7 @@
     <string name="browser_no_transfers">No transfers.</string>
     <string name="browser_transfer_upload">Upload: %1$s</string>
     <string name="browser_transfer_download">Download: %1$s</string>
+    <string name="browser_transfer_caching">Caching: %1$s</string>
     <string name="browser_transfer_unnamed">a file (unlock to see its name)</string>
     <string name="browser_transfer_preparing">Preparing: reading the file and encrypting its details</string>
     <string name="browser_transfer_waiting">Waiting</string>
@@ -179,9 +180,31 @@
     <string name="transfers_channel">Transfers</string>
     <string name="transfers_uploading">Coffer is uploading a file</string>
     <string name="transfers_downloading">Coffer is downloading a file</string>
+    <string name="transfers_caching">Coffer is caching a file</string>
     <string name="transfers_preparing">Preparing the next part</string>
     <string name="transfers_amount">%1$s of %2$s</string>
     <string name="transfers_upload_paused">Upload paused</string>
     <string name="transfers_download_paused">Download paused</string>
+    <string name="transfers_caching_paused">Caching paused</string>
     <string name="transfers_paused_text">Open Coffer to continue</string>
+
+    <!-- Cache on this phone -->
+    <string name="browser_cache">Cache on this phone</string>
+    <string name="browser_cache_short">Cache</string>
+    <string name="browser_cd_cached">On this phone</string>
+    <string name="browser_cache_nothing">Nothing to cache: no file here is whole in Saved Messages yet</string>
+    <string name="browser_cache_already">Already on this phone</string>
+    <string name="browser_cache_title">Cache on this phone?</string>
+    <plurals name="browser_cache_amount">
+        <item quantity="one">%1$d file, %2$s.</item>
+        <item quantity="other">%1$d files, %2$s.</item>
+    </plurals>
+    <string name="browser_cache_to_download">%1$s of it to download.</string>
+    <string name="browser_cache_info">Cached files open at once, even with no network. The cache may let them go later to make room for others.</string>
+    <string name="browser_cache_off">The file cache is off. This turns it on.</string>
+    <string name="browser_cache_over_limit">That is more than the cache holds (%1$s): the files cached first would be pushed out by the last ones.</string>
+    <string name="browser_cache_no_space">Not enough free space on this phone: %1$s free.</string>
+    <string name="browser_cache_confirm">Cache</string>
+    <string name="browser_cache_raise">Raise to %1$s and cache</string>
+    <string name="browser_cache_anyway">Cache anyway</string>
 </resources>

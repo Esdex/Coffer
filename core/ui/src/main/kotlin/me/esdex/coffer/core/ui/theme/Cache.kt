@@ -22,6 +22,9 @@ data class CachePrefs(
         /** 500 MB, then 1, 2, 5 and 10 GB, as agreed with Esdex. */
         val LIMITS_MB = listOf(500, 1024, 2048, 5120, 10240)
         const val DEFAULT_LIMIT_MB = 2048
+
+        /** A limit as the settings offer it: 500 MB, 1 GB, and so on. */
+        fun limitLabel(mb: Int): String = if (mb < 1024) "$mb MB" else "${mb / 1024} GB"
     }
 }
 

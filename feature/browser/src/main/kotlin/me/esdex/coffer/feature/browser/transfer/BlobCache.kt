@@ -1,6 +1,9 @@
 package me.esdex.coffer.feature.browser.transfer
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -31,6 +34,15 @@ class BlobCache(
 
     private val lock = Mutex()
     private var entries: MutableMap<MessageId, Entry>? = null
+
+    private val heldFlow = MutableStateFlow<Map<MessageId, Long>>(emptyMap())
+
+    /** Bytes of each piece the cache holds, as the ledger has it; what the browser's check marks go by. */
+    val held: StateFlow<Map<MessageId, Long>> = heldFlow.asStateFlow()
+
+    init {
+        scope.launch { lock.withLock { heldFlow.value = load().mapValues { it.value.bytes } } }
+    }
 
     /**
      * [parts] of [fileId] were read and are done with: kept and marked as just used, then the cache is
@@ -83,6 +95,7 @@ class BlobCache(
     suspend fun forget() = lock.withLock {
         entries = HashMap()
         ledger.delete()
+        heldFlow.value = emptyMap()
     }
 
     private suspend fun trimLocked(all: MutableMap<MessageId, Entry>, storage: StorageBackend) {
@@ -124,5 +137,6 @@ class BlobCache(
             for ((part, e) in all) out.write("${part.value} ${Base64Url.encode(e.fileId.toByteArray())} ${e.bytes} ${e.used}\n")
         }
         check(temp.renameTo(ledger)) { "could not store ${ledger.name}" }
+        heldFlow.value = all.mapValues { it.value.bytes }
     }
 }

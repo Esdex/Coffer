@@ -21,6 +21,7 @@ import dagger.assisted.AssistedInject
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.withPermit
 import me.esdex.coffer.core.crypto.sodium.Sodium
+import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.StorageException
@@ -28,6 +29,7 @@ import me.esdex.coffer.core.sync.ContentMismatchException
 import me.esdex.coffer.core.sync.DownloadRunner
 import me.esdex.coffer.core.sync.MissingPartException
 import me.esdex.coffer.core.sync.NotEnoughSpaceException
+import me.esdex.coffer.core.sync.PrefetchRunner
 import me.esdex.coffer.core.sync.SourceChangedException
 import me.esdex.coffer.core.sync.TransferStage
 import me.esdex.coffer.core.sync.UploadRunner
@@ -39,7 +41,8 @@ import java.io.FileNotFoundException
 /**
  * One upload or download, as a foreground job with a progress notification (SPEC §6). Holds only the
  * file's DEK, from [TransferRegistry]; without it (the process restarted) it ends quietly and the next
- * unlock starts it again. The notification never names the file: it can show on the lock screen.
+ * unlock starts it again. A file brought onto the phone for the cache needs no key at all. The
+ * notification never names the file: it can show on the lock screen.
  */
 @HiltWorker
 class TransferWorker @AssistedInject constructor(
@@ -53,13 +56,20 @@ class TransferWorker @AssistedInject constructor(
 ) : CoroutineWorker(context, params) {
 
     private val id = inputData.getString(KEY_ID).orEmpty()
-    private val isUpload = inputData.getString(KEY_KIND) == KIND_UPLOAD
+    private val kind = inputData.getString(KEY_KIND)
+    private val isUpload = kind == KIND_UPLOAD
 
     // The backend allows 3 transfers on the wire; this also keeps more than 3 encrypted parts
     // from piling up in the cache while they wait for a slot.
     override suspend fun doWork(): Result = try {
         registry.queued(id)
-        registry.gate.withPermit { if (isUpload) upload() else download() }
+        registry.gate.withPermit {
+            when (kind) {
+                KIND_UPLOAD -> upload()
+                KIND_PREFETCH -> prefetch()
+                else -> download()
+            }
+        }
     } catch (e: FloodWaitException) {
         // Honest FLOOD_WAIT (SPEC §6): wait what Telegram asked, then one more try through WorkManager.
         delay(e.seconds * 1000L)
@@ -146,6 +156,30 @@ class TransferWorker @AssistedInject constructor(
         return if (failure == null) Result.success() else Result.failure()
     }
 
+    /**
+     * Every part of a file onto the phone whole, into the cache. Done, or the file gone, it leaves the
+     * queue; a failure stays there with Retry. With the cache turned off since, there is nowhere to put it.
+     */
+    private suspend fun prefetch(): Result {
+        val item = cache.queue.find(id) ?: return Result.success()
+        val file = index.file(item.fileId)?.takeIf { it.status == FileStatus.READY }
+        if (file == null || !cache.prefs.value.enabled) {
+            cache.queue.remove(id)
+            return Result.success()
+        }
+        if (!goForeground()) return paused()
+        val storage = telegram.readyStorage() ?: return Result.retry()
+        try {
+            PrefetchRunner(storage, index) { part -> cache.keep(item.fileId, part, storage) }
+                .run(item.fileId) { done, total -> report(done, total, TransferStage.MOVING) }
+        } catch (_: MissingPartException) {
+            registry.fail(id, TransferRegistry.Failure.MISSING_PART)
+            return Result.failure()
+        }
+        cache.queue.remove(id)
+        return Result.success()
+    }
+
     private var lastPercent = -1
     private var lastPhase: TransferRegistry.Phase? = null
     private var lastNotified = 0L
@@ -194,7 +228,7 @@ class TransferWorker @AssistedInject constructor(
     private fun paused(): Result {
         val notification = builder()
             .setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setContentTitle(applicationContext.getString(if (isUpload) R.string.transfers_upload_paused else R.string.transfers_download_paused))
+            .setContentTitle(applicationContext.getString(if (isUpload) R.string.transfers_upload_paused else if (kind == KIND_PREFETCH) R.string.transfers_caching_paused else R.string.transfers_download_paused))
             .setContentText(applicationContext.getString(R.string.transfers_paused_text))
             .setContentIntent(openApp())
             .setAutoCancel(true)
@@ -253,7 +287,7 @@ class TransferWorker @AssistedInject constructor(
         }
         return builder()
             .setSmallIcon(if (isUpload) android.R.drawable.stat_sys_upload else android.R.drawable.stat_sys_download)
-            .setContentTitle(applicationContext.getString(if (isUpload) R.string.transfers_uploading else R.string.transfers_downloading))
+            .setContentTitle(applicationContext.getString(if (isUpload) R.string.transfers_uploading else if (kind == KIND_PREFETCH) R.string.transfers_caching else R.string.transfers_downloading))
             .setContentText(text)
             .setProgress(100, progress?.percent() ?: 0, !moving)
             .setContentIntent(openApp())
@@ -265,6 +299,7 @@ class TransferWorker @AssistedInject constructor(
         const val KEY_ID = "id"
         private const val KIND_UPLOAD = "upload"
         private const val KIND_DOWNLOAD = "download"
+        private const val KIND_PREFETCH = "prefetch"
         private const val CHANNEL = "transfers"
         private const val NOTIFY_INTERVAL_MS = 1_000L
 
@@ -275,11 +310,15 @@ class TransferWorker @AssistedInject constructor(
 
         fun uploadName(id: String) = "upload-$id"
         fun downloadName(id: String) = "download-$id"
+        fun prefetchName(id: String) = "prefetch-$id"
 
         fun upload(id: String): Pair<String, OneTimeWorkRequest> =
             uploadName(id) to OneTimeWorkRequestBuilder<TransferWorker>().withTransferDefaults(KIND_UPLOAD, id).build()
 
         fun download(id: String): Pair<String, OneTimeWorkRequest> =
             downloadName(id) to OneTimeWorkRequestBuilder<TransferWorker>().withTransferDefaults(KIND_DOWNLOAD, id).build()
+
+        fun prefetch(id: String): Pair<String, OneTimeWorkRequest> =
+            prefetchName(id) to OneTimeWorkRequestBuilder<TransferWorker>().withTransferDefaults(KIND_PREFETCH, id).build()
     }
 }
