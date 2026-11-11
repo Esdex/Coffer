@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- The app icon: a golden chest on navy, shaped for every launcher's mask, with a themed version for Android 13 and later that follows the wallpaper's colours.
 - Sign in to Telegram with a QR code or a phone number, including two-step verification and email codes.
 - Built-in Telegram API keys, so signing in needs nothing from my.telegram.org; your own keys (api_id and api_hash) remain an option on the sign-in screen.
 - A first-start screen explaining what Coffer does and that its files in Saved Messages must not be deleted there.
