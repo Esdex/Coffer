@@ -1,5 +1,6 @@
 package me.esdex.coffer.feature.browser.viewer.audio
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -11,9 +12,11 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
@@ -42,8 +45,18 @@ internal fun WaveformBar(
     val ahead = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.25f)
     val unknown = MaterialTheme.colorScheme.onBackground
 
-    // The position comes a few times a second: a tween of about that length makes the fill run smoothly.
-    val shownProgress by animateFloatAsState(progress, Motion.linear(200), label = "waveform progress")
+    // The position comes every frame while the music plays, so the fill simply follows it. A jump, as a
+    // tap on the waveform, glides there once and quickly; restarting a tween on every frame, as before,
+    // only crept towards it for a second (seen 2026-11-12).
+    val fill = remember { Animatable(progress) }
+    val target by rememberUpdatedState(progress)
+    LaunchedEffect(fill) {
+        // Conflated: while a glide runs, only the newest position waits for it.
+        snapshotFlow { target }.collect { to ->
+            if (abs(to - fill.value) < JUMP) fill.snapTo(to) else fill.animateTo(to, Motion.standard())
+        }
+    }
+    val shownProgress = fill.value
     val heights = List(WaveformBytes.BARS) { i ->
         animateFloatAsState(bars.getOrNull(i) ?: 0f, Motion.standard(), label = "waveform bar")
     }
@@ -100,3 +113,6 @@ internal fun WaveformBar(
         }
     }
 }
+
+/** A change of position bigger than this is a jump (a tap, a seek, the next track), not the music playing on. */
+private const val JUMP = 0.01f
