@@ -1,10 +1,16 @@
 package me.esdex.coffer.core.ui.components
 
 import androidx.annotation.RawRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -20,6 +26,7 @@ import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
 import me.esdex.coffer.core.ui.R
 import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Motion
 
 /** The animations the first screens use, from Arcanum. */
 enum class Hero(@RawRes val raw: Int) {
@@ -37,10 +44,25 @@ fun HeroAnimation(hero: Hero, modifier: Modifier = Modifier, size: Dp = 160.dp) 
     LottieAnimation(composition, progress = { progress }, modifier = modifier.size(size))
 }
 
-/** The main action of a first-start screen: full width, 52 high, fully rounded, as in Arcanum's onboarding. */
+/**
+ * The main action of a first-start screen: full width, 52 high, fully rounded, as in Arcanum's
+ * onboarding. [loading] puts a spinner in the text's place while the step works: the button keeps its
+ * size and colour, so nothing under it jumps, and a second tap does nothing.
+ */
 @Composable
-fun PillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
-    Button(onClick = onClick, enabled = enabled, shape = Corners.pill, modifier = modifier.fillMaxWidth().height(52.dp)) {
-        Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+fun PillButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true, loading: Boolean = false) {
+    Button(
+        onClick = { if (!loading) onClick() },
+        enabled = enabled || loading,
+        shape = Corners.pill,
+        modifier = modifier.fillMaxWidth().height(52.dp),
+    ) {
+        AnimatedContent(loading, transitionSpec = { fadeIn(Motion.quick()) togetherWith fadeOut(Motion.quick()) }, label = "pill") { working ->
+            if (working) {
+                CircularProgressIndicator(color = LocalContentColor.current, strokeWidth = 2.5.dp, modifier = Modifier.size(22.dp))
+            } else {
+                Text(text, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            }
+        }
     }
 }

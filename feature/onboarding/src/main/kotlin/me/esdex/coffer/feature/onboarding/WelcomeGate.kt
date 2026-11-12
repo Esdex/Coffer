@@ -1,8 +1,13 @@
 package me.esdex.coffer.feature.onboarding
 
 import android.content.Context
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,12 +59,21 @@ private val pages = listOf(
 fun WelcomeGate(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val prefs = LocalContext.current.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     var seen by remember { mutableStateOf(prefs.getBoolean(WELCOME_SEEN, false)) }
-    if (seen) {
-        content()
-        return
+    // The last page fades into signing in rather than being swapped for it.
+    AnimatedContent(seen, transitionSpec = { fadeIn(Motion.screen()) togetherWith fadeOut(Motion.standard()) }, label = "welcome") { done ->
+        if (done) content() else Pages(modifier, onDone = {
+            prefs.edit { putBoolean(WELCOME_SEEN, true) }
+            seen = true
+        })
     }
+}
+
+@Composable
+private fun Pages(modifier: Modifier, onDone: () -> Unit) {
     val pager = rememberPagerState(pageCount = { pages.size })
     val scope = rememberCoroutineScope()
+    // Back on a later page turns back a page, instead of leaving the app.
+    BackHandler(enabled = pager.currentPage > 0) { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }
     Box(modifier.fillMaxSize()) {
         // Only the button turns the page: every page has to be read before the vault is set up.
         HorizontalPager(state = pager, userScrollEnabled = false, modifier = Modifier.fillMaxSize()) { index ->
@@ -87,8 +101,7 @@ fun WelcomeGate(modifier: Modifier = Modifier, content: @Composable () -> Unit) 
                 text = stringResource(if (last) R.string.welcome_start else R.string.welcome_next),
                 onClick = {
                     if (last) {
-                        prefs.edit { putBoolean(WELCOME_SEEN, true) }
-                        seen = true
+                        onDone()
                     } else {
                         scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
                     }

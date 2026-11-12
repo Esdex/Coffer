@@ -1,15 +1,19 @@
 package me.esdex.coffer.core.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -28,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -116,3 +121,26 @@ fun RecoveryWords(words: List<String>, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * How strong a new password is: five segments filling up to [score] (0 to 4), in the accent colour once
+ * it is [acceptable] and in red before; [label] says it in a word, [notes] say what would help.
+ */
+@Composable
+fun StrengthMeter(score: Int, acceptable: Boolean, label: String, notes: List<String>) {
+    val color by animateColorAsState(if (acceptable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, Motion.standard(), label = "strength")
+    val empty = MaterialTheme.colorScheme.surfaceContainerHighest
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            repeat(STRENGTH_STEPS) { i ->
+                val fill by animateFloatAsState(if (i <= score) 1f else 0f, Motion.standard(), label = "strength step")
+                Box(Modifier.weight(1f).height(6.dp).clip(Corners.pill).background(lerp(empty, color, fill)))
+            }
+        }
+        Text(label, color = color, style = MaterialTheme.typography.labelLarge)
+        notes.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+    }
+}
+
+private const val STRENGTH_STEPS = 5
+

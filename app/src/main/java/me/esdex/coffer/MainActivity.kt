@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.core.content.IntentCompat
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -14,8 +16,6 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.EaseInOutCubic
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -33,6 +33,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
+import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.feature.onboarding.LoginScreen
 import me.esdex.coffer.feature.onboarding.WelcomeGate
 import me.esdex.coffer.feature.onboarding.vault.VaultGate
@@ -77,10 +78,13 @@ class MainActivity : FragmentActivity() {
                     val plain = Modifier.safeDrawingPadding()
                     WelcomeGate(plain) {
                         val signedIn by viewModel.signedIn.collectAsStateWithLifecycle()
-                        if (!signedIn) {
-                            LoginScreen(plain)
-                        } else {
-                            VaultGate(plain) { UnlockedApp() }
+                        // Signing in fades into the vault; signing out fades back.
+                        AnimatedContent(signedIn, transitionSpec = { fadeIn(Motion.screen()) togetherWith fadeOut(Motion.standard()) }, label = "signed in") { inside ->
+                            if (!inside) {
+                                LoginScreen(plain)
+                            } else {
+                                VaultGate(plain) { UnlockedApp() }
+                            }
                         }
                     }
                 }
@@ -106,8 +110,8 @@ class MainActivity : FragmentActivity() {
             targetState = page,
             transitionSpec = {
                 val deeper = targetState.ordinal > initialState.ordinal
-                slideInHorizontally(tween(SLIDE_MILLIS, easing = EaseInOutCubic)) { if (deeper) it else -it } togetherWith
-                    slideOutHorizontally(tween(SLIDE_MILLIS, easing = EaseInOutCubic)) { if (deeper) -it else it }
+                slideInHorizontally(Motion.screen()) { if (deeper) it else -it } togetherWith
+                    slideOutHorizontally(Motion.screen()) { if (deeper) -it else it }
             },
             label = "page",
         ) { shown ->
@@ -164,6 +168,5 @@ class MainActivity : FragmentActivity() {
 
     private companion object {
         const val OPENED_TO_SHARE = "openedToShare"
-        const val SLIDE_MILLIS = 350
     }
 }

@@ -36,6 +36,7 @@ import me.esdex.coffer.core.ui.components.OperationLoading
 import me.esdex.coffer.core.ui.components.OperationSuccess
 import me.esdex.coffer.core.ui.components.PasswordField
 import me.esdex.coffer.core.ui.components.RecoveryWords
+import me.esdex.coffer.core.ui.components.StrengthMeter as SharedStrengthMeter
 import me.esdex.coffer.core.vault.PasswordPolicy
 
 /** A settings page that asks for the current password first (SPEC §9). */
@@ -103,14 +104,12 @@ private fun StrengthMeter(check: PasswordPolicy.Check) {
         R.string.settings_strength_0, R.string.settings_strength_1, R.string.settings_strength_2,
         R.string.settings_strength_3, R.string.settings_strength_4,
     )
-    val color = if (check.acceptable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-    LinearProgressIndicator(progress = { (check.score + 1) / 5f }, color = color, modifier = Modifier.fillMaxWidth())
-    Text(stringResource(labels[check.score]), color = color, style = MaterialTheme.typography.labelLarge)
-    if (!check.longEnough) {
-        Text(pluralStringResource(R.plurals.settings_strength_too_short, PasswordPolicy.MIN_LENGTH, PasswordPolicy.MIN_LENGTH), style = MaterialTheme.typography.bodyMedium)
+    val notes = buildList {
+        if (!check.longEnough) add(pluralStringResource(R.plurals.settings_strength_too_short, PasswordPolicy.MIN_LENGTH, PasswordPolicy.MIN_LENGTH))
+        check.warning?.let(::add)
+        check.suggestions.forEach { add("- $it") }
     }
-    check.warning?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
-    check.suggestions.forEach { Text("- $it", style = MaterialTheme.typography.bodyMedium) }
+    SharedStrengthMeter(check.score, check.acceptable, stringResource(labels[check.score]), notes)
 }
 
 @Composable
