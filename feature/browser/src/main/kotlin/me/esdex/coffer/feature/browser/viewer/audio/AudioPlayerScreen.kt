@@ -90,10 +90,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.esdex.coffer.core.ui.components.BackButton
-import me.esdex.coffer.core.ui.components.LocalHazeState
-import me.esdex.coffer.core.ui.theme.CofferHazeStyle
+import me.esdex.coffer.core.ui.components.FloatingCard
 import me.esdex.coffer.core.ui.theme.Corners
-import me.esdex.coffer.core.ui.theme.LocalAmoledMode
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.tabular
 import me.esdex.coffer.feature.browser.R
@@ -103,7 +101,6 @@ import me.esdex.coffer.feature.browser.viewer.ViewerMenuButton
 import me.esdex.coffer.feature.browser.viewer.ViewerMenuItem
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
 import me.esdex.coffer.feature.browser.viewer.formatTime
-import dev.chrisbanes.haze.hazeEffect
 
 /**
  * The queue playing, after Arcanum's audio player (pre-release item 5): the cover and its colour, the
@@ -437,23 +434,8 @@ fun MiniPlayer(viewModel: AudioViewModel = hiltViewModel()) {
         }
     }
     val fraction = if (state.durationMs > 0L) (positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) else 0f
-    val shape = RoundedCornerShape(Corners.Large)
     // In pure black the card is the same frosted glass as the bar at the top, the files blurred under it.
-    val haze = LocalHazeState.current.takeIf { LocalAmoledMode.current }
-    Surface(
-        shape = shape,
-        color = if (haze != null) Color.Transparent else MaterialTheme.colorScheme.surfaceContainerHigh,
-        shadowElevation = if (haze != null) 0.dp else 6.dp,
-        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 8.dp)
-            // A shadow is lost on black, so there the card has a faint white glow instead, to stand off the page.
-            .then(
-                if (haze != null) {
-                    Modifier.shadow(GLOW, shape, ambientColor = Color.White, spotColor = Color.White).clip(shape).hazeEffect(state = haze, style = CofferHazeStyle.topBar)
-                } else {
-                    Modifier
-                },
-            ),
-    ) {
+    FloatingCard {
         Box(Modifier.clickable(onClick = viewModel::expand)) {
             Row(
                 Modifier.fillMaxWidth().padding(start = 10.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
@@ -495,4 +477,3 @@ fun MiniPlayer(viewModel: AudioViewModel = hiltViewModel()) {
 private const val SLIDE_PART = 4
 private const val PRESSED_SCALE = 0.92f
 private val MINI_PROGRESS = 2.dp
-private val GLOW = 12.dp

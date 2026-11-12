@@ -43,7 +43,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -86,7 +85,6 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.Badge
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -100,10 +98,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -157,13 +153,18 @@ import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.sync.canTake
 import me.esdex.coffer.core.tdlib.Connection
 import me.esdex.coffer.core.ui.components.AppDialog
+import me.esdex.coffer.core.ui.components.AppMenu
 import me.esdex.coffer.core.ui.components.AppSheet
+import me.esdex.coffer.core.ui.components.AppSnackbarHost
 import me.esdex.coffer.core.ui.components.CofferScaffold
 import me.esdex.coffer.core.ui.components.EmptyStateView
+import me.esdex.coffer.core.ui.components.FloatingCard
 import me.esdex.coffer.core.ui.components.FolderIcon
 import me.esdex.coffer.core.ui.components.GroupedBox
 import me.esdex.coffer.core.ui.components.GroupedRoundIcon
 import me.esdex.coffer.core.ui.components.GroupedRow
+import me.esdex.coffer.core.ui.components.Hero
+import me.esdex.coffer.core.ui.components.HeroAnimation
 import me.esdex.coffer.core.ui.components.LocalHazeState
 import me.esdex.coffer.core.ui.components.PreviewTile
 import me.esdex.coffer.core.ui.components.SettingsGroup
@@ -174,6 +175,7 @@ import me.esdex.coffer.core.ui.components.groupShape
 import me.esdex.coffer.core.ui.theme.CachePrefs
 import me.esdex.coffer.core.ui.theme.CofferHazeStyle
 import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Hues
 import me.esdex.coffer.core.ui.theme.LocalAmoledMode
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.tabular
@@ -355,7 +357,7 @@ fun BrowserScreen(
 
         CompositionLocalProvider(LocalHazeState provides haze) {
             Scaffold(
-                snackbarHost = { SnackbarHost(snackbar) },
+                snackbarHost = { AppSnackbarHost(snackbar) },
                 topBar = {
                     Column(if (amoled) Modifier.hazeEffect(state = haze, style = CofferHazeStyle.topBar) else Modifier) {
                       AnimatedContent(
@@ -437,7 +439,7 @@ fun BrowserScreen(
                                     }
                                     Box {
                                         IconButton(onClick = { menuOpen = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
-                                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                        AppMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                             MenuItem(Icons.AutoMirrored.Outlined.Sort, R.string.browser_sort) { menuOpen = false; sortOpen = true }
                                             MenuItem(Icons.Outlined.SwapVert, R.string.browser_transfers) { menuOpen = false; showTransfers = true }
                                             MenuItem(Icons.Outlined.Lock, R.string.browser_lock) { menuOpen = false; viewModel.lock(onLock) }
@@ -644,7 +646,11 @@ fun BrowserScreen(
             onDismissRequest = { deletingFile = null },
             title = { Text(stringResource(R.string.browser_delete_title)) },
             text = { Text(stringResource(R.string.browser_delete_text, file.name)) },
-            confirmButton = { TextButton(onClick = { deletingFile = null; viewModel.delete(file.fileId) }) { Text(stringResource(R.string.browser_delete)) } },
+            confirmButton = {
+                TextButton(onClick = { deletingFile = null; viewModel.delete(file.fileId) }) {
+                    Text(stringResource(R.string.browser_delete), color = MaterialTheme.colorScheme.error)
+                }
+            },
             dismissButton = { TextButton(onClick = { deletingFile = null }) { Text(stringResource(R.string.browser_cancel)) } },
         )
     }
@@ -693,7 +699,9 @@ fun BrowserScreen(
                 )
             },
             confirmButton = {
-                TextButton(onClick = { deletingFolder = null; viewModel.deleteFolder(folder.folderId) }) { Text(stringResource(R.string.browser_delete)) }
+                TextButton(onClick = { deletingFolder = null; viewModel.deleteFolder(folder.folderId) }) {
+                    Text(stringResource(R.string.browser_delete), color = MaterialTheme.colorScheme.error)
+                }
             },
             dismissButton = { TextButton(onClick = { deletingFolder = null }) { Text(stringResource(R.string.browser_cancel)) } },
         )
@@ -785,12 +793,21 @@ private fun Listing(
     onFileMenu: (FileItem, RowAction) -> Unit,
 ) {
     if (shown.folders.isEmpty() && shown.files.isEmpty()) {
-        EmptyStateView(
-            title = stringResource(empty.title),
-            subtitle = stringResource(empty.hint),
-            icon = empty.icon,
-            modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
-        )
+        if (empty == Empty.VAULT) {
+            // A vault with nothing in it yet is the first thing seen after making one: the same moving
+            // vault as the first-start screens, rather than a still icon.
+            Column(Modifier.fillMaxSize().padding(padding).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                HeroAnimation(Hero.VAULT, size = 160.dp)
+                EmptyStateView(title = stringResource(empty.title), subtitle = stringResource(empty.hint))
+            }
+        } else {
+            EmptyStateView(
+                title = stringResource(empty.title),
+                subtitle = stringResource(empty.hint),
+                icon = empty.icon,
+                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+            )
+        }
         return
     }
     LazyColumn(
@@ -882,7 +899,7 @@ private fun AddSheet(onFiles: () -> Unit, onPhoneFolder: () -> Unit, onFolder: (
                         subtitle = stringResource(R.string.browser_add_folder_sub),
                         // A hue of its own, as New folder has: the theme's secondary container, from the wallpaper's
                         // colours, came out nearly grey and the row looked disabled (seen 2026-11-12).
-                        leading = { GroupedRoundIcon(Icons.Outlined.DriveFolderUpload, Color(0xFF3B82F6).copy(alpha = 0.85f)) },
+                        leading = { GroupedRoundIcon(Icons.Outlined.DriveFolderUpload, Hues.Blue.copy(alpha = 0.85f)) },
                         onClick = onPhoneFolder,
                     )
                 }
@@ -1108,7 +1125,7 @@ private fun FolderRow(
             }
         }
         RowMenu(selecting, idle, onOpen = { menu = true }) {
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            AppMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 MenuItem(Icons.Outlined.Edit, R.string.browser_rename) { menu = false; onAction(RowAction.RENAME) }
                 MenuItem(Icons.AutoMirrored.Outlined.DriveFileMove, R.string.browser_move) { menu = false; onAction(RowAction.MOVE) }
                 MenuItem(Icons.Outlined.SaveAlt, R.string.browser_save_folder) { menu = false; onAction(RowAction.EXPORT) }
@@ -1191,7 +1208,7 @@ private fun FileRow(
             Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         RowMenu(selecting, idle, onOpen = { menu = true }) {
-            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            AppMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 // What the short status on the row means, where there is room for it.
                 file.status.explanation()?.let { explanation ->
                     Text(
@@ -1296,7 +1313,7 @@ private fun CachedBadge(modifier: Modifier = Modifier) {
     }
 }
 
-private val CachedGreen = Color(0xFF22C55E)
+private val CachedGreen = Hues.BrightGreen
 
 /** While picking: how many, and what applies to all of them; Rename only when there is one. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1319,7 +1336,7 @@ private fun SelectionTopBar(
             if (onRename != null) {
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    AppMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         MenuItem(Icons.Outlined.Edit, R.string.browser_rename) { menu = false; onRename() }
                     }
                 }
@@ -1332,9 +1349,10 @@ private fun SelectionTopBar(
 /** The actions on everything picked, each with its name under it. */
 @Composable
 private fun SelectionActions(onMove: () -> Unit, canSave: Boolean, onSave: () -> Unit, onCache: () -> Unit, onDelete: () -> Unit) {
-    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+    // The same card as the mini player it takes the place of, so one gives way to the other.
+    FloatingCard {
         Row(
-            Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 8.dp, vertical = 4.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1403,7 +1421,7 @@ fun TransfersScreen(
             AnimatedVisibility(transfers.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
                 Box {
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    AppMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         MenuItem(Icons.Outlined.Close, R.string.browser_transfers_cancel_all, destructive = true) {
                             menuOpen = false
                             confirmCancelAll = true

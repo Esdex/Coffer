@@ -19,7 +19,6 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import me.esdex.coffer.core.ui.components.AppMenu
 import me.esdex.coffer.core.ui.components.BackButton
 import me.esdex.coffer.core.ui.components.EmptyStateView
 import me.esdex.coffer.core.ui.components.SPINNER_SIZE
@@ -89,7 +89,7 @@ internal fun ViewerMenuButton(tint: Color, menu: @Composable ColumnScope.(close:
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more), tint = tint) }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) { menu { open = false } }
+        AppMenu(expanded = open, onDismissRequest = { open = false }) { menu { open = false } }
     }
 }
 

@@ -12,7 +12,6 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeTopAppBar
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -94,7 +93,7 @@ fun CofferScaffold(
     CompositionLocalProvider(LocalHazeState provides haze) {
         Scaffold(
             modifier = modifier.nestedScroll(behavior.nestedScrollConnection),
-            snackbarHost = { if (snackbar != null) SnackbarHost(snackbar) },
+            snackbarHost = { if (snackbar != null) AppSnackbarHost(snackbar) },
             floatingActionButton = floatingActionButton,
             topBar = {
                 LargeTopAppBar(

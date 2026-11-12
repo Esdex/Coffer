@@ -55,7 +55,6 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.RepeatOne
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -104,6 +103,7 @@ import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import me.esdex.coffer.core.ui.components.AppMenu
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.tabular
@@ -597,7 +597,7 @@ private fun TopBar(
         }
         Box {
             IconButton(onClick = { onMenu(true) }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more), tint = Color.White) }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenu(false) }) {
+            AppMenu(expanded = menuOpen, onDismissRequest = { onMenu(false) }) {
                 videoItems?.speed?.let { speed ->
                     ViewerMenuItem(Icons.Outlined.Speed, stringResource(R.string.viewer_speed), trailing = { Text(speedLabel(speed)) }) {
                         onMenu(false)
@@ -613,7 +613,7 @@ private fun TopBar(
                 FileMenuItems(close = { onMenu(false) }, onSave = onSave, onOpenWith = onOpenWith)
             }
             // Opened from the item above, in the same place, so the choice is made where it was asked for.
-            DropdownMenu(expanded = speedMenuOpen, onDismissRequest = { onSpeedMenu(false) }) {
+            AppMenu(expanded = speedMenuOpen, onDismissRequest = { onSpeedMenu(false) }) {
                 PLAYBACK_SPEEDS.forEach { speed ->
                     ViewerMenuItem(
                         icon = null,

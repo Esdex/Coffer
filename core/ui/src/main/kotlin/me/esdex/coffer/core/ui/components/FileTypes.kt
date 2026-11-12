@@ -27,19 +27,20 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Hues
 
 /** The icon and colour a file gets by its name, the same as in Arcanum. */
 fun fileTypeIcon(name: String): Pair<ImageVector, Color> = when (name.substringAfterLast('.', "").lowercase()) {
-    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif" -> Icons.Outlined.Image to Color(0xFF3B82F6)
-    "mp4", "mkv", "avi", "mov", "m4v", "webm", "3gp" -> Icons.Outlined.Videocam to Color(0xFFEF4444)
-    "mp3", "m4a", "aac", "ogg", "flac", "wav", "opus" -> Icons.Outlined.AudioFile to Color(0xFF8B5CF6)
-    "xls", "xlsx", "csv", "ods" -> Icons.Outlined.TableChart to Color(0xFF16A34A)
-    "zip", "rar", "7z", "tar", "gz", "bz2" -> Icons.Outlined.Archive to Color(0xFF92400E)
-    "pdf" -> Icons.Outlined.PictureAsPdf to Color(0xFFDC2626)
-    else -> Icons.Outlined.Description to Color(0xFF2563EB)
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "heic", "heif" -> Icons.Outlined.Image to Hues.Blue
+    "mp4", "mkv", "avi", "mov", "m4v", "webm", "3gp" -> Icons.Outlined.Videocam to Hues.Red
+    "mp3", "m4a", "aac", "ogg", "flac", "wav", "opus" -> Icons.Outlined.AudioFile to Hues.Violet
+    "xls", "xlsx", "csv", "ods" -> Icons.Outlined.TableChart to Hues.Green
+    "zip", "rar", "7z", "tar", "gz", "bz2" -> Icons.Outlined.Archive to Hues.Brown
+    "pdf" -> Icons.Outlined.PictureAsPdf to Hues.DeepRed
+    else -> Icons.Outlined.Description to Hues.DeepBlue
 }
 
-val FolderIcon: Pair<ImageVector, Color> = Icons.Outlined.Folder to Color(0xFFF59E0B)
+val FolderIcon: Pair<ImageVector, Color> = Icons.Outlined.Folder to Hues.Amber
 
 /** The icon in a rounded square of its own colour, at the head of a list row. */
 @Composable

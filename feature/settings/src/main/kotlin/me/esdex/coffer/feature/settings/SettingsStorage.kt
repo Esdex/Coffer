@@ -76,6 +76,7 @@ import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.ui.components.TypeTile
 import me.esdex.coffer.core.ui.components.fileTypeIcon
 import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Hues
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.tabular
 import me.esdex.coffer.feature.browser.rowKey
@@ -83,13 +84,13 @@ import me.esdex.coffer.feature.browser.stats.FileKind
 
 // ── Storage: the vault, in Saved Messages ───────────────────────────────────
 
-/** The colour and icon of a kind: the same on the ring, in the legend and on the file list. */
+/** The colour and icon of a kind: the same on the ring, in the legend and on the file list's icons (documents blue, as theirs). */
 internal fun FileKind.look(): Pair<ImageVector, Color> = when (this) {
-    FileKind.PICTURES -> Icons.Outlined.Image to Color(0xFF3B82F6)
-    FileKind.VIDEOS -> Icons.Outlined.Videocam to Color(0xFFEF4444)
-    FileKind.MUSIC -> Icons.Outlined.AudioFile to Color(0xFF8B5CF6)
-    FileKind.DOCUMENTS -> Icons.Outlined.Description to Color(0xFF16A34A)
-    FileKind.OTHER -> Icons.Outlined.InsertDriveFile to Color(0xFF9CA3AF)
+    FileKind.PICTURES -> Icons.Outlined.Image to Hues.Blue
+    FileKind.VIDEOS -> Icons.Outlined.Videocam to Hues.Red
+    FileKind.MUSIC -> Icons.Outlined.AudioFile to Hues.Violet
+    FileKind.DOCUMENTS -> Icons.Outlined.Description to Hues.DeepBlue
+    FileKind.OTHER -> Icons.Outlined.InsertDriveFile to Hues.Gray
 }
 
 internal fun FileKind.label(): Int = when (this) {
@@ -175,10 +176,10 @@ private fun <T : Any> LoadedFade(value: T?, content: @Composable ColumnScope.(T)
     }
 }
 
-private val PARTS = Color(0xFF3B82F6)
-private val OPERATIONS = Color(0xFFF59E0B)
-private val SNAPSHOTS = Color(0xFF8B5CF6)
-private val HEADER = Color(0xFF16A34A)
+private val PARTS = Hues.Blue
+private val OPERATIONS = Hues.Amber
+private val SNAPSHOTS = Hues.Violet
+private val HEADER = Hues.Green
 
 private fun GroupBuilder.censusRows(census: Census, size: (Long) -> String, onRecount: () -> Unit) {
     row { shape ->
@@ -264,9 +265,9 @@ internal fun KindPage(viewModel: SettingsViewModel, kind: FileKind, onBack: () -
 
 private val TELEGRAM_FILES = Color(0xFF2AABEE)
 private val TELEGRAM_DATABASE = Color(0xFF0B6FA4)
-private val INDEX = Color(0xFFF59E0B)
-private val TEMPORARY = Color(0xFF9CA3AF)
-private val PREVIEWS = Color(0xFF22C55E)
+private val INDEX = Hues.Amber
+private val TEMPORARY = Hues.Gray
+private val PREVIEWS = Hues.BrightGreen
 
 /**
  * What Coffer takes up on this phone, apart from the vault, which is in Saved Messages (pre-release
