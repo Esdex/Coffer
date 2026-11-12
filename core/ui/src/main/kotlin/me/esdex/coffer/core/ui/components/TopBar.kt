@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -43,9 +44,16 @@ import me.esdex.coffer.core.ui.theme.LocalAmoledMode
  * plain button, since it is not the way out.
  */
 @Composable
-fun BackButton(onClick: () -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
+fun BackButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    // Another glyph where back means something else, as folding the music player away.
+    icon: ImageVector = Icons.AutoMirrored.Filled.ArrowBack,
+    contentDescription: String = stringResource(R.string.ui_back),
+) {
     FilledTonalIconButton(onClick = onClick, modifier = modifier, enabled = enabled) {
-        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.ui_back))
+        Icon(icon, contentDescription = contentDescription)
     }
 }
 

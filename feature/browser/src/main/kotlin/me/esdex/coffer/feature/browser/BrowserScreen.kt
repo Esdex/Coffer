@@ -732,7 +732,12 @@ fun BrowserScreen(
             TextViewerScreen(page = page, onClose = viewModel::closeReading, onSave = onSave, onOpenWith = onOpenWith)
         }
     }
-    AnimatedVisibility(visible = listening.isNotEmpty() && playerExpanded, enter = fadeIn(Motion.screen()), exit = fadeOut(Motion.standard())) {
+    // The player comes up from the card it folds into, and goes back down into it.
+    AnimatedVisibility(
+        visible = listening.isNotEmpty() && playerExpanded,
+        enter = slideInVertically(Motion.screen()) { it } + fadeIn(Motion.screen()),
+        exit = slideOutVertically(Motion.standard()) { it } + fadeOut(Motion.standard()),
+    ) {
         AudioPlayerScreen(
             onSave = {
                 savingFromViewer = it.fileId

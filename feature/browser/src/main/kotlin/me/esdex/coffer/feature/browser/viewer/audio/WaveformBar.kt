@@ -14,8 +14,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -47,13 +49,14 @@ internal fun WaveformBar(
 
     // The position comes every frame while the music plays, so the fill simply follows it. A jump, as a
     // tap on the waveform, glides there once and quickly; restarting a tween on every frame, as before,
-    // only crept towards it for a second (seen 2026-11-12).
+    // only crept towards it for a second (seen 2026-11-12). Under a dragging finger it goes straight there.
+    var dragging by remember { mutableStateOf(false) }
     val fill = remember { Animatable(progress) }
     val target by rememberUpdatedState(progress)
     LaunchedEffect(fill) {
         // Conflated: while a glide runs, only the newest position waits for it.
         snapshotFlow { target }.collect { to ->
-            if (abs(to - fill.value) < JUMP) fill.snapTo(to) else fill.animateTo(to, Motion.standard())
+            if (dragging || abs(to - fill.value) < JUMP) fill.snapTo(to) else fill.animateTo(to, Motion.standard())
         }
     }
     val shownProgress = fill.value
@@ -87,8 +90,15 @@ internal fun WaveformBar(
             }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
-                    onDragEnd = { end() },
-                    onDragCancel = { end() },
+                    onDragStart = { dragging = true },
+                    onDragEnd = {
+                        dragging = false
+                        end()
+                    },
+                    onDragCancel = {
+                        dragging = false
+                        end()
+                    },
                 ) { change, _ -> scrub((change.position.x / size.width).coerceIn(0f, 1f)) }
             }
     }

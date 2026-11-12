@@ -115,6 +115,8 @@
     <string name="viewer_link_title">Open this link outside Coffer?</string>
     <string name="viewer_link_open">Open</string>
     <string name="audio_now_playing">Now playing</string>
+    <string name="audio_now_playing_of">Now playing · %1$d / %2$d</string>
+    <string name="audio_fold">Fold the player away</string>
     <string name="audio_shuffle">Shuffle</string>
     <string name="audio_repeat">Repeat</string>
     <string name="audio_repeat_all">Repeat all</string>
