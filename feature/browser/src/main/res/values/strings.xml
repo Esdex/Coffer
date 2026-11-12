@@ -22,7 +22,7 @@
     <string name="browser_empty_hint">Tap + to add files or a whole folder. They are encrypted on this phone before they go to Telegram.</string>
     <string name="browser_cd_close_search">Close the search</string>
     <string name="browser_cd_more">More</string>
-    <string name="browser_add_files_sub">Pick files on this phone; they are encrypted before they leave it</string>
+    <string name="browser_add_files_sub">Pick files from this phone</string>
     <string name="browser_new_folder_sub">Inside the folder on screen</string>
     <plurals name="browser_catching_up">
         <item quantity="one">Reading Saved Messages: %1$d message</item>
@@ -134,7 +134,7 @@
     <string name="browser_undo_too_late">Too late to undo: the delete has gone out.</string>
     <string name="browser_delete_failed">The delete did not reach Telegram. The items are back.</string>
     <string name="browser_add_folder">Add a folder</string>
-    <string name="browser_add_folder_sub">A folder from your phone, with everything in it</string>
+    <string name="browser_add_folder_sub">With everything in it</string>
     <string name="browser_import_empty">That folder has no files. Its folders were added.</string>
     <string name="browser_status_incomplete">Incomplete: some parts are still on their way</string>
     <string name="browser_status_damaged">Damaged: a part is missing from Saved Messages (deleted outside Coffer, or the upload never finished)</string>
