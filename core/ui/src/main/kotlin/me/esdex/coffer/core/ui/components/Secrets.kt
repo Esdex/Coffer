@@ -27,13 +27,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -46,6 +49,10 @@ import androidx.compose.ui.unit.dp
 import me.esdex.coffer.core.ui.R
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.view.WindowManager
 
 /*
  * What every screen that handles the vault's secrets shares, so creating a vault and changing its
@@ -152,3 +159,23 @@ fun StrengthMeter(score: Int, acceptable: Boolean, label: String, notes: List<St
 
 private const val STRENGTH_STEPS = 5
 
+/**
+ * No screenshots, screen recording or recents thumbnail while this is on screen, whatever the setting
+ * (SPEC §9: the 24 words are always kept off them); afterwards the window goes back to what the setting
+ * says, [keepAfter]. On every screen the recovery key shows on, or is typed into.
+ */
+@Composable
+fun NoScreenshots(keepAfter: Boolean) {
+    val activity = LocalContext.current.activity() ?: return
+    val keep = rememberUpdatedState(keepAfter)
+    DisposableEffect(activity) {
+        activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        onDispose { if (!keep.value) activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+    }
+}
+
+private tailrec fun Context.activity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.activity()
+    else -> null
+}

@@ -52,6 +52,7 @@ import me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException
 import me.esdex.coffer.core.ui.components.AppDialog
 import me.esdex.coffer.core.ui.components.Hero
 import me.esdex.coffer.core.ui.components.HeroAnimation
+import me.esdex.coffer.core.ui.components.NoScreenshots
 import me.esdex.coffer.core.ui.components.PasswordField
 import me.esdex.coffer.core.ui.components.PillButton
 import me.esdex.coffer.core.ui.components.RecoveryWords
@@ -180,6 +181,8 @@ private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean, errorText: Stri
     AnimatedContent(useRecoveryKey, transitionSpec = { stepSlide(forward = targetState) }, label = "unlock way") { recovery ->
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             if (recovery) {
+                // The 24 words typed in show in full: the same care as where they are shown.
+                NoScreenshots(keepAfter = viewModel.blockScreenshots)
                 RecoveryKeyUnlock(viewModel, busy, errorText) { useRecoveryKey = false }
             } else {
                 PasswordUnlock(viewModel, busy, errorText, passwordChangedElsewhere) {
@@ -290,7 +293,11 @@ private fun CreateFlow(viewModel: VaultViewModel, busy: Boolean, errorText: Stri
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             when (s) {
                 CreateStep.Password -> NewPassword(viewModel, busy, errorText)
-                is CreateStep.RecoveryKey -> ShowRecoveryKey(s.words, viewModel::recoveryKeyWrittenDown)
+                is CreateStep.RecoveryKey -> {
+                    // Kept off screenshots and the recents thumbnail, as in Settings (SPEC §9).
+                    NoScreenshots(keepAfter = viewModel.blockScreenshots)
+                    ShowRecoveryKey(s.words, viewModel::recoveryKeyWrittenDown)
+                }
                 is CreateStep.Confirm -> ConfirmWords(s.quiz, viewModel, errorText)
                 CreateStep.DeviceUnlock -> NewVaultDeviceUnlock(viewModel, errorText)
                 CreateStep.Publishing -> {

@@ -55,6 +55,9 @@ class VaultViewModel @Inject constructor(
     /** The vault before this one was deleted, here or on another device: said over the screen that makes a new one. */
     val deleted: StateFlow<VaultManager.Deleted?> = vault.deleted
 
+    /** The screenshot setting, for the window to go back to once the recovery key is off screen. */
+    val blockScreenshots: Boolean get() = store.blockScreenshots
+
     /** Out of Telegram instead of making a vault: to sign in with another account (Esdex, 2026-11-12). */
     fun logOut() {
         viewModelScope.launch { runCatching { telegram.logOut() } }

@@ -1,9 +1,5 @@
 package me.esdex.coffer.feature.settings
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
-import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -21,14 +17,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -38,6 +31,7 @@ import me.esdex.coffer.core.ui.components.CofferScaffold
 import me.esdex.coffer.core.ui.components.FieldError
 import me.esdex.coffer.core.ui.components.OperationLoading
 import me.esdex.coffer.core.ui.components.OperationSuccess
+import me.esdex.coffer.core.ui.components.NoScreenshots
 import me.esdex.coffer.core.ui.components.PasswordField
 import me.esdex.coffer.core.ui.components.RecoveryWords
 import me.esdex.coffer.core.ui.components.StrengthMeter as SharedStrengthMeter
@@ -180,21 +174,4 @@ fun DeleteVaultPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel
         ) { Text(stringResource(R.string.settings_delete_confirm)) }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     }
-}
-
-/** FLAG_SECURE while on screen, whatever the setting; afterwards back to what the setting says. */
-@Composable
-private fun NoScreenshots(keepAfter: Boolean) {
-    val activity = LocalContext.current.activity() ?: return
-    val keep = rememberUpdatedState(keepAfter)
-    DisposableEffect(activity) {
-        activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { if (!keep.value) activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
-    }
-}
-
-private tailrec fun Context.activity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.activity()
-    else -> null
 }
