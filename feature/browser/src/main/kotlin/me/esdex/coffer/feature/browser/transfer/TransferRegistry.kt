@@ -117,6 +117,36 @@ class TransferRegistry @Inject constructor() {
     fun progress(id: String, done: Long, total: Long, phase: Phase) = progressFlow.update { it + (id to Progress(done, total, phase)) }
     fun finished(id: String) = progressFlow.update { it - id }
 
+    /** Why a transfer is waiting before it tries again (SPEC §6). */
+    enum class Wait {
+        /** Telegram's FLOOD_WAIT: as long as it asked. */
+        FLOOD,
+
+        /** Telegram out of reach: tried again later, longer each time. */
+        RETRY,
+    }
+
+    /** A transfer waiting for [reason] until [until], wall clock millis, so the screen can count down. */
+    data class Waiting(val reason: Wait, val until: Long)
+
+    private val waitFlow = MutableStateFlow<Map<String, Waiting>>(emptyMap())
+    val waits: StateFlow<Map<String, Waiting>> = waitFlow.asStateFlow()
+
+    fun waiting(id: String, waiting: Waiting) = waitFlow.update { it + (id to waiting) }
+    fun waited(id: String) = waitFlow.update { it - id }
+
+    /** How far the queue's run is: transfers it has [finished] of the [total] it has taken on. */
+    data class Run(val finished: Int, val total: Int)
+
+    private val runFlow = MutableStateFlow<Run?>(null)
+
+    /** Null between runs. */
+    val run: StateFlow<Run?> = runFlow.asStateFlow()
+
+    fun run(run: Run?) {
+        runFlow.value = run
+    }
+
     enum class Failure { NO_SPACE, SOURCE_CHANGED, SOURCE_GONE, CONTENT_MISMATCH, MISSING_PART, TARGET_FAILED }
 
     private val failureFlow = MutableStateFlow<Map<String, Failure>>(emptyMap())

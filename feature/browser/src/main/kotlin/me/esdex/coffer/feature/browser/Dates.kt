@@ -16,3 +16,12 @@ fun dayOf(millis: Long, nowMillis: Long, zone: ZoneId = ZoneId.systemDefault()):
         else -> Day.OLDER
     }
 }
+
+/** Time left as a clock, "0:42" or "1:05:00", rounded up so it never says 0:00 while there is still a wait. */
+fun countdown(millis: Long): String {
+    val seconds = (millis.coerceAtLeast(0) + 999) / 1_000
+    val h = seconds / 3_600
+    val m = seconds % 3_600 / 60
+    val s = seconds % 60
+    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}

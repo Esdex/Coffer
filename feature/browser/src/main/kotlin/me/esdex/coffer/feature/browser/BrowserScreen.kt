@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,6 +62,8 @@ import androidx.compose.material.icons.automirrored.outlined.DriveFileMove
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CreateNewFolder
@@ -75,6 +78,7 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoreVert
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SearchOff
@@ -124,6 +128,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -133,6 +138,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -145,12 +151,12 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import java.util.Date
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withTimeoutOrNull
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.index.FileStatus
-import me.esdex.coffer.core.storage.TransferLimiter
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.sync.canTake
 import me.esdex.coffer.core.tdlib.Connection
@@ -175,6 +181,8 @@ import me.esdex.coffer.core.ui.theme.LocalAmoledMode
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.CacheOffer
+import me.esdex.coffer.feature.browser.transfer.QueueSummary
+import me.esdex.coffer.feature.browser.transfer.TransferKind
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.UNDO_MILLIS
 import me.esdex.coffer.feature.browser.transfer.VaultContent
@@ -213,6 +221,7 @@ fun BrowserScreen(
     val listing by viewModel.listing.collectAsStateWithLifecycle()
     val tree by viewModel.tree.collectAsStateWithLifecycle()
     val transfers by viewModel.transfers.collectAsStateWithLifecycle()
+    val run by viewModel.run.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     val sorting by viewModel.sorting.collectAsStateWithLifecycle()
     val catchingUp by viewModel.catchingUp.collectAsStateWithLifecycle()
@@ -323,7 +332,17 @@ fun BrowserScreen(
         label = "transfers",
     ) { transfersShown ->
         if (transfersShown) {
-            TransfersScreen(transfers, onBack = { showTransfers = false }, onCancel = viewModel::cancel, onRetry = viewModel::retry, snackbar = snackbar)
+            TransfersScreen(
+                transfers,
+                run = run,
+                offline = connection == Connection.WAITING_FOR_NETWORK,
+                previews = viewModel.previews,
+                onBack = { showTransfers = false },
+                onCancel = viewModel::cancel,
+                onRetry = viewModel::retry,
+                onCancelAll = viewModel::cancelAll,
+                snackbar = snackbar,
+            )
             return@AnimatedContent
         }
 
@@ -1368,20 +1387,49 @@ private fun FileStatus.explanation() = when (this) {
     FileStatus.UPLOADING, FileStatus.READY -> null
 }
 
-/** Transfers in progress or waiting, one card each (SPEC §9). */
+/** Transfers in progress or waiting, one card each (SPEC §9); over them, how far the whole run is. */
 @Composable
 fun TransfersScreen(
     transfers: List<TransferItem>,
+    run: TransferRegistry.Run?,
+    offline: Boolean,
+    previews: Previews,
     onBack: () -> Unit,
     onCancel: (TransferItem) -> Unit,
     onRetry: (TransferItem) -> Unit,
+    onCancelAll: () -> Unit,
     modifier: Modifier = Modifier,
     snackbar: SnackbarHostState? = null,
 ) {
     BackHandler(onBack = onBack)
-    CofferScaffold(title = stringResource(R.string.browser_transfers), onBack = onBack, modifier = modifier, snackbar = snackbar) { padding ->
+    var menuOpen by remember { mutableStateOf(false) }
+    var confirmCancelAll by remember { mutableStateOf(false) }
+    CofferScaffold(
+        title = stringResource(R.string.browser_transfers),
+        onBack = onBack,
+        modifier = modifier,
+        snackbar = snackbar,
+        actions = {
+            AnimatedVisibility(transfers.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
+                Box {
+                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        MenuItem(Icons.Outlined.Close, R.string.browser_transfers_cancel_all, destructive = true) {
+                            menuOpen = false
+                            confirmCancelAll = true
+                        }
+                    }
+                }
+            }
+        },
+    ) { padding ->
         if (transfers.isEmpty()) {
-            EmptyStateView(stringResource(R.string.browser_no_transfers), Modifier.fillMaxSize().padding(padding).padding(32.dp))
+            EmptyStateView(
+                title = stringResource(R.string.browser_no_transfers),
+                subtitle = stringResource(R.string.browser_no_transfers_hint),
+                icon = Icons.Outlined.SwapVert,
+                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+            )
             return@CofferScaffold
         }
         LazyColumn(
@@ -1389,38 +1437,131 @@ fun TransfersScreen(
             contentPadding = PaddingValues(top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 24.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            itemsIndexedShaped(transfers, key = { it.id }) { item, shape ->
-                GroupedBox(shape) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        TypeTile(fileTypeIcon(item.name.orEmpty()))
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            stringResource(
-                                when {
-                                    item.isUpload -> R.string.browser_transfer_upload
-                                    item.caching -> R.string.browser_transfer_caching
-                                    else -> R.string.browser_transfer_download
-                                },
-                                item.name ?: stringResource(R.string.browser_transfer_unnamed),
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    TransferStatus(item)
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (item.failure != null) OutlinedButton(onClick = { onRetry(item) }) { Text(stringResource(R.string.browser_retry)) }
-                        TextButton(onClick = { onCancel(item) }) { Text(stringResource(R.string.browser_cancel)) }
-                    }
-                }
+            // A single transfer says it all on its own card.
+            if (run != null && run.total > 1) {
+                item(key = "summary") { QueueHeader(run, transfers, Modifier.animateItem().padding(bottom = 12.dp)) }
+            }
+            // Keyed by transfer: one that ends takes its own state with it, not its neighbour's.
+            itemsIndexed(transfers, key = { _, item -> item.id }) { index, item ->
+                TransferCard(item, groupShape(index, transfers.size), offline, previews, onCancel, onRetry, Modifier.animateItem())
             }
         }
     }
+    if (confirmCancelAll) {
+        AppDialog(
+            onDismissRequest = { confirmCancelAll = false },
+            title = { Text(stringResource(R.string.browser_transfers_cancel_all_title)) },
+            text = { Text(stringResource(R.string.browser_transfers_cancel_all_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmCancelAll = false
+                    onCancelAll()
+                }) { Text(stringResource(R.string.browser_transfers_cancel_all), color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirmCancelAll = false }) { Text(stringResource(R.string.browser_transfers_keep)) } },
+        )
+    }
 }
+
+/** The run as the notification tells it: how many of how many are done, and how far it all is. */
+@Composable
+private fun QueueHeader(run: TransferRegistry.Run, transfers: List<TransferItem>, modifier: Modifier = Modifier) {
+    val summary = QueueSummary.of(transfers.map { it.kind }, run.finished, run.total, transfers.filter { it.progress != null }.map { it.kind to it.progress })
+    Box(modifier) {
+        GroupedBox(RoundedCornerShape(Corners.Panel)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    pluralStringResource(R.plurals.transfers_done_of, run.total, run.finished, run.total),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                summary.percent?.let { Text(stringResource(R.string.browser_transfer_percent, it), style = MaterialTheme.typography.labelLarge.tabular()) }
+            }
+            Spacer(Modifier.height(10.dp))
+            TransferBar(summary.percent?.let { it / 100f })
+        }
+    }
+}
+
+/** One transfer: the file as the list shows it, what is happening to it, and what can be done about it. */
+@Composable
+private fun TransferCard(
+    item: TransferItem,
+    shape: Shape,
+    offline: Boolean,
+    previews: Previews,
+    onCancel: (TransferItem) -> Unit,
+    onRetry: (TransferItem) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TransferTile(item, previews)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                item.name ?: stringResource(R.string.browser_transfer_unnamed),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Spacer(Modifier.height(6.dp))
+            TransferStatus(item, offline)
+        }
+        if (item.failure != null) IconButton(onClick = { onRetry(item) }) { Icon(Icons.Outlined.Refresh, stringResource(R.string.browser_retry)) }
+        IconButton(onClick = { onCancel(item) }) { Icon(Icons.Outlined.Close, stringResource(R.string.browser_cancel)) }
+    }
+}
+
+/** The file's tile or preview, as in the list, with which way it goes on the corner. */
+@Composable
+private fun TransferTile(item: TransferItem, previews: Previews) {
+    val icon = fileTypeIcon(item.name.orEmpty())
+    val file = item.file
+    val previewsOn by previews.enabled.collectAsStateWithLifecycle()
+    val preview by produceState(file?.let { previews.cached(it.fileId) }, file?.fileId, file?.status, previewsOn) {
+        value = if (previewsOn && file != null) previews.cached(file.fileId) ?: previews.preview(file) else null
+    }
+    Box {
+        val shown = preview
+        if (shown != null) PreviewTile(shown, icon) else TypeTile(icon)
+        KindBadge(item.kind, Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp))
+    }
+}
+
+/** Up, down, or down into the cache (green, as the cached check in the list), in a ring of the card. */
+@Composable
+private fun KindBadge(kind: TransferKind, modifier: Modifier = Modifier) {
+    val primary = MaterialTheme.colorScheme.primary
+    val (icon, label, color) = when (kind) {
+        TransferKind.UPLOAD -> Triple(Icons.Outlined.ArrowUpward, R.string.browser_cd_upload, primary)
+        TransferKind.DOWNLOAD -> Triple(Icons.Outlined.ArrowDownward, R.string.browser_cd_download, primary)
+        TransferKind.CACHE -> Triple(Icons.Outlined.ArrowDownward, R.string.browser_cd_caching, CachedGreen)
+    }
+    Box(
+        modifier.size(17.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(1.5.dp).clip(CircleShape).background(color),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, stringResource(label), tint = if (color == primary) MaterialTheme.colorScheme.onPrimary else Color.White, modifier = Modifier.size(11.dp))
+    }
+}
+
+/** A bar that glides to each new value instead of jumping from one report to the next; with nothing to measure, it runs. */
+@Composable
+private fun TransferBar(fraction: Float?) {
+    if (fraction == null) {
+        LinearProgressIndicator(Modifier.fillMaxWidth())
+        return
+    }
+    val shown by animateFloatAsState(fraction, Motion.standard(), label = "transfer progress")
+    LinearProgressIndicator(progress = { shown }, modifier = Modifier.fillMaxWidth())
+}
+
+/** Digits of one width, so a count going up does not shake what stands next to it. */
+private fun TextStyle.tabular() = copy(fontFeatureSettings = "tnum")
 
 /**
  * What caching the picked files would take, before it starts: their size, and a word when the cache is
@@ -1474,61 +1615,72 @@ private fun Connection.label() = when (this) {
     Connection.READY -> null
 }
 
-/** What a transfer is doing: an error, a wait, or a bar with how much of how much has gone. */
+/**
+ * What a transfer is doing: an error, a wait and what for, or a bar with how much of how much has gone.
+ * Without network nothing goes anywhere, so that is what every transfer says then.
+ */
 @Composable
-private fun TransferStatus(item: TransferItem) {
+private fun TransferStatus(item: TransferItem, offline: Boolean) {
     val context = LocalContext.current
     val progress = item.progress
     val small = MaterialTheme.typography.bodySmall
-    when {
-        item.failure != null -> Text(stringResource(item.failure.label()), color = MaterialTheme.colorScheme.error, style = small)
-        item.preparing -> {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
-            Spacer(Modifier.height(6.dp))
-            Text(stringResource(R.string.browser_transfer_preparing), style = small)
-        }
-        progress == null -> Text(stringResource(R.string.browser_transfer_waiting), style = small)
-        progress.phase == TransferRegistry.Phase.QUEUED ->
-            Text(pluralStringResource(R.plurals.browser_transfer_queued, TransferLimiter.MAX_TRANSFERS, TransferLimiter.MAX_TRANSFERS), style = small)
+    if (item.failure != null) {
+        Text(stringResource(item.failure.label()), color = MaterialTheme.colorScheme.error, style = small)
+        return
+    }
+    val started = progress != null && progress.phase != TransferRegistry.Phase.QUEUED
+    // A part being read or encrypted moves nothing on the wire: a running bar, not a stuck one.
+    val fraction = if (progress != null && progress.phase == TransferRegistry.Phase.MOVING && progress.total > 0) progress.done.toFloat() / progress.total else null
+    if (item.preparing || started) {
+        TransferBar(fraction)
+        Spacer(Modifier.height(6.dp))
+    }
+    val wait = item.wait
+    val line = when {
+        item.preparing -> stringResource(R.string.browser_transfer_preparing)
+        offline -> stringResource(R.string.browser_transfer_wait_network)
+        wait != null -> waitLabel(wait)
+        progress == null -> stringResource(R.string.browser_transfer_waiting)
+        progress.phase == TransferRegistry.Phase.QUEUED -> stringResource(R.string.browser_transfer_queued)
         else -> {
-            val moving = progress.phase == TransferRegistry.Phase.MOVING
-            // A part being read or encrypted moves nothing on the wire: a running bar, not a stuck one.
-            if (moving && progress.total > 0) {
-                LinearProgressIndicator(progress = { progress.done.toFloat() / progress.total }, modifier = Modifier.fillMaxWidth())
-            } else {
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            }
-            Spacer(Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val amount = stringResource(
-                    R.string.transfers_amount,
-                    Formatter.formatShortFileSize(context, progress.done),
-                    Formatter.formatShortFileSize(context, progress.total),
-                )
-                Text(
-                    if (moving) amount else stringResource(R.string.transfers_preparing) + " · " + amount,
-                    style = small,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(stringResource(R.string.browser_transfer_percent, progress.percent()), style = MaterialTheme.typography.labelLarge)
-            }
+            val amount = stringResource(
+                R.string.transfers_amount,
+                Formatter.formatShortFileSize(context, progress.done),
+                Formatter.formatShortFileSize(context, progress.total),
+            )
+            if (fraction != null) amount else stringResource(R.string.transfers_preparing) + " · " + amount
+        }
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            line,
+            style = small.tabular(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (fraction != null && progress != null) {
+            Text(stringResource(R.string.browser_transfer_percent, progress.percent()), style = MaterialTheme.typography.labelLarge.tabular())
         }
     }
 }
 
-/**
- * Items of one group of cards: each gets the shape its place in the group calls for. Keyed, so the state
- * of one that leaves the list goes with it instead of passing to the item that takes its place.
- */
-private fun <T> androidx.compose.foundation.lazy.LazyListScope.itemsIndexedShaped(
-    list: List<T>,
-    key: (T) -> Any,
-    content: @Composable (T, androidx.compose.ui.graphics.Shape) -> Unit,
-) {
-    items(list.size, key = { index -> key(list[index]) }) { index -> content(list[index], groupShape(index, list.size)) }
+/** What a transfer waits for, counting down to when it tries again. */
+@Composable
+private fun waitLabel(wait: TransferRegistry.Waiting): String {
+    val left by produceState(wait.until - System.currentTimeMillis(), wait) {
+        while (value > 0) {
+            // On the second, so the count steps evenly.
+            delay(value % 1_000 + 1)
+            value = wait.until - System.currentTimeMillis()
+        }
+    }
+    val clock = countdown(left)
+    return when (wait.reason) {
+        TransferRegistry.Wait.FLOOD -> stringResource(R.string.browser_transfer_wait_flood, clock)
+        TransferRegistry.Wait.RETRY -> stringResource(R.string.browser_transfer_wait_retry, clock)
+    }
 }
 
 private fun TransferRegistry.Failure.label() = when (this) {

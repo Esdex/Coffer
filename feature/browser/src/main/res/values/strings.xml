@@ -137,20 +137,25 @@
     <string name="browser_status_incomplete">Incomplete: some parts are still on their way</string>
     <string name="browser_status_damaged">Damaged: a part is missing from Saved Messages (deleted outside Coffer, or the upload never finished)</string>
 
-    <string name="browser_no_transfers">No transfers.</string>
-    <string name="browser_transfer_upload">Upload: %1$s</string>
-    <string name="browser_transfer_download">Download: %1$s</string>
-    <string name="browser_transfer_caching">Caching: %1$s</string>
-    <string name="browser_transfer_unnamed">a file (unlock to see its name)</string>
-    <string name="browser_transfer_preparing">Preparing: reading the file and encrypting its details</string>
+    <string name="browser_no_transfers">No transfers</string>
+    <string name="browser_no_transfers_hint">Uploads, downloads and caching show up here</string>
+    <string name="browser_cd_upload">Upload</string>
+    <string name="browser_cd_download">Download</string>
+    <string name="browser_cd_caching">Caching</string>
+    <string name="browser_transfer_unnamed">A file (unlock to see its name)</string>
+    <string name="browser_transfer_preparing">Preparing</string>
     <string name="browser_transfer_waiting">Waiting</string>
+    <string name="browser_transfer_queued">In line</string>
+    <string name="browser_transfer_wait_network">Waiting for network</string>
+    <string name="browser_transfer_wait_flood">Telegram asked to wait %1$s</string>
+    <string name="browser_transfer_wait_retry">Telegram is out of reach, retrying in %1$s</string>
+    <string name="browser_transfers_cancel_all">Cancel all</string>
+    <string name="browser_transfers_cancel_all_title">Cancel all transfers?</string>
+    <string name="browser_transfers_cancel_all_text">Unfinished uploads are dropped, downloads and caching stop. Files already in your vault are not touched.</string>
+    <string name="browser_transfers_keep">Keep going</string>
     <string name="browser_connection_waiting">Waiting for network…</string>
     <string name="browser_connection_connecting">Connecting…</string>
     <string name="browser_connection_updating">Updating…</string>
-    <plurals name="browser_transfer_queued">
-        <item quantity="one">Waiting for a free slot: %1$d transfer runs at a time</item>
-        <item quantity="other">Waiting for a free slot: %1$d transfers run at a time</item>
-    </plurals>
     <string name="browser_transfer_percent">%1$d%%</string>
     <string name="browser_failure_no_space">Not enough free space on this phone.</string>
     <string name="browser_failure_source_changed">The file changed while it was being uploaded. Nothing was kept; add it again.</string>

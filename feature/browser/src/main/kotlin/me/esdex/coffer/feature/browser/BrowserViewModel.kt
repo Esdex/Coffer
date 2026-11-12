@@ -38,6 +38,7 @@ import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.CacheOffer
 import me.esdex.coffer.feature.browser.transfer.FileCache
 import me.esdex.coffer.feature.browser.transfer.PrefetchQueue
+import me.esdex.coffer.feature.browser.transfer.TransferKind
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
 import me.esdex.coffer.feature.browser.transfer.isCached
 import me.esdex.coffer.feature.browser.transfer.VaultContent
@@ -97,7 +98,31 @@ data class TransferItem(
     val preparing: Boolean,
     /** Brought onto the phone for the cache, not decrypted anywhere. */
     val caching: Boolean = false,
-)
+    /** The file in the vault, for its preview; null for an upload still being prepared, or while locked. */
+    val file: FileItem? = null,
+    /** Waiting out FLOOD_WAIT or an outage before it tries again. */
+    val wait: TransferRegistry.Waiting? = null,
+) {
+    val kind: TransferKind
+        get() = when {
+            isUpload -> TransferKind.UPLOAD
+            caching -> TransferKind.CACHE
+            else -> TransferKind.DOWNLOAD
+        }
+
+    /** Something is moving or being prepared for it right now. */
+    val running: Boolean
+        get() = preparing || progress?.phase == TransferRegistry.Phase.MOVING || progress?.phase == TransferRegistry.Phase.PREPARING
+}
+
+/** What needs a look first, then what is moving, then what waits its turn; in the queue's order within each. */
+internal fun List<TransferItem>.inQueueOrder(): List<TransferItem> = sortedBy {
+    when {
+        it.failure != null -> 0
+        it.running -> 1
+        else -> 2
+    }
+}
 
 @HiltViewModel
 class BrowserViewModel @Inject constructor(
@@ -331,19 +356,27 @@ class BrowserViewModel @Inject constructor(
         contents,
         registry.progress,
         registry.failures,
-    ) { queued, contents, progress, failures ->
-        val names = contents?.files?.mapValues { it.value.name }.orEmpty()
-        queued.uploads.map {
-            val name = it.fileId?.let(names::get) ?: content.keys.value?.local?.openUpload(it.uploadId, it.sealedRequest)?.name
-            TransferItem(it.uploadId, true, name, progress[it.uploadId], failures[it.uploadId], it.fileId == null)
+        registry.waits,
+    ) { queued, contents, progress, failures, waits ->
+        val files = contents?.files.orEmpty()
+        val all = queued.uploads.map {
+            val file = it.fileId?.let(files::get)
+            val name = file?.name ?: content.keys.value?.local?.openUpload(it.uploadId, it.sealedRequest)?.name
+            TransferItem(it.uploadId, true, name, progress[it.uploadId], failures[it.uploadId], it.fileId == null, file = file, wait = waits[it.uploadId])
         } + queued.downloads.map {
-            TransferItem(it.downloadId, false, names[it.fileId], progress[it.downloadId], failures[it.downloadId], false)
+            val file = files[it.fileId]
+            TransferItem(it.downloadId, false, file?.name, progress[it.downloadId], failures[it.downloadId], false, file = file, wait = waits[it.downloadId])
         } + queued.caching.map {
-            TransferItem(it.id, false, names[it.fileId], progress[it.id], failures[it.id], false, caching = true)
+            val file = files[it.fileId]
+            TransferItem(it.id, false, file?.name, progress[it.id], failures[it.id], false, caching = true, file = file, wait = waits[it.id])
         }
+        all.inQueueOrder()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val readyToOpen = registry.readyToOpen
+
+    /** How far the queue's run is, for the summary over the transfers. */
+    val run: StateFlow<TransferRegistry.Run?> = registry.run
 
     fun search(query: String) {
         queryFlow.value = query
@@ -455,12 +488,26 @@ class BrowserViewModel @Inject constructor(
     }
 
     // Cancelling an upload deletes what it sent, so it talks to Telegram too.
-    fun cancel(item: TransferItem) = act {
-        when {
-            item.isUpload -> content.cancelUpload(item.id)
-            item.caching -> content.cancelPrefetch(item.id)
-            else -> content.cancelDownload(item.id)
+    fun cancel(item: TransferItem) = act { cancelOne(item) }
+
+    /** Every transfer. Those waiting go first, so none of them starts in a place a cancelled one frees. */
+    fun cancelAll() = act {
+        // One that cannot reach Telegram does not keep the rest running; the notice comes once, after.
+        var failed: StorageException? = null
+        for (item in transfers.value.sortedBy { it.running }) {
+            try {
+                cancelOne(item)
+            } catch (e: StorageException) {
+                failed = e
+            }
         }
+        failed?.let { throw it }
+    }
+
+    private suspend fun cancelOne(item: TransferItem) = when {
+        item.isUpload -> content.cancelUpload(item.id)
+        item.caching -> content.cancelPrefetch(item.id)
+        else -> content.cancelDownload(item.id)
     }
 
     fun retry(item: TransferItem) = content.retry(item.id)

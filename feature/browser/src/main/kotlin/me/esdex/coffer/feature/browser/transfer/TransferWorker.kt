@@ -126,6 +126,7 @@ class TransferWorker @AssistedInject constructor(
                         done
                     }
                     runningNow = active.map { (id, entry) -> id to entry.first }
+                    registry.run(TransferRegistry.Run(finished.get(), kinds.size))
                     if (active.isEmpty()) {
                         // Left now: only what cannot run yet. Over unless something came in since it looked.
                         paused = items.any { !it.ready || it.id in waiting }
@@ -141,6 +142,7 @@ class TransferWorker @AssistedInject constructor(
             registry.queue.stopped()
             throw e
         } finally {
+            registry.run(null)
             running.unlock()
         }
         if (paused) showPaused()
@@ -180,11 +182,21 @@ class TransferWorker @AssistedInject constructor(
                     }
                 }
             } catch (e: FloodWaitException) {
-                delay(e.seconds * 1000L)
+                waitOut(item.id, TransferRegistry.Wait.FLOOD, e.seconds * 1000L)
             } catch (_: StorageException) {
-                delay(backoff)
+                waitOut(item.id, TransferRegistry.Wait.RETRY, backoff)
                 backoff = (backoff * 2).coerceAtMost(LAST_RETRY_MS)
             }
+        }
+    }
+
+    /** Waits, and says on the Transfers screen what for and how long. */
+    private suspend fun waitOut(id: String, reason: TransferRegistry.Wait, millis: Long) {
+        registry.waiting(id, TransferRegistry.Waiting(reason, System.currentTimeMillis() + millis))
+        try {
+            delay(millis)
+        } finally {
+            registry.waited(id)
         }
     }
 
