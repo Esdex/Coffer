@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
@@ -52,11 +53,14 @@ import me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException
 import me.esdex.coffer.core.ui.components.AppDialog
 import me.esdex.coffer.core.ui.components.Hero
 import me.esdex.coffer.core.ui.components.HeroAnimation
+import me.esdex.coffer.core.ui.components.LocalLockFlight
 import me.esdex.coffer.core.ui.components.NoScreenshots
+import me.esdex.coffer.core.ui.components.Padlock
 import me.esdex.coffer.core.ui.components.PasswordField
 import me.esdex.coffer.core.ui.components.PillButton
 import me.esdex.coffer.core.ui.components.RecoveryWords
 import me.esdex.coffer.core.ui.components.StrengthMeter as SharedStrengthMeter
+import me.esdex.coffer.core.ui.components.lockFlightTarget
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.tabular
@@ -82,15 +86,17 @@ fun VaultGate(modifier: Modifier = Modifier, viewModel: VaultViewModel = hiltVie
     val state by viewModel.state.collectAsStateWithLifecycle()
     val offer by viewModel.offerDeviceUnlock.collectAsStateWithLifecycle()
     val open = state is VaultManager.State.Unlocked && !offer
-    // Opening, the files come up with a slight zoom, as a viewer does. Locking, they go at once: nothing
-    // of the vault may linger on screen while it fades.
+    val flight = LocalLockFlight.current
+    // Opening, the files come up with a slight zoom, as a viewer does. Locking goes at once, as nothing
+    // of the vault may linger on screen; only when the user locked it themselves, the padlock flying in
+    // from the Lock they tapped, the files fade out quickly under it.
     AnimatedContent(
         open,
         transitionSpec = {
-            if (targetState) {
-                (fadeIn(Motion.screen()) + scaleIn(Motion.screen(), initialScale = OPEN_SCALE)) togetherWith fadeOut(Motion.quick())
-            } else {
-                EnterTransition.None togetherWith ExitTransition.None
+            when {
+                targetState -> (fadeIn(Motion.screen()) + scaleIn(Motion.screen(), initialScale = OPEN_SCALE)) togetherWith fadeOut(Motion.quick())
+                flight.flying -> fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick())
+                else -> EnterTransition.None togetherWith ExitTransition.None
             }
         },
         label = "vault",
@@ -209,7 +215,11 @@ private fun PasswordUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: 
     LaunchedEffect(Unit) { if (viewModel.deviceUnlockEnabled) promptDevice() }
 
     var password by remember { mutableStateOf("") }
-    StepHero(Hero.VAULT)
+    // A padlock, shut: where the one that flies in from Lock lands (see LockFlight).
+    val flight = LocalLockFlight.current
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Padlock(closed = 1f, modifier = Modifier.size(LOCK_HERO).lockFlightTarget(flight))
+    }
     StepTitle(stringResource(R.string.vault_unlock_title))
     StepBody(stringResource(R.string.vault_unlock_explanation))
     if (passwordChangedElsewhere) {
@@ -448,3 +458,6 @@ private fun vaultErrorText(error: VaultError): String = when (error) {
 
 /** The files coming up as the vault opens: from a little smaller, as a viewer opens. */
 private const val OPEN_SCALE = 0.96f
+
+/** The padlock over the unlock screen: the size the other steps' animations have. */
+private val LOCK_HERO = 140.dp

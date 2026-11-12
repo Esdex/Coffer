@@ -70,7 +70,6 @@ import androidx.compose.material.icons.outlined.DownloadForOffline
 import androidx.compose.material.icons.outlined.DriveFolderUpload
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileOpen
-import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
@@ -79,7 +78,6 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SwapVert
@@ -120,11 +118,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
@@ -164,14 +164,15 @@ import me.esdex.coffer.core.ui.components.GroupedBox
 import me.esdex.coffer.core.ui.components.GroupedRoundIcon
 import me.esdex.coffer.core.ui.components.GroupedRow
 import me.esdex.coffer.core.ui.components.Hero
-import me.esdex.coffer.core.ui.components.HeroAnimation
 import me.esdex.coffer.core.ui.components.LocalHazeState
+import me.esdex.coffer.core.ui.components.LocalLockFlight
 import me.esdex.coffer.core.ui.components.PreviewTile
 import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.ui.components.TopBarSearchField
 import me.esdex.coffer.core.ui.components.TypeTile
 import me.esdex.coffer.core.ui.components.fileTypeIcon
 import me.esdex.coffer.core.ui.components.groupShape
+import me.esdex.coffer.core.ui.components.screenRect
 import me.esdex.coffer.core.ui.theme.CachePrefs
 import me.esdex.coffer.core.ui.theme.CofferHazeStyle
 import me.esdex.coffer.core.ui.theme.Corners
@@ -234,6 +235,8 @@ fun BrowserScreen(
     var showTransfers by rememberSaveable { mutableStateOf(false) }
     var searching by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    var lockIconRect by remember { mutableStateOf<Rect?>(null) }
+    val lockFlight = LocalLockFlight.current
     var sortOpen by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var creatingFolder by remember { mutableStateOf(false) }
@@ -442,7 +445,12 @@ fun BrowserScreen(
                                         AppMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                             MenuItem(Icons.AutoMirrored.Outlined.Sort, R.string.browser_sort) { menuOpen = false; sortOpen = true }
                                             MenuItem(Icons.Outlined.SwapVert, R.string.browser_transfers) { menuOpen = false; showTransfers = true }
-                                            MenuItem(Icons.Outlined.Lock, R.string.browser_lock) { menuOpen = false; viewModel.lock(onLock) }
+                                            // The padlock flies from this item's icon to the unlock screen.
+                                            MenuItem(Icons.Outlined.Lock, R.string.browser_lock, onIconPlaced = { lockIconRect = it }) {
+                                                menuOpen = false
+                                                lockIconRect?.let(lockFlight::launch)
+                                                viewModel.lock(onLock)
+                                            }
                                             MenuItem(Icons.Outlined.Settings, R.string.browser_settings) { menuOpen = false; onSettings() }
                                         }
                                     }
@@ -772,10 +780,10 @@ private const val PDF = "application/pdf"
 private enum class RowAction { OPEN, EXPORT, CACHE, RENAME, MOVE, DELETE }
 
 /** Each kind of empty list says what it is and what to do about it. */
-private enum class Empty(val title: Int, val hint: Int, val icon: ImageVector) {
-    VAULT(R.string.browser_empty, R.string.browser_empty_hint, Icons.Outlined.UploadFile),
-    FOLDER(R.string.browser_folder_empty, R.string.browser_folder_empty_hint, Icons.Outlined.FolderOpen),
-    SEARCH(R.string.browser_no_match, R.string.browser_no_match_hint, Icons.Outlined.SearchOff),
+private enum class Empty(val title: Int, val hint: Int) {
+    VAULT(R.string.browser_empty, R.string.browser_empty_hint),
+    FOLDER(R.string.browser_folder_empty, R.string.browser_folder_empty_hint),
+    SEARCH(R.string.browser_no_match, R.string.browser_no_match_hint),
 }
 
 @Composable
@@ -793,21 +801,13 @@ private fun Listing(
     onFileMenu: (FileItem, RowAction) -> Unit,
 ) {
     if (shown.folders.isEmpty() && shown.files.isEmpty()) {
-        if (empty == Empty.VAULT) {
-            // A vault with nothing in it yet is the first thing seen after making one: the same moving
-            // vault as the first-start screens, rather than a still icon.
-            Column(Modifier.fillMaxSize().padding(padding).padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                HeroAnimation(Hero.VAULT, size = 160.dp)
-                EmptyStateView(title = stringResource(empty.title), subtitle = stringResource(empty.hint))
-            }
-        } else {
-            EmptyStateView(
-                title = stringResource(empty.title),
-                subtitle = stringResource(empty.hint),
-                icon = empty.icon,
-                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
-            )
-        }
+        // The ghost wherever the list is empty: a new vault, an empty folder, a search with no match.
+        EmptyStateView(
+            title = stringResource(empty.title),
+            subtitle = stringResource(empty.hint),
+            hero = Hero.GHOST,
+            modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+        )
         return
     }
     LazyColumn(
@@ -919,11 +919,25 @@ private fun AddSheet(onFiles: () -> Unit, onPhoneFolder: () -> Unit, onFolder: (
 
 /** A menu entry with its icon in front, as every menu in Arcanum has. A destructive one is red. */
 @Composable
-private fun MenuItem(icon: ImageVector, label: Int, enabled: Boolean = true, destructive: Boolean = false, onClick: () -> Unit) {
+private fun MenuItem(
+    icon: ImageVector,
+    label: Int,
+    enabled: Boolean = true,
+    destructive: Boolean = false,
+    onIconPlaced: ((Rect) -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     val red = destructive && enabled
     DropdownMenuItem(
         text = { Text(stringResource(label), color = if (red) MaterialTheme.colorScheme.error else Color.Unspecified) },
-        leadingIcon = { Icon(icon, null, tint = if (red) MaterialTheme.colorScheme.error else LocalContentColor.current) },
+        leadingIcon = {
+            Icon(
+                icon,
+                null,
+                tint = if (red) MaterialTheme.colorScheme.error else LocalContentColor.current,
+                modifier = if (onIconPlaced != null) Modifier.onGloballyPositioned { onIconPlaced(it.screenRect()) } else Modifier,
+            )
+        },
         enabled = enabled,
         onClick = onClick,
     )
@@ -1435,7 +1449,7 @@ fun TransfersScreen(
             EmptyStateView(
                 title = stringResource(R.string.browser_no_transfers),
                 subtitle = stringResource(R.string.browser_no_transfers_hint),
-                icon = Icons.Outlined.SwapVert,
+                hero = Hero.GHOST,
                 modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
             )
             return@CofferScaffold

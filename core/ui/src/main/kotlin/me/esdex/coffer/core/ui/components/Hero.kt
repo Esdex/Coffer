@@ -34,13 +34,16 @@ enum class Hero(@RawRes val raw: Int) {
     VAULT(R.raw.vault),
     SHIELD(R.raw.shield),
     LOADING(R.raw.loading),
+
+    /** Wanders to and fro where there is nothing to show, as in Arcanum's empty lists. */
+    GHOST(R.raw.ghost),
 }
 
 /** A looping animation at the head of a screen. */
 @Composable
-fun HeroAnimation(hero: Hero, modifier: Modifier = Modifier, size: Dp = 160.dp) {
+fun HeroAnimation(hero: Hero, modifier: Modifier = Modifier, size: Dp = 160.dp, speed: Float = 1f) {
     val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(hero.raw))
-    val progress by animateLottieCompositionAsState(composition, iterations = LottieConstants.IterateForever)
+    val progress by animateLottieCompositionAsState(composition, iterations = LottieConstants.IterateForever, speed = speed)
     LottieAnimation(composition, progress = { progress }, modifier = modifier.size(size))
 }
 

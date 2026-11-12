@@ -39,13 +39,20 @@ import com.airbnb.lottie.compose.animateLottieCompositionAsState
 import com.airbnb.lottie.compose.rememberLottieComposition
 import me.esdex.coffer.core.ui.R
 
-/** An empty list: a title, and under it what to do about it. */
+/**
+ * An empty list: a title, and under it what to do about it. Over them [hero], an animation (the ghost
+ * where there is nothing to show, as in Arcanum), or else [icon], a still one in a circle.
+ */
 @Composable
-fun EmptyStateView(title: String, modifier: Modifier = Modifier, subtitle: String? = null, icon: ImageVector? = null) {
+fun EmptyStateView(title: String, modifier: Modifier = Modifier, subtitle: String? = null, icon: ImageVector? = null, hero: Hero? = null) {
     Box(modifier, contentAlignment = Alignment.Center) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             // What kind of empty this is, before a word is read.
-            if (icon != null) {
+            if (hero != null) {
+                // Arcanum's size and pace for its empty lists: big enough to wander in, slow enough to be calm.
+                HeroAnimation(hero, size = EMPTY_HERO_SIZE, speed = EMPTY_HERO_SPEED)
+                Spacer(Modifier.height(16.dp))
+            } else if (icon != null) {
                 Box(
                     Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.secondaryContainer),
                     contentAlignment = Alignment.Center,
@@ -138,3 +145,6 @@ private fun OperationResult(
         }
     }
 }
+
+private val EMPTY_HERO_SIZE = 200.dp
+private const val EMPTY_HERO_SPEED = 0.8f

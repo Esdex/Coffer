@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.core.content.IntentCompat
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -33,6 +35,9 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
+import me.esdex.coffer.core.ui.components.LocalLockFlight
+import me.esdex.coffer.core.ui.components.LockFlight
+import me.esdex.coffer.core.ui.components.LockFlightOverlay
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.feature.onboarding.LoginScreen
 import me.esdex.coffer.feature.onboarding.WelcomeGate
@@ -73,6 +78,10 @@ class MainActivity : FragmentActivity() {
         setContent {
             val appearance by viewModel.appearance.collectAsStateWithLifecycle()
             CofferTheme(appearance) {
+              // The padlock that flies to the unlock screen when the user locks, drawn over everything.
+              val lockFlight = remember { LockFlight() }
+              CompositionLocalProvider(LocalLockFlight provides lockFlight) {
+               Box(Modifier.fillMaxSize()) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     // Screens with a bar of their own handle the window edges themselves; the plain ones get them here.
                     val plain = Modifier.safeDrawingPadding()
@@ -88,6 +97,9 @@ class MainActivity : FragmentActivity() {
                         }
                     }
                 }
+                LockFlightOverlay(lockFlight)
+               }
+              }
             }
         }
     }
