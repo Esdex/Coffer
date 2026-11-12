@@ -97,7 +97,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -138,7 +137,6 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -179,6 +177,7 @@ import me.esdex.coffer.core.ui.theme.CofferHazeStyle
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.LocalAmoledMode
 import me.esdex.coffer.core.ui.theme.Motion
+import me.esdex.coffer.core.ui.theme.tabular
 import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.CacheOffer
 import me.esdex.coffer.feature.browser.transfer.QueueSummary
@@ -701,7 +700,7 @@ fun BrowserScreen(
         )
     }
     // Over everything else, the bars included.
-    AnimatedVisibility(visible = viewing != null, enter = fadeIn(Motion.screen()), exit = fadeOut(Motion.standard())) {
+    AnimatedVisibility(visible = viewing != null, enter = viewerEnter, exit = viewerExit) {
         val (pages, start) = lastViewing ?: return@AnimatedVisibility
         ViewerScreen(
             pages = pages,
@@ -717,7 +716,7 @@ fun BrowserScreen(
             },
         )
     }
-    AnimatedVisibility(visible = reading != null, enter = fadeIn(Motion.screen()), exit = fadeOut(Motion.standard())) {
+    AnimatedVisibility(visible = reading != null, enter = viewerEnter, exit = viewerExit) {
         val page = lastReading ?: return@AnimatedVisibility
         val onSave: (ViewerViewModel.Page) -> Unit = {
             savingFromViewer = it.fileId
@@ -1560,9 +1559,6 @@ private fun TransferBar(fraction: Float?) {
     LinearProgressIndicator(progress = { shown }, modifier = Modifier.fillMaxWidth())
 }
 
-/** Digits of one width, so a count going up does not shake what stands next to it. */
-private fun TextStyle.tabular() = copy(fontFeatureSettings = "tnum")
-
 /**
  * What caching the picked files would take, before it starts: their size, and a word when the cache is
  * off, too small to hold them all, or the phone has no room. Too small offers the limit that would do.
@@ -1691,5 +1687,10 @@ private fun TransferRegistry.Failure.label() = when (this) {
     TransferRegistry.Failure.MISSING_PART -> R.string.browser_failure_missing_part
     TransferRegistry.Failure.TARGET_FAILED -> R.string.browser_failure_target
 }
+
+// A file opening: it comes up out of the list a little, rather than only fading in over it.
+private val viewerEnter = fadeIn(Motion.screen()) + scaleIn(Motion.screen(), initialScale = VIEWER_SCALE)
+private val viewerExit = fadeOut(Motion.standard()) + scaleOut(Motion.standard(), targetScale = VIEWER_SCALE)
+private const val VIEWER_SCALE = 0.96f
 
 private const val UNDO_MARGIN_MILLIS = 500L

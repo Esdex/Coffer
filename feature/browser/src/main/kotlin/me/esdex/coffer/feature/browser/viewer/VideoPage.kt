@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.view.LayoutInflater
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,6 +14,9 @@ import androidx.compose.foundation.gestures.awaitVerticalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -69,6 +73,8 @@ import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Motion
+import me.esdex.coffer.core.ui.theme.tabular
 import me.esdex.coffer.feature.browser.R
 
 internal enum class SwipeKind { VOLUME, BRIGHTNESS }
@@ -148,7 +154,7 @@ internal fun VideoSurface(
     }
 
     val transform = rememberTransformableState { zoomChange, panChange, _ ->
-        val newScale = (scale.value * zoomChange).coerceIn(1f, 5f)
+        val newScale = (scale.value * zoomChange).coerceIn(1f, MEDIA_MAX_ZOOM)
         val (mx, my) = maxPan(newScale)
         val x = if (newScale > 1f) (panX.value + panChange.x).coerceIn(-mx, mx) else 0f
         val y = if (newScale > 1f) (panY.value + panChange.y).coerceIn(-my, my) else 0f
@@ -223,11 +229,11 @@ internal fun VideoSurface(
                         scope.launch {
                             val (mx, my) = maxPan(scale.value)
                             launch {
-                                panX.animateDecay(velocity.x.coerceIn(-5000f, 5000f), decay)
+                                panX.animateDecay(velocity.x.coerceIn(-MEDIA_MAX_FLING, MEDIA_MAX_FLING), decay)
                                 panX.snapTo(panX.value.coerceIn(-mx, mx))
                             }
                             launch {
-                                panY.animateDecay(velocity.y.coerceIn(-5000f, 5000f), decay)
+                                panY.animateDecay(velocity.y.coerceIn(-MEDIA_MAX_FLING, MEDIA_MAX_FLING), decay)
                                 panY.snapTo(panY.value.coerceIn(-my, my))
                             }
                         }
@@ -274,7 +280,7 @@ internal fun VideoBottomBar(
     Box(
         Modifier
             .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))))
+            .background(Brush.verticalGradient(listOf(Color.Transparent, OverlayEdge)))
             // Taps that miss the slider must not fall through to the video and hide the bars.
             .pointerInput(Unit) { detectTapGestures {} },
     ) {
@@ -288,13 +294,19 @@ internal fun VideoBottomBar(
                 }
                 Spacer(Modifier.width(4.dp))
             }
+            // The thumb grows under the finger, so holding it shows.
+            val touch = remember { MutableInteractionSource() }
+            val dragged by touch.collectIsDraggedAsState()
+            val pressed by touch.collectIsPressedAsState()
+            val thumb by animateDpAsState(if (dragged || pressed) THUMB_HELD else THUMB, Motion.quick(), label = "seek thumb")
             Slider(
                 value = fraction,
                 onValueChange = onSeek,
                 onValueChangeFinished = onSeekDone,
+                interactionSource = touch,
                 thumb = {
                     Box(Modifier.height(24.dp), contentAlignment = Alignment.Center) {
-                        Spacer(Modifier.size(12.dp).shadow(4.dp, CircleShape).background(Color.White, CircleShape))
+                        Spacer(Modifier.size(thumb).shadow(4.dp, CircleShape).background(Color.White, CircleShape))
                     }
                 },
                 track = {
@@ -306,7 +318,7 @@ internal fun VideoBottomBar(
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(10.dp))
-            Text("${formatTime(positionMs)} / ${formatTime(durationMs)}", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelSmall, maxLines = 1)
+            Text("${formatTime(positionMs)} / ${formatTime(durationMs)}", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelSmall.tabular(), maxLines = 1)
             // A speed other than normal and a repeat are easy to forget having set: they stay in sight.
             if (speed != null) {
                 Spacer(Modifier.width(8.dp))
@@ -329,7 +341,7 @@ internal fun VideoBottomBar(
 @Composable
 internal fun GlyphButton(icon: ImageVector, description: String, onClick: () -> Unit) {
     Box(
-        Modifier.size(36.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)).clickable(onClick = onClick),
+        Modifier.size(36.dp).clip(CircleShape).background(OverlayScrim).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Icon(icon, description, tint = Color.White, modifier = Modifier.size(20.dp)) }
 }
@@ -339,7 +351,7 @@ internal fun SwipeLevel(kind: SwipeKind, level: Float) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), Corners.pill).padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier.background(OverlayScrim, Corners.pill).padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         Icon(
             when {
@@ -361,3 +373,10 @@ private fun inflateSurface(context: Context): PlayerView =
     (LayoutInflater.from(context).inflate(R.layout.video_surface, null) as PlayerView).apply { useController = false }
 
 internal const val ZOOMED = 1.05f
+
+/** How far a picture or a video zooms, and the fastest a zoomed one is flung. */
+internal const val MEDIA_MAX_ZOOM = 5f
+internal const val MEDIA_MAX_FLING = 5000f
+
+private val THUMB = 12.dp
+private val THUMB_HELD = 18.dp

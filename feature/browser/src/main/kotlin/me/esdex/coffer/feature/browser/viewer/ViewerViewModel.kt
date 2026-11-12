@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import androidx.annotation.OptIn
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -29,6 +30,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.ui.theme.PlayerPrefs
 import me.esdex.coffer.core.ui.theme.PlayerStore
+import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import javax.inject.Inject
 
@@ -42,6 +44,7 @@ class ViewerViewModel @Inject constructor(
     private val content: VaultContent,
     @ApplicationContext private val context: Context,
     playerStore: PlayerStore,
+    private val previews: Previews,
 ) : ViewModel() {
 
     data class Page(val fileId: Id, val name: String, val mime: String) {
@@ -51,10 +54,14 @@ class ViewerViewModel @Inject constructor(
     val playerPrefs: StateFlow<PlayerPrefs> = playerStore.prefs
 
     sealed interface Picture {
-        data object Loading : Picture
+        /** [loaded] of [size] bytes in memory, the size 0 until it is known. */
+        data class Loading(val loaded: Long = 0, val size: Long = 0) : Picture
         data class Shown(val drawable: Drawable) : Picture
         data object Failed : Picture
     }
+
+    /** The file's preview, if the list has it in memory: something to show while the picture loads. */
+    fun preview(fileId: Id): ImageBitmap? = previews.cached(fileId)
 
     private val pagesFlow = MutableStateFlow<List<Page>>(emptyList())
     val pages: StateFlow<List<Page>> = pagesFlow.asStateFlow()
@@ -91,7 +98,7 @@ class ViewerViewModel @Inject constructor(
     }
 
     private fun load(fileId: Id) {
-        picturesFlow.update { it + (fileId to Picture.Loading) }
+        picturesFlow.update { it + (fileId to Picture.Loading()) }
         // Registered before it starts: decode() asks whether it is still wanted by looking for it.
         val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
             val result = runCatching { decode(fileId) }.getOrNull()
@@ -110,7 +117,15 @@ class ViewerViewModel @Inject constructor(
     private suspend fun decode(fileId: Id): Drawable? {
         val file = content.openFile(fileId) ?: return null
         val copy = try {
-            MemoryCopy.of(file.reader)
+            var shown = -1
+            MemoryCopy.of(file.reader) { done, size ->
+                // Whole percents only: the copy reports every chunk, the screen needs a step it can see.
+                val percent = if (size > 0) (done * 100 / size).toInt() else 0
+                if (percent != shown) {
+                    shown = percent
+                    picturesFlow.update { if (it[fileId] is Picture.Loading) it + (fileId to Picture.Loading(done, size)) else it }
+                }
+            }
         } catch (_: Exception) {
             return null
         } finally {

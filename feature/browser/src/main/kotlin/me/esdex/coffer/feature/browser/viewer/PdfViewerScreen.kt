@@ -3,6 +3,7 @@ package me.esdex.coffer.feature.browser.viewer
 import android.graphics.Bitmap
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.ScrollableDefaults
@@ -15,8 +16,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -29,17 +28,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.SaveAlt
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -54,9 +46,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
@@ -69,12 +65,14 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import me.esdex.coffer.core.ui.components.EmptyStateView
+import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Motion
+import me.esdex.coffer.core.ui.theme.tabular
 import me.esdex.coffer.feature.browser.R
 import kotlin.math.roundToInt
 
@@ -106,7 +104,6 @@ fun PdfViewerScreen(
     var viewportWidth by remember { mutableIntStateOf(0) }
     var viewportHeight by remember { mutableIntStateOf(0) }
     var scale by remember { mutableFloatStateOf(1f) }
-    var menuOpen by remember { mutableStateOf(false) }
     val density = LocalDensity.current
 
     // Zoom only. Moving about a zoomed page is a real horizontal scroll below rather than a moved
@@ -118,6 +115,27 @@ fun PdfViewerScreen(
     val scope = rememberCoroutineScope()
     val fling = ScrollableDefaults.flingBehavior()
     LaunchedEffect(scale) { if (scale <= 1.01f) sideways.scrollTo(0) }
+    var zooming: Job? by remember { mutableStateOf(null) }
+
+    // A double tap glides to the new size and keeps what was under the finger under it, as a pinch does,
+    // instead of jumping and growing out of the top left corner.
+    fun zoomAround(target: Float, at: Offset) {
+        zooming?.cancel()
+        zooming = scope.launch {
+            // Where the sideways scroll should be: the real one cannot go past the room the last frame
+            // laid out, which grows a frame behind the scale, so it catches up at the end.
+            var wanted = sideways.value.toFloat()
+            Animatable(scale).animateTo(target, Motion.standard()) {
+                val shift = zoomShift(at, wanted, scale, value)
+                scale = value
+                wanted += shift.x
+                listState.dispatchRawDelta(shift.y)
+                sideways.dispatchRawDelta(wanted - sideways.value)
+            }
+            withFrameNanos { }
+            sideways.scrollTo(wanted.roundToInt().coerceIn(0, sideways.maxValue))
+        }
+    }
 
     // Sharper pages while zoomed, on two conditions Arcanum learned on a device: not during the
     // gesture, and only for the page in focus. A page half again the screen's width is fifteen
@@ -132,36 +150,20 @@ fun PdfViewerScreen(
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.viewer_cd_back)) }
-                Text(page.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (state.pageCount > 0) {
-                    Text(
-                        stringResource(R.string.viewer_pdf_page_of, focusedPage + 1, state.pageCount),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Box {
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.browser_export)) },
-                            leadingIcon = { Icon(Icons.Outlined.SaveAlt, null) },
-                            onClick = { menuOpen = false; onSave(page) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.viewer_open_with)) },
-                            leadingIcon = { Icon(Icons.Outlined.OpenInNew, null) },
-                            onClick = { menuOpen = false; onOpenWith(page) },
+            ViewerTopBar(
+                title = page.name,
+                onBack = onClose,
+                actions = {
+                    if (state.pageCount > 0) {
+                        Text(
+                            stringResource(R.string.viewer_position, focusedPage + 1, state.pageCount),
+                            style = MaterialTheme.typography.labelLarge.tabular(),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(start = 8.dp),
                         )
                     }
-                }
-            }
+                },
+            ) { close -> FileMenuItems(close, onSave = { onSave(page) }, onOpenWith = { onOpenWith(page) }) }
 
             Box(
                 Modifier
@@ -177,21 +179,9 @@ fun PdfViewerScreen(
                 val failure = state.failure
                 when {
                     // The whole document comes first (see MemoryCopy): how much of it, once its size is known.
-                    state.loading && state.size > 0 -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(horizontal = 48.dp)) {
-                        LinearProgressIndicator(progress = { state.loaded.toFloat() / state.size }, modifier = Modifier.fillMaxWidth())
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            stringResource(
-                                R.string.transfers_amount,
-                                Formatter.formatShortFileSize(context, state.loaded),
-                                Formatter.formatShortFileSize(context, state.size),
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    state.loading -> CircularProgressIndicator()
-                    failure != null -> EmptyStateView(
+                    state.loading -> FileLoading(state.loaded, state.size, onDark = false)
+                    failure != null -> ViewerFailure(
+                        icon = if (failure == PdfViewModel.Failure.PASSWORD_PROTECTED) Icons.Outlined.Lock else Icons.Outlined.ErrorOutline,
                         title = stringResource(
                             when (failure) {
                                 PdfViewModel.Failure.PASSWORD_PROTECTED -> R.string.viewer_pdf_password
@@ -206,7 +196,7 @@ fun PdfViewerScreen(
                             PdfViewModel.Failure.UNREADABLE -> null
                             PdfViewModel.Failure.TOO_LARGE -> stringResource(R.string.viewer_pdf_too_large_hint, Formatter.formatShortFileSize(context, MemoryCopy.MAX_BYTES))
                         },
-                        modifier = Modifier.padding(horizontal = 32.dp),
+                        onDark = false,
                     )
                     else -> Box(
                         Modifier
@@ -214,7 +204,7 @@ fun PdfViewerScreen(
                             // At rest a one-finger drag belongs to the list, which scrolls and flings.
                             .transformable(state = transformState, canPan = { false })
                             .pointerInput(Unit) {
-                                detectTapGestures(onDoubleTap = { scale = if (scale > 1.01f) 1f else ZOOM_ON_TAP })
+                                detectTapGestures(onDoubleTap = { at -> zoomAround(if (scale > 1.01f) 1f else ZOOM_ON_TAP, at) })
                             }
                             // Zoomed, one drag has to go any way and change its mind mid-way; two stacked
                             // scrolls cannot, the first to claim an axis keeps the finger. So the drag is
@@ -284,14 +274,26 @@ private fun PdfPage(viewModel: PdfViewModel, index: Int, widthPx: Int) {
     }
 
     val ratio = shape?.let { it.width.toFloat() / it.height.coerceAtLeast(1) } ?: DEFAULT_PAGE_RATIO
+    // Paper on the background: a slight lift and the app's smallest corner.
+    val paper = RoundedCornerShape(Corners.Inner)
     Box(
-        Modifier.fillMaxWidth().padding(horizontal = 8.dp).aspectRatio(ratio).background(Color.White),
+        Modifier.fillMaxWidth().padding(horizontal = 8.dp).aspectRatio(ratio).shadow(2.dp, paper).clip(paper).background(Color.White),
         contentAlignment = Alignment.Center,
     ) {
         bitmap?.let {
             Image(it.asImageBitmap(), stringResource(R.string.viewer_pdf_cd_page, index + 1), contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxSize())
         }
     }
+}
+
+/**
+ * How far to move the sideways scroll (x) and the list (y, in the document's own pixels) as the scale
+ * goes [from] to [to], so the point of the document under [at] stays under it. The list is drawn scaled
+ * from its top left corner and the sideways scroll counts screen pixels (see [PdfViewerScreen]).
+ */
+internal fun zoomShift(at: Offset, sideways: Float, from: Float, to: Float): Offset {
+    val docX = (sideways + at.x) / from
+    return Offset(docX * to - at.x - sideways, at.y / from - at.y / to)
 }
 
 /** A4 upright, holding a page's place until its own shape is known. */

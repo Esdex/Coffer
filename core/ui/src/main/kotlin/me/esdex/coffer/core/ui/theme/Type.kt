@@ -15,3 +15,6 @@ val CofferTypography = Typography(
         letterSpacing = 0.5.sp,
     ),
 )
+
+/** Digits of one width, so a count going up does not shake what stands next to it. */
+fun TextStyle.tabular(): TextStyle = copy(fontFeatureSettings = "tnum")

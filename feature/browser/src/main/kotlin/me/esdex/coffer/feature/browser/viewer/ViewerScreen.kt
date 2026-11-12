@@ -11,6 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.rememberSplineBasedDecay
@@ -27,9 +28,8 @@ import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -40,7 +40,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrokenImage
@@ -53,13 +52,10 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.RepeatOne
-import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,9 +75,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -92,7 +90,6 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -109,6 +106,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
+import me.esdex.coffer.core.ui.theme.tabular
 import me.esdex.coffer.feature.browser.R
 
 /**
@@ -172,6 +170,9 @@ fun ViewerScreen(
     var swipeEndPoke by remember { mutableIntStateOf(0) }
     var seekBackPoke by remember { mutableIntStateOf(0) }
     var seekOnPoke by remember { mutableIntStateOf(0) }
+    // Taps in a row add up, as the chip says: -10s, -20s, -30s.
+    var seekBackSeconds by remember { mutableIntStateOf(0) }
+    var seekOnSeconds by remember { mutableIntStateOf(0) }
     var showSeekBack by remember { mutableStateOf(false) }
     var showSeekOn by remember { mutableStateOf(false) }
     var isFullscreen by remember { mutableStateOf(false) }
@@ -341,11 +342,13 @@ fun ViewerScreen(
                     // A double tap seeks; if the bars are up their countdown starts over, if not they stay down.
                     onDoubleTapLeft = {
                         player?.let { it.seekTo((it.currentPosition - SEEK_MS).coerceAtLeast(0L)) }
+                        seekBackSeconds = (if (showSeekBack) seekBackSeconds else 0) + (SEEK_MS / 1000).toInt()
                         seekBackPoke++
                         if (showBars) barsPoke++
                     },
                     onDoubleTapRight = {
                         player?.let { it.seekTo(it.currentPosition + SEEK_MS) }
+                        seekOnSeconds = (if (showSeekOn) seekOnSeconds else 0) + (SEEK_MS / 1000).toInt()
                         seekOnPoke++
                         if (showBars) barsPoke++
                     },
@@ -377,7 +380,8 @@ fun ViewerScreen(
                 )
             } else {
                 ZoomablePicture(
-                    picture = pictures[item.fileId] ?: ViewerViewModel.Picture.Loading,
+                    picture = pictures[item.fileId] ?: ViewerViewModel.Picture.Loading(),
+                    preview = remember(item.fileId) { viewModel.preview(item.fileId) },
                     isCurrent = isCurrent,
                     onTap = { showBars = !showBars },
                     onZoomed = { zoomed = it },
@@ -394,10 +398,10 @@ fun ViewerScreen(
                 val h = if (aspect >= boxAspect) maxWidth / aspect else maxHeight
                 Box(Modifier.size(w, h).align(Alignment.Center)) {
                     AnimatedVisibility(showSeekBack, enter = fadeIn(Motion.quick()), exit = fadeOut(Motion.standard()), modifier = Modifier.align(Alignment.CenterStart).padding(start = 16.dp)) {
-                        Chip(stringResource(R.string.viewer_seek_back), Icons.Filled.FastRewind, iconFirst = true)
+                        Chip(stringResource(R.string.viewer_seek_back, seekBackSeconds), Icons.Filled.FastRewind, iconFirst = true)
                     }
                     AnimatedVisibility(showSeekOn, enter = fadeIn(Motion.quick()), exit = fadeOut(Motion.standard()), modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp)) {
-                        Chip(stringResource(R.string.viewer_seek_on), Icons.Filled.FastForward, iconFirst = false)
+                        Chip(stringResource(R.string.viewer_seek_on, seekOnSeconds), Icons.Filled.FastForward, iconFirst = false)
                     }
                     AnimatedVisibility(isWide && !isFullscreen && showBars, enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick()), modifier = Modifier.align(Alignment.BottomEnd)) {
                         Box(Modifier.padding(8.dp)) {
@@ -414,11 +418,11 @@ fun ViewerScreen(
             // Play and pause in the middle, once the video has been tapped.
             AnimatedVisibility(showBars && userTapped, enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick()), modifier = Modifier.align(Alignment.Center)) {
                 Box(
-                    Modifier.size(72.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).clickable { if (isPlaying) player?.pause() else player?.play() },
+                    Modifier.size(72.dp).clip(CircleShape).background(OverlayScrim).clickable { if (isPlaying) player?.pause() else player?.play() },
                     contentAlignment = Alignment.Center,
                 ) {
                     if (isBuffering) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(34.dp), strokeWidth = 2.5.dp)
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(ViewerSpinner))
                     } else {
                         Icon(
                             if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
@@ -430,21 +434,19 @@ fun ViewerScreen(
                 }
             }
             if (isBuffering && !userTapped) {
-                CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center).size(48.dp))
+                CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center).size(ViewerSpinner))
             }
 
             // An error says so instead of an endless black screen.
             if (playbackError != null || videoFailed) {
-                Column(Modifier.align(Alignment.Center).padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Outlined.ErrorOutline, null, tint = Color.White.copy(alpha = 0.85f), modifier = Modifier.size(48.dp))
-                    Spacer(Modifier.height(12.dp))
-                    Text(stringResource(R.string.viewer_video_failed), style = MaterialTheme.typography.bodyLarge, color = Color.White, textAlign = TextAlign.Center)
-                    playbackError?.let {
-                        Spacer(Modifier.height(4.dp))
-                        // The player's code tells a read failure from a decoder that refused the format.
-                        Text(it, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f), textAlign = TextAlign.Center)
-                    }
-                }
+                ViewerFailure(
+                    icon = Icons.Outlined.ErrorOutline,
+                    title = stringResource(R.string.viewer_video_failed),
+                    subtitle = null,
+                    onDark = true,
+                    detail = playbackError,
+                    modifier = Modifier.align(Alignment.Center),
+                )
             }
 
             AnimatedVisibility(holdingFast, enter = fadeIn(Motion.quick()), exit = fadeOut(Motion.standard()), modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp)) {
@@ -474,7 +476,7 @@ fun ViewerScreen(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.clip(Corners.pill).background(Color.Black.copy(alpha = 0.6f)).clickable {
+                    modifier = Modifier.clip(Corners.pill).background(OverlayScrim).clickable {
                         isLocked = false
                         showUnlock = false
                         showBars = true
@@ -490,6 +492,8 @@ fun ViewerScreen(
         AnimatedVisibility(showBars && !isLocked, enter = fadeIn(Motion.standard()) + slideInVertically(Motion.standard()) { -it }, exit = fadeOut(Motion.quick()) + slideOutVertically(Motion.quick()) { -it }, modifier = Modifier.align(Alignment.TopCenter)) {
             TopBar(
                 title = current?.name.orEmpty(),
+                // Where in the folder: only when there is more than one to go through.
+                position = if (pages.size > 1) stringResource(R.string.viewer_position, pagerState.currentPage + 1, pages.size) else null,
                 onBack = onClose,
                 menuOpen = menuOpen,
                 onMenu = { menuOpen = it },
@@ -555,7 +559,7 @@ private fun Chip(text: String, icon: ImageVector, iconFirst: Boolean) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(Corners.Small)).padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier.background(OverlayScrim, Corners.pill).padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
         if (iconFirst) Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
         Text(text, color = Color.White, style = MaterialTheme.typography.labelLarge)
@@ -566,6 +570,7 @@ private fun Chip(text: String, icon: ImageVector, iconFirst: Boolean) {
 @Composable
 private fun TopBar(
     title: String,
+    position: String?,
     onBack: () -> Unit,
     menuOpen: Boolean,
     onMenu: (Boolean) -> Unit,
@@ -580,51 +585,44 @@ private fun TopBar(
     Row(
         Modifier
             .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.7f), Color.Transparent)))
+            .background(Brush.verticalGradient(listOf(OverlayEdge, Color.Transparent)))
             .statusBarsPadding()
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.viewer_cd_back), tint = Color.White) }
         Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        if (position != null) {
+            Text(position, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge.tabular(), modifier = Modifier.padding(start = 8.dp))
+        }
         Box {
             IconButton(onClick = { onMenu(true) }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more), tint = Color.White) }
             DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenu(false) }) {
                 videoItems?.speed?.let { speed ->
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.viewer_speed)) },
-                        leadingIcon = { Icon(Icons.Outlined.Speed, null) },
-                        trailingIcon = { Text(speedLabel(speed)) },
-                        onClick = { onMenu(false); videoItems.onSpeed() },
-                    )
+                    ViewerMenuItem(Icons.Outlined.Speed, stringResource(R.string.viewer_speed), trailing = { Text(speedLabel(speed)) }) {
+                        onMenu(false)
+                        videoItems.onSpeed()
+                    }
                 }
                 videoItems?.looping?.let { looping ->
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.viewer_loop)) },
-                        leadingIcon = { Icon(Icons.Outlined.RepeatOne, null) },
-                        trailingIcon = { if (looping) Icon(Icons.Outlined.Check, null) },
-                        onClick = { onMenu(false); videoItems.onLoop() },
-                    )
+                    ViewerMenuItem(Icons.Outlined.RepeatOne, stringResource(R.string.viewer_loop), trailing = { if (looping) Icon(Icons.Outlined.Check, null) }) {
+                        onMenu(false)
+                        videoItems.onLoop()
+                    }
                 }
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.browser_export)) },
-                    leadingIcon = { Icon(Icons.Outlined.SaveAlt, null) },
-                    onClick = { onMenu(false); onSave() },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.viewer_open_with)) },
-                    leadingIcon = { Icon(Icons.Outlined.OpenInNew, null) },
-                    onClick = { onMenu(false); onOpenWith() },
-                )
+                FileMenuItems(close = { onMenu(false) }, onSave = onSave, onOpenWith = onOpenWith)
             }
             // Opened from the item above, in the same place, so the choice is made where it was asked for.
             DropdownMenu(expanded = speedMenuOpen, onDismissRequest = { onSpeedMenu(false) }) {
                 PLAYBACK_SPEEDS.forEach { speed ->
-                    DropdownMenuItem(
-                        text = { Text(if (speed == 1f) stringResource(R.string.viewer_speed_normal) else speedLabel(speed)) },
-                        trailingIcon = { if (speed == currentSpeed) Icon(Icons.Outlined.Check, null) },
-                        onClick = { onPickSpeed(speed); onSpeedMenu(false) },
-                    )
+                    ViewerMenuItem(
+                        icon = null,
+                        label = if (speed == 1f) stringResource(R.string.viewer_speed_normal) else speedLabel(speed),
+                        trailing = { if (speed == currentSpeed) Icon(Icons.Outlined.Check, null) },
+                    ) {
+                        onPickSpeed(speed)
+                        onSpeedMenu(false)
+                    }
                 }
             }
         }
@@ -652,7 +650,7 @@ private fun SystemBarsFollow(showBars: Boolean) {
  * a zoomed picture with a fling, never past its edges.
  */
 @Composable
-private fun ZoomablePicture(picture: ViewerViewModel.Picture, isCurrent: Boolean, onTap: () -> Unit, onZoomed: (Boolean) -> Unit) {
+private fun ZoomablePicture(picture: ViewerViewModel.Picture, preview: ImageBitmap?, isCurrent: Boolean, onTap: () -> Unit, onZoomed: (Boolean) -> Unit) {
     val drawable = (picture as? ViewerViewModel.Picture.Shown)?.drawable
     // Only the page on screen animates; one beside it would go on decoding frames unseen.
     if (drawable != null) {
@@ -682,7 +680,7 @@ private fun ZoomablePicture(picture: ViewerViewModel.Picture, isCurrent: Boolean
     fun maxPan(s: Float) = maxOf(0f, (rendered.width * s - container.width) / 2f) to maxOf(0f, (rendered.height * s - container.height) / 2f)
 
     val transform = rememberTransformableState { zoomChange, panChange, _ ->
-        val newScale = (scale.value * zoomChange).coerceIn(1f, MAX_ZOOM)
+        val newScale = (scale.value * zoomChange).coerceIn(1f, MEDIA_MAX_ZOOM)
         val (mx, my) = maxPan(newScale)
         val x = if (newScale > 1f) (panX.value + panChange.x).coerceIn(-mx, mx) else 0f
         val y = if (newScale > 1f) (panY.value + panChange.y).coerceIn(-my, my) else 0f
@@ -734,11 +732,11 @@ private fun ZoomablePicture(picture: ViewerViewModel.Picture, isCurrent: Boolean
                         scope.launch {
                             val (mx, my) = maxPan(scale.value)
                             launch {
-                                panX.animateDecay(velocity.x.coerceIn(-MAX_FLING, MAX_FLING), decay)
+                                panX.animateDecay(velocity.x.coerceIn(-MEDIA_MAX_FLING, MEDIA_MAX_FLING), decay)
                                 panX.snapTo(panX.value.coerceIn(-mx, mx))
                             }
                             launch {
-                                panY.animateDecay(velocity.y.coerceIn(-MAX_FLING, MAX_FLING), decay)
+                                panY.animateDecay(velocity.y.coerceIn(-MEDIA_MAX_FLING, MEDIA_MAX_FLING), decay)
                                 panY.snapTo(panY.value.coerceIn(-my, my))
                             }
                         }
@@ -754,15 +752,33 @@ private fun ZoomablePicture(picture: ViewerViewModel.Picture, isCurrent: Boolean
                 translationY = panY.value.coerceIn(-my, my)
             },
     ) {
+        // The picture fades in over what held its place; one already decoded is there at once.
+        val reveal by animateFloatAsState(if (picture is ViewerViewModel.Picture.Shown) 1f else 0f, Motion.standard(), label = "picture")
+        if (reveal < 1f && picture !is ViewerViewModel.Picture.Failed) {
+            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 1f - reveal }, contentAlignment = Alignment.Center) {
+                // The list's preview is the middle square of the picture: blurred, it stands in without
+                // pretending to be the picture itself.
+                if (preview != null) {
+                    Image(
+                        preview,
+                        null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(1f).blur(PREVIEW_BLUR).graphicsLayer { alpha = PREVIEW_ALPHA },
+                    )
+                }
+                val loading = picture as? ViewerViewModel.Picture.Loading
+                FileLoading(loading?.loaded ?: 0, loading?.size ?: 0, onDark = true)
+            }
+        }
         when (picture) {
             is ViewerViewModel.Picture.Shown ->
-                Image(rememberDrawablePainter(picture.drawable), null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-            ViewerViewModel.Picture.Loading -> CircularProgressIndicator(color = Color.White, modifier = Modifier.size(48.dp))
-            ViewerViewModel.Picture.Failed -> Icon(
-                Icons.Filled.BrokenImage,
-                stringResource(R.string.viewer_failed),
-                tint = Color.White.copy(alpha = 0.3f),
-                modifier = Modifier.size(72.dp),
+                Image(rememberDrawablePainter(picture.drawable), null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().graphicsLayer { alpha = reveal })
+            is ViewerViewModel.Picture.Loading -> Unit
+            ViewerViewModel.Picture.Failed -> ViewerFailure(
+                icon = Icons.Filled.BrokenImage,
+                title = stringResource(R.string.viewer_failed),
+                subtitle = null,
+                onDark = true,
             )
         }
     }
@@ -774,9 +790,8 @@ private tailrec fun Context.activity(): Activity? = when (this) {
     else -> null
 }
 
-private const val MAX_ZOOM = 5f
 private const val DOUBLE_TAP_ZOOM = 2.5f
-
-private const val MAX_FLING = 5000f
+private val PREVIEW_BLUR = 16.dp
+private const val PREVIEW_ALPHA = 0.6f
 private const val BARS_MILLIS = 3_000L
 private const val SEEK_MS = 10_000L

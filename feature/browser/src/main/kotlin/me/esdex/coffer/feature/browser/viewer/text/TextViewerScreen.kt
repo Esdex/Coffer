@@ -6,27 +6,19 @@ import android.graphics.Typeface
 import android.text.format.Formatter
 import android.util.TypedValue
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.MoreVert
-import androidx.compose.material.icons.outlined.OpenInNew
-import androidx.compose.material.icons.outlined.SaveAlt
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -42,19 +34,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import me.esdex.coffer.core.ui.components.EmptyStateView
+import me.esdex.coffer.core.ui.components.AppDialog
 import me.esdex.coffer.core.ui.theme.LocalDarkMode
+import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.TextPrefs
 import me.esdex.coffer.feature.browser.R
+import me.esdex.coffer.feature.browser.viewer.FileLoading
+import me.esdex.coffer.feature.browser.viewer.FileMenuItems
+import me.esdex.coffer.feature.browser.viewer.ViewerFailure
+import me.esdex.coffer.feature.browser.viewer.ViewerTopBar
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
 
 /**
@@ -82,13 +79,12 @@ fun TextViewerScreen(
     val markdown = TextFiles.isMarkdown(page.name)
     // Decided each time a file opens, from the setting; the bar flips it for this file only.
     var rendered by remember(page.fileId) { mutableStateOf(prefs.renderMarkdown) }
-    var menuOpen by remember { mutableStateOf(false) }
     var pendingLink by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
 
     // Leaving the app from a file in the vault is not for a stray touch; the address is shown in full.
     pendingLink?.let { url ->
-        AlertDialog(
+        AppDialog(
             onDismissRequest = { pendingLink = null },
             title = { Text(stringResource(R.string.viewer_link_title)) },
             text = { Text(url) },
@@ -107,37 +103,20 @@ fun TextViewerScreen(
 
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.viewer_cd_back)) }
-                Text(page.name, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                if (markdown && state.document != null) {
-                    IconButton(onClick = { rendered = !rendered }) {
-                        Icon(
-                            if (rendered) Icons.Outlined.Code else Icons.Outlined.Visibility,
-                            stringResource(if (rendered) R.string.viewer_text_show_source else R.string.viewer_text_show_rendered),
-                        )
+            ViewerTopBar(
+                title = page.name,
+                onBack = onClose,
+                actions = {
+                    if (markdown && state.document != null) {
+                        IconButton(onClick = { rendered = !rendered }) {
+                            Icon(
+                                if (rendered) Icons.Outlined.Code else Icons.Outlined.Visibility,
+                                stringResource(if (rendered) R.string.viewer_text_show_source else R.string.viewer_text_show_rendered),
+                            )
+                        }
                     }
-                }
-                Box {
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.browser_export)) },
-                            leadingIcon = { Icon(Icons.Outlined.SaveAlt, null) },
-                            onClick = { menuOpen = false; onSave(page) },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.viewer_open_with)) },
-                            leadingIcon = { Icon(Icons.Outlined.OpenInNew, null) },
-                            onClick = { menuOpen = false; onOpenWith(page) },
-                        )
-                    }
-                }
-            }
+                },
+            ) { close -> FileMenuItems(close, onSave = { onSave(page) }, onOpenWith = { onOpenWith(page) }) }
 
             val document = state.document
             if (document?.decodedAsFallback == true) {
@@ -153,8 +132,9 @@ fun TextViewerScreen(
             Box(Modifier.fillMaxSize().navigationBarsPadding(), contentAlignment = Alignment.Center) {
                 val failure = state.failure
                 when {
-                    state.loading -> CircularProgressIndicator()
-                    failure != null -> EmptyStateView(
+                    state.loading -> FileLoading(0, 0, onDark = false)
+                    failure != null -> ViewerFailure(
+                        icon = Icons.Outlined.ErrorOutline,
                         title = stringResource(
                             when (failure) {
                                 TextViewModel.Failure.TOO_LARGE -> R.string.viewer_text_too_large
@@ -167,11 +147,25 @@ fun TextViewerScreen(
                             TextViewModel.Failure.NOT_TEXT -> stringResource(R.string.viewer_text_not_text_hint)
                             TextViewModel.Failure.NOT_AVAILABLE -> stringResource(R.string.viewer_pdf_not_available_hint)
                         },
-                        modifier = Modifier.padding(horizontal = 32.dp),
+                        onDark = false,
                     )
                     document == null -> Unit
-                    markdown && rendered -> MarkdownView(document.text, prefs.fontSizeSp, onLink = { pendingLink = it }, modifier = Modifier.fillMaxSize())
-                    else -> CodeText(document, prefs, SyntaxHighlighter.of(page.name))
+                    else -> {
+                        // A fade between the two, not a cut. Not AnimatedContent: quick flips could have it
+                        // hold two copies of the source side, and its one view cannot be in two places.
+                        val shownRendered by animateFloatAsState(if (markdown && rendered) 1f else 0f, Motion.standard(), label = "markdown")
+                        if (shownRendered < 1f) {
+                            CodeText(document, prefs, SyntaxHighlighter.of(page.name), Modifier.graphicsLayer { alpha = 1f - shownRendered })
+                        }
+                        if (shownRendered > 0f) {
+                            MarkdownView(
+                                document.text,
+                                prefs.fontSizeSp,
+                                onLink = { pendingLink = it },
+                                modifier = Modifier.fillMaxSize().graphicsLayer { alpha = shownRendered },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -179,7 +173,7 @@ fun TextViewerScreen(
 }
 
 @Composable
-private fun CodeText(document: TextDocument, prefs: TextPrefs, syntax: Syntax) {
+private fun CodeText(document: TextDocument, prefs: TextPrefs, syntax: Syntax, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     // One view per document, kept while the Markdown side is on screen: laying a big file out again on
     // every flip is the cost the platform view is here to avoid. Wrapping is set before the text, or the
@@ -198,7 +192,7 @@ private fun CodeText(document: TextDocument, prefs: TextPrefs, syntax: Syntax) {
     val gutterBack = MaterialTheme.colorScheme.surfaceContainerLow.toArgb()
     val frontBack = MaterialTheme.colorScheme.surfaceContainerHigh.toArgb()
     AndroidView(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         // The instance is remembered above; this only puts it back on screen, with no parent of its own.
         factory = { view },
         update = { v ->
