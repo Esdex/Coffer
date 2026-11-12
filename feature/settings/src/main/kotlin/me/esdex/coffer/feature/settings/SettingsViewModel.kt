@@ -20,6 +20,7 @@ import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.Maintenance
+import me.esdex.coffer.core.sync.VaultDeletion
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.tdlib.TelegramAccount
 import me.esdex.coffer.core.ui.theme.Appearance
@@ -184,7 +185,7 @@ class SettingsViewModel @Inject constructor(
         data class Failed(override val kind: Kind, val message: Int) : Operation
     }
 
-    enum class Kind { CHECK, RESCAN }
+    enum class Kind { CHECK, RESCAN, DELETE }
 
     private val operationFlow = MutableStateFlow<Operation?>(null)
     val operation: StateFlow<Operation?> = operationFlow.asStateFlow()
@@ -194,7 +195,9 @@ class SettingsViewModel @Inject constructor(
         operationFlow.value = Operation.Running(kind)
         viewModelScope.launch {
             operationFlow.value = try {
-                Operation.Done(kind, block())
+                val report = block()
+                // A deleted vault takes the app back to the first-start screens; nothing to show here after.
+                if (kind == Kind.DELETE) null else Operation.Done(kind, report)
             } catch (_: FloodWaitException) {
                 Operation.Failed(kind, R.string.settings_error_flood)
             } catch (_: StorageException) {
@@ -349,6 +352,55 @@ class SettingsViewModel @Inject constructor(
 
     override fun onCleared() {
         wordsFlow.value = null
+    }
+
+    // Deleting the vault (SPEC §5.9), behind the current password like the two above.
+
+    /** How far a deletion is: Saved Messages read, then the vault's messages deleted of how many. */
+    data class Deleting(val read: Int = 0, val deleted: Int? = null, val total: Int = 0, val waitSeconds: Int? = null)
+
+    private val deletingFlow = MutableStateFlow<Deleting?>(null)
+    val deleting: StateFlow<Deleting?> = deletingFlow.asStateFlow()
+
+    /**
+     * Checks [password], then deletes the vault: syncing and transfers stop first, so nothing new is sent
+     * while the history is read; then every message of the vault goes, its headers last. Done, the vault
+     * is gone and the first-start screens offer a new one. Cut short, the vault stays open and is read in
+     * afresh from what is left; the deletion can be run again.
+     */
+    fun deleteVault(password: String) {
+        if (busyFlow.value || operationFlow.value is Operation.Running) return
+        busyFlow.value = true
+        viewModelScope.launch {
+            val right = try {
+                vault.checkPassword(password)
+            } finally {
+                busyFlow.value = false
+            }
+            wrongPasswordFlow.value = !right
+            if (!right) return@launch
+            val keys = content.keys.value ?: return@launch
+            deletingFlow.value = Deleting()
+            runOperation(Kind.DELETE) {
+                try {
+                    content.forget()
+                    val storage = telegram.readyStorage() ?: throw StorageException("not signed in")
+                    vault.delete { masterId ->
+                        VaultDeletion(storage, keys, masterId).run(
+                            onRead = { read -> deletingFlow.value = Deleting(read = read) },
+                            onDeleted = { done, total -> deletingFlow.value = deletingFlow.value?.copy(deleted = done, total = total, waitSeconds = null) },
+                            onWait = { seconds -> deletingFlow.value = deletingFlow.value?.copy(waitSeconds = seconds) },
+                        )
+                    }
+                } catch (e: StorageException) {
+                    content.reopen()
+                    throw e
+                } finally {
+                    deletingFlow.value = null
+                }
+                null
+            }
+        }
     }
 
     fun logOut() {

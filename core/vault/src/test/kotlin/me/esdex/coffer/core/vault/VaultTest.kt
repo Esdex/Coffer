@@ -298,6 +298,100 @@ class VaultManagerTest {
         assertTrue(there.unlockWithPassword("new password changed over here"))
     }
 
+    /** Deletes every header of [here]'s vault from Saved Messages, as the deletion does last (SPEC §5.9). */
+    private suspend fun deleteHeaders(cloud: FakeCloud, storage: StorageBackend) {
+        storage.delete(cloud.allMessages().filter { FoundHeader.from(it) != null }.map { it.id })
+    }
+
+    @Test
+    fun theDeviceThatDeletesForgetsTheVaultAndKeepsItsSettings() = runTest {
+        val cloud = FakeCloud()
+        val (here, there, storages) = twoDevices(cloud, "password of a vault to delete")
+        val store = VaultStore(temp.root)
+        store.autoLockMinutes = 15
+        here.delete { masterId ->
+            // Its own deletes come back as events while it runs: not taken for a deletion elsewhere.
+            deleteHeaders(cloud, storages.first)
+            here.headersChanged(storages.first)
+            assertTrue(here.state.value is VaultManager.State.Unlocked)
+            assertEquals((there.state.value as VaultManager.State.Unlocked).vault.masterId, masterId)
+        }
+        assertEquals(VaultManager.State.NotFound, here.state.value)
+        assertEquals(VaultManager.Deleted.HERE, here.deleted.value)
+        // Gone from this device too, and a fresh start finds nothing; the settings are not the vault's.
+        assertTrue(store.headers().isEmpty())
+        assertEquals(15, VaultStore(temp.root).autoLockMinutes)
+        assertEquals(VaultManager.State.Unknown, manager(VaultStore(temp.root)).state.value)
+        // A new vault clears the word.
+        here.publish(storages.first, here.prepareNew("password of the next vault"))
+        assertNull(here.deleted.value)
+    }
+
+    @Test
+    fun aDeletionThatFailsLeavesTheVaultOpen() = runTest {
+        val cloud = FakeCloud()
+        val (here, _, _) = twoDevices(cloud, "password of a vault to keep")
+        try {
+            here.delete { throw IllegalStateException("Telegram went away") }
+        } catch (_: IllegalStateException) {
+        }
+        assertTrue(here.state.value is VaultManager.State.Unlocked)
+        assertNull(here.deleted.value)
+        here.lockVault()
+        assertTrue(here.unlockWithPassword("password of a vault to keep"))
+    }
+
+    @Test
+    fun anOpenVaultDeletedElsewhereIsForgottenHere() = runTest {
+        val cloud = FakeCloud()
+        val (here, there, storages) = twoDevices(cloud, "password of a vault deleted there")
+        here.delete { deleteHeaders(cloud, storages.first) }
+        there.headersChanged(storages.second)
+        assertEquals(VaultManager.State.NotFound, there.state.value)
+        assertEquals(VaultManager.Deleted.ELSEWHERE, there.deleted.value)
+        assertFalse(there.unlockWithPassword("password of a vault deleted there"))
+    }
+
+    @Test
+    fun aDeviceThatWasOffFindsOutAtItsNextStart() = runTest {
+        val cloud = FakeCloud()
+        val (here, there, storages) = twoDevices(cloud, "password of a vault deleted meanwhile")
+        there.lockVault()
+        here.delete { deleteHeaders(cloud, storages.first) }
+        // No event reached it: the search at its next start is where it learns.
+        assertTrue(there.state.value is VaultManager.State.Locked)
+        there.locate(storages.second)
+        assertEquals(VaultManager.State.NotFound, there.state.value)
+        assertEquals(VaultManager.Deleted.ELSEWHERE, there.deleted.value)
+    }
+
+    @Test
+    fun anEmptyAnswerFromTelegramDoesNotWipeTheVault() = runTest {
+        val cloud = FakeCloud()
+        val (_, there, storages) = twoDevices(cloud, "password of a vault still there")
+        there.lockVault()
+        // Offline, Telegram can answer the search with nothing at all; the headers are still there.
+        val blank = object : StorageBackend by storages.second {
+            override suspend fun pinnedMessages(): List<StoredMessage> = emptyList()
+            override suspend fun historyBefore(before: MessageId?, limit: Int): List<StoredMessage> = emptyList()
+        }
+        there.locate(blank)
+        there.headersChanged(blank)
+        assertTrue(there.state.value is VaultManager.State.Locked)
+        assertNull(there.deleted.value)
+        assertTrue(there.unlockWithPassword("password of a vault still there"))
+    }
+
+    @Test
+    fun aPasswordChangeElsewhereIsNotADeletion() = runTest {
+        val cloud = FakeCloud()
+        val (here, there, storages) = twoDevices(cloud, "old password before a change")
+        here.changePassword(storages.first, "old password before a change", "new password after the change")
+        there.headersChanged(storages.second)
+        assertNull(there.deleted.value)
+        assertTrue((there.state.value as VaultManager.State.Locked).passwordChangedElsewhere)
+    }
+
     @Test
     fun theDeviceThatChangedThePasswordStaysOpen() = runTest {
         val cloud = FakeCloud()

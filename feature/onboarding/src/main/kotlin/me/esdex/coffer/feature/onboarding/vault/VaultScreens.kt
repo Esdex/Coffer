@@ -26,6 +26,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,6 +49,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.esdex.coffer.core.crypto.bip39.Bip39
 import me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException
+import me.esdex.coffer.core.ui.components.AppDialog
 import me.esdex.coffer.core.ui.components.Hero
 import me.esdex.coffer.core.ui.components.HeroAnimation
 import me.esdex.coffer.core.ui.components.PasswordField
@@ -306,8 +308,17 @@ private fun NewPassword(viewModel: VaultViewModel, busy: Boolean, errorText: Str
     var password by remember { mutableStateOf("") }
     var repeated by remember { mutableStateOf("") }
     val check = remember(password) { PasswordPolicy.check(password) }
+    val deleted by viewModel.deleted.collectAsStateWithLifecycle()
     StepHero(Hero.SHIELD)
     StepTitle(stringResource(R.string.vault_create_title))
+    // Where the vault went, said first: a create screen out of nowhere would look like data loss.
+    deleted?.let {
+        Text(
+            stringResource(if (it == VaultManager.Deleted.HERE) R.string.vault_deleted_here else R.string.vault_deleted_elsewhere),
+            color = MaterialTheme.colorScheme.primary,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
     StepBody(stringResource(R.string.vault_create_explanation))
     PasswordField(password, stringResource(R.string.vault_password), { password = it })
     if (password.isNotEmpty()) StrengthMeter(check)
@@ -315,6 +326,23 @@ private fun NewPassword(viewModel: VaultViewModel, busy: Boolean, errorText: Str
     StepError(errorText)
     WideButton(stringResource(R.string.vault_create_continue), check.acceptable && repeated.isNotEmpty(), busy) {
         viewModel.createWithPassword(password, repeated)
+    }
+    // Quietly under the button: making a vault is the way on, another account the way out.
+    var confirmLogOut by remember { mutableStateOf(false) }
+    SecondaryAction(stringResource(R.string.vault_log_out), !busy) { confirmLogOut = true }
+    if (confirmLogOut) {
+        AppDialog(
+            onDismissRequest = { confirmLogOut = false },
+            title = { Text(stringResource(R.string.vault_log_out_title)) },
+            text = { Text(stringResource(R.string.vault_log_out_text)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmLogOut = false
+                    viewModel.logOut()
+                }) { Text(stringResource(R.string.vault_log_out)) }
+            },
+            dismissButton = { TextButton(onClick = { confirmLogOut = false }) { Text(stringResource(R.string.vault_cancel)) } },
+        )
     }
 }
 

@@ -11,6 +11,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.esdex.coffer.core.storage.StorageBackend
@@ -21,7 +22,9 @@ import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.FoundHeader
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
+import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.VaultContent
+import me.esdex.coffer.feature.browser.viewer.audio.AudioPlayback
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -36,6 +39,8 @@ class VaultLifecycle @Inject constructor(
     private val store: VaultStore,
     private val device: DeviceUnlock,
     private val content: VaultContent,
+    private val playback: AudioPlayback,
+    private val previews: Previews,
 ) : DefaultLifecycleObserver {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lockTimer: Job? = null
@@ -61,6 +66,18 @@ class VaultLifecycle @Inject constructor(
                         vault.forget()
                     }
                     else -> Unit
+                }
+            }
+        }
+        // The vault deleted, here or on another device (SPEC §5.9): nothing of it stays on this phone.
+        // The previews and waveforms on disk follow the emptied index by themselves.
+        scope.launch {
+            vault.deleted.filterNotNull().collect {
+                withContext(NonCancellable) {
+                    playback.stop()
+                    content.forget()
+                    device.disable()
+                    previews.clear()
                 }
             }
         }

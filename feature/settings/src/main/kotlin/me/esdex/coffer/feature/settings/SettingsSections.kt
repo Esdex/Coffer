@@ -211,13 +211,25 @@ private fun AutoLockDelay(shape: Shape, minutes: Int, onChange: (Int) -> Unit) {
 // ── Password and recovery key ───────────────────────────────────────────────
 
 @Composable
-internal fun VaultSection(onBack: () -> Unit, onPassword: () -> Unit, onRecovery: () -> Unit) {
+internal fun VaultSection(onBack: () -> Unit, onPassword: () -> Unit, onRecovery: () -> Unit, onDelete: () -> Unit) {
     SectionScaffold(stringResource(R.string.settings_card_vault), onBack) {
         SettingsGroup(stringResource(R.string.settings_group_password)) {
             row { shape -> LinkRow(shape, stringResource(R.string.settings_password), stringResource(R.string.settings_password_summary), onPassword) }
         }
         SettingsGroup(stringResource(R.string.settings_group_recovery)) {
             row { shape -> LinkRow(shape, stringResource(R.string.settings_recovery), stringResource(R.string.settings_recovery_summary), onRecovery) }
+        }
+        // Last and red, apart from the rest: the one thing here that cannot be taken back (SPEC §5.9).
+        SettingsGroup(stringResource(R.string.settings_group_danger)) {
+            row { shape ->
+                GroupedRow(
+                    shape,
+                    title = stringResource(R.string.settings_delete_vault),
+                    subtitle = stringResource(R.string.settings_delete_vault_summary),
+                    titleColor = MaterialTheme.colorScheme.error,
+                    onClick = onDelete,
+                )
+            }
         }
     }
 }

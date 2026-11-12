@@ -73,6 +73,7 @@ private enum class Screen(val depth: Int) {
     DEBUG(1),
     PASSWORD(2),
     RECOVERY(2),
+    DELETE(2),
     LICENSES(2),
     KIND(2),
     OPERATION(3),
@@ -80,7 +81,7 @@ private enum class Screen(val depth: Int) {
 
     val parent: Screen
         get() = when (this) {
-            PASSWORD, RECOVERY -> VAULT
+            PASSWORD, RECOVERY, DELETE -> VAULT
             LICENSES -> ABOUT
             KIND -> STORAGE
             else -> MAIN
@@ -152,7 +153,12 @@ fun SettingsScreen(
         when (screen) {
             Screen.MAIN -> MainList(onBack, viewModel, showDebug = debugTools != null && state.debugTools, onOpen = { current = it })
             Screen.SECURITY -> SecuritySection(viewModel, back, onDeviceUnlock)
-            Screen.VAULT -> VaultSection(back, onPassword = { current = Screen.PASSWORD }, onRecovery = { current = Screen.RECOVERY })
+            Screen.VAULT -> VaultSection(
+                back,
+                onPassword = { current = Screen.PASSWORD },
+                onRecovery = { current = Screen.RECOVERY },
+                onDelete = { current = Screen.DELETE },
+            )
             Screen.APPEARANCE -> AppearanceSection(viewModel, back)
             Screen.PLAYER -> PlayerSection(viewModel, back)
             Screen.TEXT -> TextSection(viewModel, back)
@@ -166,6 +172,7 @@ fun SettingsScreen(
             Screen.DEBUG -> DebugSection(back, onHide = { viewModel.setDebugTools(false); current = Screen.MAIN }) { debugTools?.invoke() }
             Screen.PASSWORD -> ChangePasswordPage(onBack = back, viewModel = viewModel)
             Screen.RECOVERY -> RecoveryKeyPage(onBack = back, viewModel = viewModel)
+            Screen.DELETE -> DeleteVaultPage(onBack = back, viewModel = viewModel)
             Screen.OPERATION -> OperationPage(viewModel)
         }
     }
@@ -266,15 +273,30 @@ private fun GroupBuilder.section(screen: Screen, icon: ImageVector, hue: Hue, ti
 private fun OperationPage(viewModel: SettingsViewModel) {
     val operation by viewModel.operation.collectAsStateWithLifecycle()
     val working by viewModel.working.collectAsStateWithLifecycle()
+    val deleting by viewModel.deleting.collectAsStateWithLifecycle()
     BackHandler(onBack = viewModel::dismissOperation)
     val modifier = Modifier.safeDrawingPadding()
     when (val op = operation) {
         null -> Unit
-        is SettingsViewModel.Operation.Running -> OperationLoading(
-            title = stringResource(if (op.kind == SettingsViewModel.Kind.CHECK) R.string.settings_check_running else R.string.settings_rescan_running),
-            subtitle = working?.let { pluralStringResource(R.plurals.settings_reading, it, it) },
-            modifier = modifier,
-        )
+        is SettingsViewModel.Operation.Running -> if (op.kind == SettingsViewModel.Kind.DELETE) {
+            val d = deleting
+            OperationLoading(
+                title = stringResource(R.string.settings_delete_running),
+                subtitle = when {
+                    d == null -> null
+                    d.waitSeconds != null -> stringResource(R.string.settings_delete_wait, d.waitSeconds)
+                    d.deleted != null -> pluralStringResource(R.plurals.settings_delete_progress, d.total, d.deleted, d.total)
+                    else -> pluralStringResource(R.plurals.settings_reading, d.read, d.read)
+                },
+                modifier = modifier,
+            )
+        } else {
+            OperationLoading(
+                title = stringResource(if (op.kind == SettingsViewModel.Kind.CHECK) R.string.settings_check_running else R.string.settings_rescan_running),
+                subtitle = working?.let { pluralStringResource(R.plurals.settings_reading, it, it) },
+                modifier = modifier,
+            )
+        }
         is SettingsViewModel.Operation.Done -> OperationSuccess(
             title = stringResource(if (op.kind == SettingsViewModel.Kind.CHECK) R.string.settings_check_title else R.string.settings_rescan_done),
             body = op.report?.let { report ->
@@ -292,8 +314,9 @@ private fun OperationPage(viewModel: SettingsViewModel) {
             modifier = modifier,
         )
         is SettingsViewModel.Operation.Failed -> OperationFailure(
-            title = stringResource(R.string.settings_operation_failed),
-            body = stringResource(op.message),
+            title = stringResource(if (op.kind == SettingsViewModel.Kind.DELETE) R.string.settings_delete_failed else R.string.settings_operation_failed),
+            // Cut short, the vault stays open with what is left (see SettingsViewModel.deleteVault): the way on is to run it again.
+            body = stringResource(op.message) + if (op.kind == SettingsViewModel.Kind.DELETE) "\n\n" + stringResource(R.string.settings_delete_failed_again) else "",
             onDone = viewModel::dismissOperation,
             modifier = modifier,
         )

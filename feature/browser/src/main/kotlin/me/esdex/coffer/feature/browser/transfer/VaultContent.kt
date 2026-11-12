@@ -67,6 +67,7 @@ import me.esdex.coffer.core.sync.transferKeys
 import me.esdex.coffer.core.sync.waitingOutFloods
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
+import me.esdex.coffer.core.vault.UnlockedVault
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
 
@@ -186,14 +187,15 @@ class VaultContent @Inject constructor(
         scope.launch {
             vault.state.collect { state ->
                 if (state is VaultManager.State.Unlocked) {
-                    val unlocked = state.vault
-                    open(VaultKeys(sodium, unlocked.keys.metaKey, unlocked.keys.indexKey, unlocked.keys.wrapKey, unlocked.localKey))
+                    open(keysOf(state.vault))
                 } else {
                     close()
                 }
             }
         }
     }
+
+    private fun keysOf(unlocked: UnlockedVault) = VaultKeys(sodium, unlocked.keys.metaKey, unlocked.keys.indexKey, unlocked.keys.wrapKey, unlocked.localKey)
 
     private fun open(keys: VaultKeys) {
         close()
@@ -665,6 +667,14 @@ class VaultContent @Inject constructor(
     fun retry(id: String) {
         registry.clearFailure(id)
         if (cache.queue.find(id) != null) TransferWorker.start(context, registry) else pendingWork.trySend(Unit)
+    }
+
+    /**
+     * After [forget] with the vault still open, a deletion of it cut short (SPEC §5.9): starts syncing
+     * again, and the index is read in afresh from what is left.
+     */
+    fun reopen() {
+        (vault.state.value as? VaultManager.State.Unlocked)?.let { open(keysOf(it.vault)) }
     }
 
     /** Signing out (SPEC §9): stop everything and forget the index. */

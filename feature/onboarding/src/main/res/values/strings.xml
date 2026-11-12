@@ -95,6 +95,12 @@
 
     <string name="vault_create_title">Create your vault</string>
     <string name="vault_create_explanation">No vault was found in your Saved Messages. Choose a password for a new one. Anyone who gets into your Telegram account could try to guess it, so make it strong: a few unrelated words work well.</string>
+    <string name="vault_deleted_here">The vault was deleted. You can create a new one.</string>
+    <string name="vault_deleted_elsewhere">This vault was deleted on another device. You can create a new one.</string>
+    <string name="vault_log_out">Log out</string>
+    <string name="vault_log_out_title">Log out?</string>
+    <string name="vault_cancel">Cancel</string>
+    <string name="vault_log_out_text">Coffer signs out of Telegram on this phone, and you can sign in with another account. Nothing is lost: no vault has been made yet.</string>
     <string name="vault_create_continue">Continue</string>
     <string name="vault_strength_0">Very weak</string>
     <string name="vault_strength_1">Weak</string>

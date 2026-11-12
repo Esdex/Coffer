@@ -52,6 +52,14 @@ class VaultViewModel @Inject constructor(
 
     val state: StateFlow<VaultManager.State> = vault.state
 
+    /** The vault before this one was deleted, here or on another device: said over the screen that makes a new one. */
+    val deleted: StateFlow<VaultManager.Deleted?> = vault.deleted
+
+    /** Out of Telegram instead of making a vault: to sign in with another account (Esdex, 2026-11-12). */
+    fun logOut() {
+        viewModelScope.launch { runCatching { telegram.logOut() } }
+    }
+
     private val createFlow = MutableStateFlow<CreateStep>(CreateStep.Password)
     val createStep: StateFlow<CreateStep> = createFlow.asStateFlow()
 

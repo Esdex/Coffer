@@ -14,6 +14,7 @@ import me.esdex.coffer.core.crypto.bip39.Bip39
 import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
 import me.esdex.coffer.core.crypto.sodium.Sodium
 import me.esdex.coffer.core.storage.StorageBackend
+import me.esdex.coffer.core.storage.StorageException
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -44,8 +45,20 @@ class VaultManager(
         data class Unlocked(val vault: UnlockedVault) : State
     }
 
+    /** Why there is no vault any more, for the screen that offers a new one (SPEC §5.9). */
+    enum class Deleted { HERE, ELSEWHERE }
+
     private val lock = Mutex()
     private var headers: List<FoundHeader> = store.headers()
+
+    private val deletedFlow = MutableStateFlow<Deleted?>(null)
+
+    /** Set once the vault is deleted, here or on another device; cleared by a new vault or a sign-out. */
+    val deleted: StateFlow<Deleted?> = deletedFlow.asStateFlow()
+
+    // While this device deletes the vault, its own deletes come back as events: not a deletion elsewhere.
+    @Volatile
+    private var deleting = false
 
     /** Counts writes of [headers], so a search that took a while can tell it was overtaken. */
     private var headerWrites = 0L
@@ -67,12 +80,18 @@ class VaultManager(
         val (firstTime, startedAt) = lock.withLock { (headers.isEmpty() && stateFlow.value !is State.Unlocked) to headerWrites }
         if (firstTime) stateFlow.value = State.Searching(0)
         val found = VaultHeaders.find(storage) { scanned -> if (firstTime) stateFlow.value = State.Searching(scanned) }
+        // A device that was off while the vault was deleted elsewhere finds out here, at its next start.
+        val deletedElsewhere = deletedElsewhere(storage, found)
         lock.withLock {
             // Headers were written while this search was out (a password change, a new vault): what it
             // found may be older than that, and the newer headers stay.
             if (headerWrites != startedAt) {
                 // Whoever wrote also set the state; only a search screen this one put up is left to undo.
                 if (stateFlow.value is State.Searching) stateFlow.value = lockedOrUnknown()
+                return
+            }
+            if (deletedElsewhere && !deleting) {
+                forgetDeletedLocked(Deleted.ELSEWHERE)
                 return
             }
             val current = stateFlow.value
@@ -115,11 +134,17 @@ class VaultManager(
      * way, or cut short) leaves it open: both passwords are good until the old header is deleted.
      */
     suspend fun headersChanged(storage: StorageBackend) {
+        if (deleting) return
         val startedAt = lock.withLock { headerWrites }
         val found = runCatching { VaultHeaders.find(storage) }.getOrNull() ?: return
+        val deletedElsewhere = deletedElsewhere(storage, found)
         lock.withLock {
             // This device wrote headers meanwhile (its own password change): what was read may predate it.
             if (headerWrites != startedAt) return
+            if (deletedElsewhere && !deleting) {
+                forgetDeletedLocked(Deleted.ELSEWHERE)
+                return
+            }
             val masterId = headers.firstOrNull()?.header?.masterId ?: return
             val same = found.filter { it.header.masterId == masterId }
             if (same.isEmpty()) return
@@ -131,6 +156,49 @@ class VaultManager(
                 stateFlow.value = State.Locked(masterId, passwordChangedElsewhere = true)
             }
         }
+    }
+
+    /**
+     * True if the vault this device knows was deleted on another device: no header of it in [found], and
+     * Telegram confirms every header known here is gone. The search alone would not do: Telegram offline
+     * can answer with an empty history, and that must not wipe the vault from this device. A cached
+     * message is still there offline, so only a deletion Telegram has passed on counts.
+     */
+    private suspend fun deletedElsewhere(storage: StorageBackend, found: List<FoundHeader>): Boolean {
+        val known = lock.withLock { headers }
+        val masterId = known.firstOrNull()?.header?.masterId ?: return false
+        if (found.any { it.header.masterId == masterId }) return false
+        return known.all { header ->
+            try {
+                storage.message(header.messageId) == null
+            } catch (_: StorageException) {
+                false
+            }
+        }
+    }
+
+    /**
+     * Deletes the open vault (SPEC §5.9): [run] gets its master_id and deletes its messages from Saved
+     * Messages, then the vault is forgotten here and found no more. A run that fails leaves it as it is,
+     * open, to be run again.
+     */
+    suspend fun delete(run: suspend (masterId: Bytes) -> Unit) {
+        val masterId = (stateFlow.value as? State.Unlocked)?.vault?.masterId ?: throw IllegalStateException("the vault is locked")
+        deleting = true
+        try {
+            run(masterId)
+            lock.withLock { forgetDeletedLocked(Deleted.HERE) }
+        } finally {
+            deleting = false
+        }
+    }
+
+    // The headers go, the settings stay: they are this device's, not the vault's.
+    private fun forgetDeletedLocked(why: Deleted) {
+        (stateFlow.value as? State.Unlocked)?.vault?.close()
+        remember(emptyList())
+        deletedFlow.value = why
+        stateFlow.value = State.NotFound
     }
 
     /** True if any of [ids] is a vault header this device knows: its delete means a password change. */
@@ -183,6 +251,7 @@ class VaultManager(
         }
         lock.withLock {
             remember(listOf(published))
+            deletedFlow.value = null
             stateFlow.value = State.Unlocked(vault.vault)
         }
     }
@@ -242,6 +311,7 @@ class VaultManager(
         (stateFlow.value as? State.Unlocked)?.vault?.close()
         headers = emptyList()
         store.clear()
+        deletedFlow.value = null
         stateFlow.value = State.Unknown
     }
 

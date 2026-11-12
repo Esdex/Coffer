@@ -110,6 +110,22 @@
     <string name="settings_group_privacy">Privacy</string>
     <string name="settings_group_password">Password</string>
     <string name="settings_group_recovery">Recovery key</string>
+    <string name="settings_group_danger">Danger zone</string>
+    <string name="settings_delete_vault">Delete vault</string>
+    <string name="settings_delete_vault_summary">Removes the vault and all its files from Saved Messages, on every device</string>
+    <string name="settings_delete_explanation">This deletes every file in the vault and everything Coffer keeps for it in Saved Messages, for good and on every device. The recovery key will not open anything afterwards. Your own messages in Saved Messages stay.</string>
+    <string name="settings_delete_how">Enter the vault password and type DELETE to confirm.</string>
+    <string name="settings_delete_type">Type DELETE</string>
+    <string name="settings_delete_word" translatable="false">DELETE</string>
+    <string name="settings_delete_confirm">Delete the vault for good</string>
+    <string name="settings_delete_running">Deleting the vault</string>
+    <plurals name="settings_delete_progress">
+        <item quantity="one">%1$d of %2$d message deleted</item>
+        <item quantity="other">%1$d of %2$d messages deleted</item>
+    </plurals>
+    <string name="settings_delete_wait">Telegram asked to wait %1$d s</string>
+    <string name="settings_delete_failed">The vault was not fully deleted</string>
+    <string name="settings_delete_failed_again">Part of it may already be gone. Delete it again to finish.</string>
     <string name="settings_group_display">Display</string>
     <string name="settings_group_integrity">Integrity</string>
     <string name="settings_group_rebuild">Rebuild</string>

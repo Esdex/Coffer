@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -28,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.esdex.coffer.core.ui.components.CofferScaffold
@@ -139,6 +143,42 @@ fun RecoveryKeyPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel
             RecoveryWords(shown)
             Button(onClick = leave, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.settings_recovery_done)) }
         }
+    }
+}
+
+/**
+ * Deleting the vault (SPEC §5.9): what it does, in full, then the current password and the word DELETE
+ * typed out before the red button wakes. The deletion itself runs as an operation, with its progress.
+ */
+@Composable
+fun DeleteVaultPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: SettingsViewModel) {
+    val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val wrong by viewModel.wrongPassword.collectAsStateWithLifecycle()
+    // Not saved across process death: a password does not belong in the saved instance state.
+    var password by remember { mutableStateOf("") }
+    var typed by remember { mutableStateOf("") }
+    val word = stringResource(R.string.settings_delete_word)
+    val leave = { viewModel.leaveSecrets(); onBack() }
+    SecretPage(stringResource(R.string.settings_delete_vault), onBack = leave, modifier = modifier) {
+        Text(stringResource(R.string.settings_delete_explanation), style = MaterialTheme.typography.bodyMedium)
+        Text(stringResource(R.string.settings_delete_how), style = MaterialTheme.typography.bodyMedium)
+        PasswordField(password, stringResource(R.string.settings_password_current), { password = it }, isError = wrong)
+        FieldError(wrong, stringResource(R.string.settings_password_wrong))
+        OutlinedTextField(
+            value = typed,
+            onValueChange = { typed = it },
+            label = { Text(stringResource(R.string.settings_delete_type)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(
+            onClick = { viewModel.deleteVault(password) },
+            enabled = !busy && password.isNotEmpty() && typed.trim() == word,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = MaterialTheme.colorScheme.onError),
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(R.string.settings_delete_confirm)) }
+        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
 
