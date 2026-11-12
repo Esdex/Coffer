@@ -1389,7 +1389,7 @@ fun TransfersScreen(
             contentPadding = PaddingValues(top = padding.calculateTopPadding() + 8.dp, bottom = padding.calculateBottomPadding() + 24.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
-            itemsIndexedShaped(transfers) { item, shape ->
+            itemsIndexedShaped(transfers, key = { it.id }) { item, shape ->
                 GroupedBox(shape) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         TypeTile(fileTypeIcon(item.name.orEmpty()))
@@ -1519,12 +1519,16 @@ private fun TransferStatus(item: TransferItem) {
     }
 }
 
-/** Items of one group of cards: each gets the shape its place in the group calls for. */
+/**
+ * Items of one group of cards: each gets the shape its place in the group calls for. Keyed, so the state
+ * of one that leaves the list goes with it instead of passing to the item that takes its place.
+ */
 private fun <T> androidx.compose.foundation.lazy.LazyListScope.itemsIndexedShaped(
     list: List<T>,
+    key: (T) -> Any,
     content: @Composable (T, androidx.compose.ui.graphics.Shape) -> Unit,
 ) {
-    items(list.size) { index -> content(list[index], groupShape(index, list.size)) }
+    items(list.size, key = { index -> key(list[index]) }) { index -> content(list[index], groupShape(index, list.size)) }
 }
 
 private fun TransferRegistry.Failure.label() = when (this) {
