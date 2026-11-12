@@ -10,6 +10,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -92,35 +93,42 @@ fun FieldError(visible: Boolean, text: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * The recovery words on a card: three columns numbered top to bottom like the paper backup, the
- * numbers quieter than the words they count.
+ * The recovery words on a card, numbered top to bottom like the paper backup, the numbers quieter than
+ * the words they count. Two columns on a phone, three where there is room: three on a phone's width
+ * squeezed the longer words ("12. practice") into each other and broke some over two lines (seen
+ * 2026-11-12). A word never breaks.
  */
 @Composable
 fun RecoveryWords(words: List<String>, modifier: Modifier = Modifier) {
     val number = SpanStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)
-    val rows = (words.size + 2) / 3
-    Row(
-        modifier.fillMaxWidth().clip(RoundedCornerShape(Corners.Panel)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        for (column in 0 until 3) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for (row in 0 until rows) {
-                    val index = column * rows + row
-                    val word = words.getOrNull(index) ?: continue
-                    Text(
-                        buildAnnotatedString {
-                            withStyle(number) { append("%2d. ".format(index + 1)) }
-                            append(word)
-                        },
-                        fontFamily = FontFamily.Monospace,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+    BoxWithConstraints(modifier.fillMaxWidth().clip(RoundedCornerShape(Corners.Panel)).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+        val columns = if (maxWidth >= WIDE_WORDS) 3 else 2
+        val rows = (words.size + columns - 1) / columns
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp)) {
+            for (column in 0 until columns) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (row in 0 until rows) {
+                        val index = column * rows + row
+                        val word = words.getOrNull(index) ?: continue
+                        Text(
+                            buildAnnotatedString {
+                                withStyle(number) { append("%2d. ".format(index + 1)) }
+                                append(word)
+                            },
+                            fontFamily = FontFamily.Monospace,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
                 }
             }
         }
     }
 }
+
+/** From this width of card on, the words go in three columns. */
+private val WIDE_WORDS = 480.dp
 
 /**
  * How strong a new password is: five segments filling up to [score] (0 to 4), in the accent colour once
