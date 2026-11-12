@@ -1,6 +1,9 @@
 package me.esdex.coffer.feature.browser.transfer
 
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -43,6 +46,31 @@ class TransferRegistry @Inject constructor() {
 
     /** At most this many transfers run at once, uploads and downloads together (SPEC §6). */
     val gate = Semaphore(TransferLimiter.MAX_TRANSFERS)
+
+    /** Whether the queue's one run is going (see [TransferWorker]). */
+    val queue = QueueState()
+
+    /** Wakes the queue's run: new work, or a transfer of it ended. */
+    val wake = Channel<Unit>(Channel.CONFLATED)
+
+    private val runs = HashMap<String, Job>()
+
+    /** [job] runs the transfer [id], until [untrack]; so one transfer can be stopped and not the others. */
+    @Synchronized
+    fun track(id: String, job: Job) {
+        runs[id] = job
+    }
+
+    @Synchronized
+    fun untrack(id: String, job: Job) {
+        if (runs[id] === job) runs.remove(id)
+    }
+
+    /** Stops the transfer [id] if it is running, and waits for it to let go. */
+    suspend fun stop(id: String) {
+        val job = synchronized(this) { runs[id] } ?: return
+        job.cancelAndJoin()
+    }
 
     @Synchronized
     fun put(fileId: Id, entry: Entry) {

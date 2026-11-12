@@ -8,11 +8,8 @@ import android.provider.DocumentsContract
 import android.util.Log
 import androidx.core.net.toUri
 import androidx.work.Constraints
-import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequest
 import androidx.work.WorkManager
-import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.IOException
@@ -240,8 +237,8 @@ class VaultContent @Inject constructor(
     }
 
     /**
-     * Prepares queued uploads and gives every pending transfer its keys, then (re)starts the workers.
-     * Runs after unlock and after anything is added.
+     * Prepares queued uploads and gives every pending transfer its keys, then wakes the queue, or starts it
+     * (see [TransferWorker]). Runs after unlock and after anything is added.
      */
     private suspend fun resume(keys: VaultKeys) {
         for (upload in index.uploads()) {
@@ -264,7 +261,6 @@ class VaultContent @Inject constructor(
                 val transferKeys = keys.transferKeys(fileId, file.sealedMeta) ?: continue
                 registry.put(fileId, TransferRegistry.Entry(transferKeys, source = request.source, displayName = request.name))
             }
-            enqueue(TransferWorker.upload(upload.uploadId))
         }
         for (download in index.downloads()) {
             if (registry.failures.value.containsKey(download.downloadId)) continue
@@ -277,13 +273,10 @@ class VaultContent @Inject constructor(
                 val open = if (target == null) TransferRegistry.OpenTarget(meta.name, meta.mime) else null
                 registry.put(download.fileId, TransferRegistry.Entry(transferKeys, target = target, open = open, displayName = meta.name))
             }
-            enqueue(TransferWorker.download(download.downloadId))
         }
-        // These need no key; this only starts again what Android stopped while Coffer was away.
-        for (item in cache.queue.items.value) {
-            if (registry.failures.value.containsKey(item.id)) continue
-            enqueue(TransferWorker.prefetch(item.id))
-        }
+        // With the keys in place the queue can run all of it; files being cached need none, and run anyway.
+        TransferWorker.dismissPaused(context)
+        TransferWorker.start(context, registry)
     }
 
     /** Sends a snapshot if anything changed since the newest one; a failure waits for the next change. */
@@ -383,10 +376,6 @@ class VaultContent @Inject constructor(
         }
     }
 
-    private fun enqueue(request: Pair<String, OneTimeWorkRequest>) {
-        WorkManager.getInstance(context).enqueueUniqueWork(request.first, ExistingWorkPolicy.KEEP, request.second)
-    }
-
     class UploadRequest(val uri: Uri, val displayName: String, val mime: String?, val folderId: Id?)
 
     suspend fun upload(requests: List<UploadRequest>) {
@@ -443,7 +432,7 @@ class VaultContent @Inject constructor(
      * it goes on after the vault locks, like any transfer.
      */
     fun cacheFiles(fileIds: List<Id>) {
-        for (item in cache.queue.add(fileIds)) enqueue(TransferWorker.prefetch(item.id))
+        if (cache.queue.add(fileIds).isNotEmpty()) TransferWorker.start(context, registry)
     }
 
     suspend fun delete(fileId: Id) {
@@ -631,8 +620,7 @@ class VaultContent @Inject constructor(
     }
 
     suspend fun cancelUpload(uploadId: String) {
-        WorkManager.getInstance(context).cancelUniqueWork(TransferWorker.uploadName(uploadId))
-        TransferWorker.dismiss(context, uploadId)
+        registry.stop(uploadId)
         val upload = index.uploads().find { it.uploadId == uploadId } ?: return
         keysFlow.value?.local?.openUpload(uploadId, upload.sealedRequest)?.let { ShareInbox.deleteCopy(context, it.source) }
         val storage = telegram.readyStorage() ?: return
@@ -643,8 +631,7 @@ class VaultContent @Inject constructor(
     }
 
     suspend fun cancelDownload(downloadId: String) {
-        WorkManager.getInstance(context).cancelUniqueWork(TransferWorker.downloadName(downloadId))
-        TransferWorker.dismiss(context, downloadId)
+        registry.stop(downloadId)
         index.removeDownload(downloadId)
         registry.finished(downloadId)
         registry.clearFailure(downloadId)
@@ -655,8 +642,7 @@ class VaultContent @Inject constructor(
      * is dropped, as nothing would account for it, unless a viewer is reading the file right now.
      */
     suspend fun cancelPrefetch(id: String) {
-        WorkManager.getInstance(context).cancelUniqueWork(TransferWorker.prefetchName(id))
-        TransferWorker.dismiss(context, id)
+        registry.stop(id)
         val item = cache.queue.find(id)
         cache.queue.remove(id)
         registry.finished(id)
@@ -678,7 +664,7 @@ class VaultContent @Inject constructor(
     /** A failed transfer, tried again. */
     fun retry(id: String) {
         registry.clearFailure(id)
-        if (cache.queue.find(id) != null) enqueue(TransferWorker.prefetch(id)) else pendingWork.trySend(Unit)
+        if (cache.queue.find(id) != null) TransferWorker.start(context, registry) else pendingWork.trySend(Unit)
     }
 
     /** Signing out (SPEC §9): stop everything and forget the index. */
@@ -693,11 +679,6 @@ class VaultContent @Inject constructor(
 private const val SNAPSHOT_DELAY_MS = 90_000L
 
 internal fun transferConstraints() = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
-
-internal fun OneTimeWorkRequest.Builder.withTransferDefaults(kind: String, id: String): OneTimeWorkRequest.Builder = this
-    .setConstraints(transferConstraints())
-    .addTag(TransferWorker.TAG)
-    .setInputData(workDataOf(TransferWorker.KEY_KIND to kind, TransferWorker.KEY_ID to id))
 
 private const val SYNC_TAG = "CofferSync"
 
