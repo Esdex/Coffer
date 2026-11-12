@@ -43,4 +43,12 @@ class CacheStoreTest {
         file.writeText("limitMb=7\nenabled=maybe\nclearOnLock=true\npreviews=no\n")
         assertEquals(CachePrefs(clearOnLock = true), CacheStore(file).prefs.value)
     }
+
+    @Test
+    fun everyLimitOnOfferReadsTheSameWholeOrSplit() {
+        // Written out by hand, not worked out the way the code does it.
+        val expected = listOf("500" to "MB", "1" to "GB", "2" to "GB", "5" to "GB", "10" to "GB")
+        assertEquals(expected, CachePrefs.LIMITS_MB.map(CachePrefs::limitParts))
+        assertEquals(listOf("500 MB", "1 GB", "2 GB", "5 GB", "10 GB"), CachePrefs.LIMITS_MB.map(CachePrefs::limitLabel))
+    }
 }

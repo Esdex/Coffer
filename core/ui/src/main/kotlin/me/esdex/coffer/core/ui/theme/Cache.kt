@@ -26,7 +26,10 @@ data class CachePrefs(
         const val DEFAULT_LIMIT_MB = 2048
 
         /** A limit as the settings offer it: 500 MB, 1 GB, and so on. */
-        fun limitLabel(mb: Int): String = if (mb < 1024) "$mb MB" else "${mb / 1024} GB"
+        fun limitLabel(mb: Int): String = limitParts(mb).let { (number, unit) -> "$number $unit" }
+
+        /** The same split in two, for a button too narrow for both on one line: "500" over "MB". */
+        fun limitParts(mb: Int): Pair<String, String> = if (mb < 1024) "$mb" to "MB" else "${mb / 1024}" to "GB"
     }
 }
 

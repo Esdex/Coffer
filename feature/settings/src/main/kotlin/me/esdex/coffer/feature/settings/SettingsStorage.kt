@@ -314,7 +314,14 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                                 enabled = cache.enabled,
                                 shape = SegmentedButtonDefaults.itemShape(index = i, count = limits.size),
                                 icon = {},
-                                label = { Text(CachePrefs.limitLabel(mb), style = MaterialTheme.typography.labelSmall, maxLines = 1) },
+                                // Five to a row leaves too little room for "500 MB" on one line: it was cut to "500".
+                                label = {
+                                    val (number, unit) = CachePrefs.limitParts(mb)
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(number, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                                        Text(unit, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                    }
+                                },
                             )
                         }
                     }
