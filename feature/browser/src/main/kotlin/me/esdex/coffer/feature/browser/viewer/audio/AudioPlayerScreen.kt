@@ -82,6 +82,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.feature.browser.R
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
 import me.esdex.coffer.feature.browser.viewer.formatTime
@@ -126,7 +128,7 @@ fun AudioPlayerScreen(
         }
     }
 
-    val tint by animateColorAsState(state.tags?.color?.let { Color(it).copy(alpha = 0.35f) } ?: Color.Transparent, tween(700), label = "cover colour")
+    val tint by animateColorAsState(state.tags?.color?.let { Color(it).copy(alpha = 0.35f) } ?: Color.Transparent, tween(Motion.AMBIENT), label = "cover colour")
     var menuOpen by remember { mutableStateOf(false) }
     val track = state.track
 
@@ -167,7 +169,7 @@ fun AudioPlayerScreen(
 
                 // A phone held sideways has no room for a square cover and the controls under it.
                 Column(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    AnimatedContent(state.tags, transitionSpec = { fadeIn(tween(400)) togetherWith fadeOut(tween(280)) }, label = "track", modifier = Modifier.weight(1f, fill = false)) { tags ->
+                    AnimatedContent(state.tags, transitionSpec = { fadeIn(Motion.screen()) togetherWith fadeOut(Motion.standard()) }, label = "track", modifier = Modifier.weight(1f, fill = false)) { tags ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Cover(tags, Modifier.weight(1f, fill = false).widthIn(max = 420.dp).aspectRatio(1f))
                             Spacer(Modifier.height(24.dp))
@@ -324,7 +326,7 @@ private fun ModeChip(selected: Boolean, label: String, icon: androidx.compose.ui
 private fun Cover(
     tags: AudioViewModel.Tags?,
     modifier: Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(16.dp),
+    shape: RoundedCornerShape = RoundedCornerShape(Corners.Large),
     elevation: androidx.compose.ui.unit.Dp = 16.dp,
     noteSize: androidx.compose.ui.unit.Dp = 72.dp,
 ) {
@@ -358,7 +360,7 @@ fun MiniPlayer(viewModel: AudioViewModel = hiltViewModel()) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Cover(tags, Modifier.size(44.dp), shape = RoundedCornerShape(8.dp), elevation = 0.dp, noteSize = 22.dp)
+            Cover(tags, Modifier.size(44.dp), shape = RoundedCornerShape(Corners.Tile), elevation = 0.dp, noteSize = 22.dp)
             Column(Modifier.weight(1f)) {
                 Text(
                     tags?.title ?: state.track?.name?.let { it.substringBeforeLast('.', it) }.orEmpty(),

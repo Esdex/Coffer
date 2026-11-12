@@ -3,7 +3,6 @@ package me.esdex.coffer.feature.onboarding
 import android.content.Context
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -18,7 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,6 +38,8 @@ import kotlinx.coroutines.launch
 import me.esdex.coffer.core.ui.components.Hero
 import me.esdex.coffer.core.ui.components.HeroAnimation
 import me.esdex.coffer.core.ui.components.PillButton
+import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Motion
 
 private class WelcomePage(val title: Int, val text: Int, val hero: Hero)
 
@@ -73,13 +73,13 @@ fun WelcomeGate(modifier: Modifier = Modifier, content: @Composable () -> Unit) 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 pages.indices.forEach { index ->
                     val selected = pager.currentPage == index
-                    val width by animateDpAsState(if (selected) 24.dp else 8.dp, tween(300), label = "dot")
+                    val width by animateDpAsState(if (selected) 24.dp else 8.dp, Motion.standard(), label = "dot")
                     val color by animateColorAsState(
                         if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                        tween(300),
+                        Motion.standard(),
                         label = "dot",
                     )
-                    Box(Modifier.height(8.dp).width(width).clip(RoundedCornerShape(99.dp)).background(color))
+                    Box(Modifier.height(8.dp).width(width).clip(Corners.pill).background(color))
                 }
             }
             val last = pager.currentPage == pages.lastIndex

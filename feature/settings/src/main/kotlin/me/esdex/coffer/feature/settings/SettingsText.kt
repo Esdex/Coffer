@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.esdex.coffer.core.ui.components.GroupedBox
 import me.esdex.coffer.core.ui.components.GroupedSwitch
 import me.esdex.coffer.core.ui.components.SettingsGroup
+import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.LocalDarkMode
 import me.esdex.coffer.core.ui.theme.TextPrefs
 import me.esdex.coffer.feature.browser.viewer.text.Syntax
@@ -118,7 +119,7 @@ private fun TextPreview(prefs: TextPrefs) {
             .fillMaxWidth()
             .padding(vertical = 8.dp)
             .heightIn(min = 150.dp)
-            .clip(RoundedCornerShape(28.dp))
+            .clip(RoundedCornerShape(Corners.Panel))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(vertical = 12.dp),
     ) {

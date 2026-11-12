@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.VolumeOff
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
@@ -69,6 +68,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.Player
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.launch
+import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.feature.browser.R
 
 internal enum class SwipeKind { VOLUME, BRIGHTNESS }
@@ -339,7 +339,7 @@ internal fun SwipeLevel(kind: SwipeKind, level: Float) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 10.dp),
+        modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), Corners.pill).padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         Icon(
             when {

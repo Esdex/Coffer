@@ -17,7 +17,6 @@ import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -80,6 +79,8 @@ import me.esdex.coffer.core.ui.components.GroupedBox
 import me.esdex.coffer.core.ui.components.GroupedRow
 import me.esdex.coffer.core.ui.components.GroupedSwitch
 import me.esdex.coffer.core.ui.components.SettingsGroup
+import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.ThemeMode
 
 /**
@@ -571,13 +572,13 @@ internal fun AboutSection(
                 Image(
                     icon,
                     contentDescription = null,
-                    modifier = Modifier.size(80.dp).clip(RoundedCornerShape(20.dp))
+                    modifier = Modifier.size(80.dp).clip(RoundedCornerShape(Corners.Large))
                         .then(if (onIconTap != null) Modifier.clickable(onClick = onIconTap) else Modifier),
                 )
             }
             Text(stringResource(R.string.settings_about_name), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(version, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            AnimatedVisibility(visible = tapHint != null, enter = fadeIn(tween(80)), exit = fadeOut(tween(200))) {
+            AnimatedVisibility(visible = tapHint != null, enter = fadeIn(Motion.quick()), exit = fadeOut(Motion.standard())) {
                 Text(tapHint.orEmpty(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

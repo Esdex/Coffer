@@ -48,6 +48,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import me.esdex.coffer.core.ui.theme.CofferHazeStyle
+import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.LocalAmoledMode
 
 /**
@@ -66,7 +67,7 @@ fun AppDialog(
         AlertDialog(onDismissRequest = onDismissRequest, title = title, text = text, confirmButton = confirmButton, dismissButton = dismissButton)
         return
     }
-    val shape = RoundedCornerShape(28.dp)
+    val shape = RoundedCornerShape(Corners.Panel)
     val panel = Modifier.hazeOrSolid(LocalHazeState.current, CofferHazeStyle.dialog, MaterialTheme.colorScheme.surfaceVariant)
     Dialog(onDismissRequest = onDismissRequest, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         // A full-size window, so the blur's coordinates match the screen behind it.
@@ -112,7 +113,7 @@ fun AppSheet(onDismissRequest: () -> Unit, sheetState: SheetState, content: @Com
     } else {
         Modifier.background(color)
     }
-    val shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp, bottomStart = 40.dp, bottomEnd = 40.dp)
+    val shape = RoundedCornerShape(topStart = Corners.Panel, topEnd = Corners.Panel, bottomStart = 40.dp, bottomEnd = 40.dp)
     val noUpwardScroll = remember {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =

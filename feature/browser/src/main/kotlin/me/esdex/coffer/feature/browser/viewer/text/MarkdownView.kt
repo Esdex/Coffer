@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import me.esdex.coffer.core.ui.theme.Corners
 
 /**
  * Markdown as it reads rather than as it is written, Arcanum's renderer. The blocks come from
@@ -114,7 +115,7 @@ private fun CodeBlock(block: MdBlock.Code, base: androidx.compose.ui.unit.TextUn
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(Corners.Tile))
             .background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .horizontalScroll(rememberScrollState())
             .padding(12.dp)
@@ -135,7 +136,7 @@ private fun QuoteBlock(block: MdBlock.Quote, base: androidx.compose.ui.unit.Text
             Modifier
                 .width(4.dp)
                 .height(base.value.dp * 1.6f)
-                .clip(RoundedCornerShape(2.dp))
+                .clip(Corners.pill)
                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
         )
         Spacer(Modifier.width(12.dp))
@@ -202,7 +203,7 @@ private fun FrontMatterBlock(block: MdBlock.FrontMatter, base: androidx.compose.
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(Corners.Tile))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .padding(12.dp)
     ) {
@@ -258,7 +259,7 @@ private fun TableBlock(
     Column(
         modifier = Modifier
             .padding(vertical = 8.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(Corners.Tile))
             .background(MaterialTheme.colorScheme.surfaceContainerLow)
             .horizontalScroll(rememberScrollState())
     ) {

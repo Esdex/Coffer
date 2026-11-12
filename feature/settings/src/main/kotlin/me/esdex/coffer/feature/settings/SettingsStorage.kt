@@ -3,7 +3,6 @@ package me.esdex.coffer.feature.settings
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -20,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AudioFile
 import androidx.compose.material.icons.outlined.Description
@@ -70,6 +68,8 @@ import me.esdex.coffer.core.ui.components.GroupedRow
 import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.ui.components.TypeTile
 import me.esdex.coffer.core.ui.components.fileTypeIcon
+import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.feature.browser.rowKey
 import me.esdex.coffer.feature.browser.stats.FileKind
 
@@ -348,7 +348,7 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
 @Composable
 private fun Ring(segments: List<Pair<Long, Color>>, center: String, under: String) {
     val sweep = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { sweep.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
+    LaunchedEffect(Unit) { sweep.animateTo(1f, tween(Motion.REVEAL, easing = Motion.Easing)) }
     val empty = MaterialTheme.colorScheme.surfaceContainerHighest
     val total = segments.sumOf { it.first }.toFloat()
     Column(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -380,7 +380,7 @@ private fun Ring(segments: List<Pair<Long, Color>>, center: String, under: Strin
 @Composable
 private fun Bar(segments: List<Pair<Long, Color>>) {
     val empty = MaterialTheme.colorScheme.surfaceContainerHighest
-    Canvas(Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(7.dp))) {
+    Canvas(Modifier.fillMaxWidth().height(14.dp).clip(Corners.pill)) {
         drawRect(empty)
         val shown = segments.filter { it.first > 0 }
         val total = shown.sumOf { it.first }.toFloat()

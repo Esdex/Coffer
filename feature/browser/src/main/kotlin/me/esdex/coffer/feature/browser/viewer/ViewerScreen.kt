@@ -11,8 +11,6 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.rememberSplineBasedDecay
@@ -109,6 +107,8 @@ import androidx.media3.common.util.UnstableApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import me.esdex.coffer.core.ui.theme.Corners
+import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.feature.browser.R
 
 /**
@@ -393,13 +393,13 @@ fun ViewerScreen(
                 val w = if (aspect >= boxAspect) maxWidth else maxHeight * aspect
                 val h = if (aspect >= boxAspect) maxWidth / aspect else maxHeight
                 Box(Modifier.size(w, h).align(Alignment.Center)) {
-                    AnimatedVisibility(showSeekBack, enter = fadeIn(tween(120)), exit = fadeOut(tween(300)), modifier = Modifier.align(Alignment.CenterStart).padding(start = 16.dp)) {
+                    AnimatedVisibility(showSeekBack, enter = fadeIn(Motion.quick()), exit = fadeOut(Motion.standard()), modifier = Modifier.align(Alignment.CenterStart).padding(start = 16.dp)) {
                         Chip(stringResource(R.string.viewer_seek_back), Icons.Filled.FastRewind, iconFirst = true)
                     }
-                    AnimatedVisibility(showSeekOn, enter = fadeIn(tween(120)), exit = fadeOut(tween(300)), modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp)) {
+                    AnimatedVisibility(showSeekOn, enter = fadeIn(Motion.quick()), exit = fadeOut(Motion.standard()), modifier = Modifier.align(Alignment.CenterEnd).padding(end = 16.dp)) {
                         Chip(stringResource(R.string.viewer_seek_on), Icons.Filled.FastForward, iconFirst = false)
                     }
-                    AnimatedVisibility(isWide && !isFullscreen && showBars, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomEnd)) {
+                    AnimatedVisibility(isWide && !isFullscreen && showBars, enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick()), modifier = Modifier.align(Alignment.BottomEnd)) {
                         Box(Modifier.padding(8.dp)) {
                             GlyphButton(Icons.Outlined.Fullscreen, stringResource(R.string.viewer_fullscreen)) {
                                 isFullscreen = true
@@ -412,7 +412,7 @@ fun ViewerScreen(
             }
 
             // Play and pause in the middle, once the video has been tapped.
-            AnimatedVisibility(showBars && userTapped, enter = fadeIn(tween(200)), exit = fadeOut(tween(200)), modifier = Modifier.align(Alignment.Center)) {
+            AnimatedVisibility(showBars && userTapped, enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick()), modifier = Modifier.align(Alignment.Center)) {
                 Box(
                     Modifier.size(72.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.55f)).clickable { if (isPlaying) player?.pause() else player?.play() },
                     contentAlignment = Alignment.Center,
@@ -447,10 +447,10 @@ fun ViewerScreen(
                 }
             }
 
-            AnimatedVisibility(holdingFast, enter = fadeIn(tween(120)), exit = fadeOut(tween(200)), modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp)) {
+            AnimatedVisibility(holdingFast, enter = fadeIn(Motion.quick()), exit = fadeOut(Motion.standard()), modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 56.dp)) {
                 Chip(stringResource(R.string.viewer_hold_speed), Icons.Filled.FastForward, iconFirst = false)
             }
-            AnimatedVisibility(swipeVisible, enter = fadeIn(tween(100)), exit = fadeOut(tween(250)), modifier = Modifier.align(Alignment.Center)) {
+            AnimatedVisibility(swipeVisible, enter = fadeIn(Motion.quick()), exit = fadeOut(Motion.standard()), modifier = Modifier.align(Alignment.Center)) {
                 SwipeLevel(swipeKind, swipeLevel)
             }
 
@@ -470,11 +470,11 @@ fun ViewerScreen(
                     },
                 )
             }
-            AnimatedVisibility(isLocked && showUnlock, enter = fadeIn(tween(150)), exit = fadeOut(tween(250)), modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 32.dp)) {
+            AnimatedVisibility(isLocked && showUnlock, enter = fadeIn(Motion.quick()), exit = fadeOut(Motion.standard()), modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 32.dp)) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = 0.6f)).clickable {
+                    modifier = Modifier.clip(Corners.pill).background(Color.Black.copy(alpha = 0.6f)).clickable {
                         isLocked = false
                         showUnlock = false
                         showBars = true
@@ -487,7 +487,7 @@ fun ViewerScreen(
             }
         }
 
-        AnimatedVisibility(showBars && !isLocked, enter = fadeIn() + slideInVertically { -it }, exit = fadeOut() + slideOutVertically { -it }, modifier = Modifier.align(Alignment.TopCenter)) {
+        AnimatedVisibility(showBars && !isLocked, enter = fadeIn(Motion.standard()) + slideInVertically(Motion.standard()) { -it }, exit = fadeOut(Motion.quick()) + slideOutVertically(Motion.quick()) { -it }, modifier = Modifier.align(Alignment.TopCenter)) {
             TopBar(
                 title = current?.name.orEmpty(),
                 onBack = onClose,
@@ -509,7 +509,7 @@ fun ViewerScreen(
         }
 
         if (isVideo) {
-            AnimatedVisibility(showBars && !isLocked, enter = fadeIn() + slideInVertically { it }, exit = fadeOut() + slideOutVertically { it }, modifier = Modifier.align(Alignment.BottomCenter)) {
+            AnimatedVisibility(showBars && !isLocked, enter = fadeIn(Motion.standard()) + slideInVertically(Motion.standard()) { it }, exit = fadeOut(Motion.quick()) + slideOutVertically(Motion.quick()) { it }, modifier = Modifier.align(Alignment.BottomCenter)) {
                 val shownMs = if (scrubbing) scrubMs else positionMs
                 VideoBottomBar(
                     fraction = if (durationMs > 0L) (shownMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f,
@@ -555,7 +555,7 @@ private fun Chip(text: String, icon: ImageVector, iconFirst: Boolean) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
-        modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
+        modifier = Modifier.background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(Corners.Small)).padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
         if (iconFirst) Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
         Text(text, color = Color.White, style = MaterialTheme.typography.labelLarge)
@@ -704,7 +704,7 @@ private fun ZoomablePicture(picture: ViewerViewModel.Picture, isCurrent: Boolean
                     onTap = { onTap() },
                     onDoubleTap = {
                         scope.launch {
-                            val ease = tween<Float>(280, easing = FastOutSlowInEasing)
+                            val ease = Motion.standard<Float>()
                             if (scale.value > ZOOMED) {
                                 onZoomed(false)
                                 launch { scale.animateTo(1f, ease) }

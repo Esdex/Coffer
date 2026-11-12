@@ -42,6 +42,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.esdex.coffer.core.ui.R
+import me.esdex.coffer.core.ui.theme.Corners
 
 /**
  * Rows that belong together, drawn as one block of cards: the outer corners rounded far more than the
@@ -201,8 +202,8 @@ fun groupShape(index: Int, count: Int): Shape = when {
     else -> RoundedCornerShape(INNER_RADIUS)
 }
 
-private val OUTER_RADIUS = 28.dp
-private val INNER_RADIUS = 6.dp
+private val OUTER_RADIUS = Corners.Panel
+private val INNER_RADIUS = Corners.Inner
 private val GAP = 3.dp
 
 // A Material switch plus the row's padding: what a row is when it holds one.

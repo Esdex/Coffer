@@ -21,6 +21,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import me.esdex.coffer.core.ui.theme.Corners
 
 /** The icon and colour a file gets by its name, the same as in Arcanum. */
 fun fileTypeIcon(name: String): Pair<ImageVector, Color> = when (name.substringAfterLast('.', "").lowercase()) {
@@ -39,7 +40,7 @@ val FolderIcon: Pair<ImageVector, Color> = Icons.Outlined.Folder to Color(0xFFF5
 @Composable
 fun TypeTile(icon: Pair<ImageVector, Color>, modifier: Modifier = Modifier) {
     val (vector, color) = icon
-    Box(modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(color.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+    Box(modifier.size(42.dp).clip(RoundedCornerShape(Corners.Tile)).background(color.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
         Icon(vector, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
     }
 }

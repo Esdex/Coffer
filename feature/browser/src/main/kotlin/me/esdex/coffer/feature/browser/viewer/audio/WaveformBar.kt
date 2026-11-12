@@ -1,6 +1,5 @@
 package me.esdex.coffer.feature.browser.viewer.audio
 
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -21,6 +20,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.math.abs
 import kotlin.random.Random
+import me.esdex.coffer.core.ui.theme.Motion
 
 /**
  * The progress bar as the song's waveform, after Arcanum's WaveformView: the bars worked out so far
@@ -43,9 +43,9 @@ internal fun WaveformBar(
     val unknown = MaterialTheme.colorScheme.onBackground
 
     // The position comes a few times a second: a tween of about that length makes the fill run smoothly.
-    val shownProgress by animateFloatAsState(progress, tween(200, easing = LinearEasing), label = "waveform progress")
+    val shownProgress by animateFloatAsState(progress, Motion.linear(200), label = "waveform progress")
     val heights = List(WaveformBytes.BARS) { i ->
-        animateFloatAsState(bars.getOrNull(i) ?: 0f, tween(300), label = "waveform bar")
+        animateFloatAsState(bars.getOrNull(i) ?: 0f, Motion.standard(), label = "waveform bar")
     }
     val placeholder = remember { List(WaveformBytes.BARS) { Random.nextFloat().coerceIn(0.1f, 0.9f) } }
     val shimmer = if (complete) {
@@ -54,7 +54,7 @@ internal fun WaveformBar(
         val x by rememberInfiniteTransition(label = "shimmer").animateFloat(
             initialValue = 0f,
             targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(1400, easing = LinearEasing), RepeatMode.Restart),
+            animationSpec = infiniteRepeatable(Motion.linear(Motion.SHIMMER), RepeatMode.Restart),
             label = "shimmer x",
         )
         x

@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -19,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import me.esdex.coffer.core.ui.theme.Corners
 
 /**
  * One of the wide round actions under the title of a screen, after Android's own App info: a filled
@@ -37,7 +37,7 @@ fun ActionCapsule(icon: ImageVector, label: String, onClick: () -> Unit, enabled
         emphasised -> MaterialTheme.colorScheme.onPrimaryContainer
         else -> MaterialTheme.colorScheme.onSecondaryContainer
     }
-    val shape = RoundedCornerShape(30.dp)
+    val shape = Corners.pill
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             Modifier.width(104.dp).height(60.dp).clip(shape).background(container).then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),

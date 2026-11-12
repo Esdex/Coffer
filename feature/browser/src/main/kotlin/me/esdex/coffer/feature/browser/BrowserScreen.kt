@@ -15,8 +15,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.EaseInOutCubic
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -157,7 +155,9 @@ import me.esdex.coffer.core.ui.components.fileTypeIcon
 import me.esdex.coffer.core.ui.components.groupShape
 import me.esdex.coffer.core.ui.theme.CachePrefs
 import me.esdex.coffer.core.ui.theme.CofferHazeStyle
+import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.LocalAmoledMode
+import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.CacheOffer
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
@@ -301,8 +301,8 @@ fun BrowserScreen(
     AnimatedContent(
         targetState = showTransfers,
         transitionSpec = {
-            slideInHorizontally(tween(SLIDE_MILLIS, easing = EaseInOutCubic)) { if (targetState) it else -it } togetherWith
-                slideOutHorizontally(tween(SLIDE_MILLIS, easing = EaseInOutCubic)) { if (targetState) -it else it }
+            slideInHorizontally(Motion.screen()) { if (targetState) it else -it } togetherWith
+                slideOutHorizontally(Motion.screen()) { if (targetState) -it else it }
         },
         modifier = modifier,
         label = "transfers",
@@ -328,7 +328,7 @@ fun BrowserScreen(
                     Column(if (amoled) Modifier.hazeEffect(state = haze, style = CofferHazeStyle.topBar) else Modifier) {
                       AnimatedContent(
                         targetState = selecting,
-                        transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                        transitionSpec = { fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick()) },
                         label = "selection",
                       ) { inSelection ->
                        if (inSelection) {
@@ -353,8 +353,8 @@ fun BrowserScreen(
                                     AnimatedContent(
                                         targetState = connection.label(),
                                         transitionSpec = {
-                                            (slideInVertically(tween(TITLE_MILLIS, easing = EaseInOutCubic)) { -it } + fadeIn(tween(TITLE_MILLIS))) togetherWith
-                                                (slideOutVertically(tween(TITLE_MILLIS, easing = EaseInOutCubic)) { it } + fadeOut(tween(TITLE_MILLIS)))
+                                            (slideInVertically(Motion.standard()) { -it } + fadeIn(Motion.standard())) togetherWith
+                                                (slideOutVertically(Motion.standard()) { it } + fadeOut(Motion.standard()))
                                         },
                                         label = "title",
                                     ) { label ->
@@ -401,7 +401,7 @@ fun BrowserScreen(
                         )
                        }
                       }
-                        AnimatedVisibility(visible = !searching && !selecting && listing.path.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
+                        AnimatedVisibility(visible = !searching && !selecting && listing.path.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
                             Breadcrumbs(listing.path, onRoot = viewModel::goToRoot, onFolder = viewModel::openFolder)
                         }
                         catchingUp?.let {
@@ -418,15 +418,15 @@ fun BrowserScreen(
                     // Music playing on with its player folded away, unless a selection needs the place.
                     AnimatedVisibility(
                         visible = listening.isNotEmpty() && !playerExpanded && !selecting,
-                        enter = slideInVertically { it } + fadeIn(),
-                        exit = slideOutVertically { it } + fadeOut(),
+                        enter = slideInVertically(Motion.screen()) { it } + fadeIn(Motion.screen()),
+                        exit = slideOutVertically(Motion.standard()) { it } + fadeOut(Motion.standard()),
                     ) {
                         MiniPlayer()
                     }
                     AnimatedVisibility(
                         visible = selecting,
-                        enter = slideInVertically { it } + fadeIn(),
-                        exit = slideOutVertically { it } + fadeOut(),
+                        enter = slideInVertically(Motion.screen()) { it } + fadeIn(Motion.screen()),
+                        exit = slideOutVertically(Motion.standard()) { it } + fadeOut(Motion.standard()),
                     ) {
                         SelectionActions(
                             onMove = { movingSelection = true },
@@ -451,8 +451,8 @@ fun BrowserScreen(
                         contentKey = { it.folderId to searching },
                         transitionSpec = {
                             val deeper = targetState.path.size > initialState.path.size
-                            slideInHorizontally(tween(FOLDER_MILLIS, easing = EaseInOutCubic)) { if (deeper) it / 3 else -it / 3 } + fadeIn(tween(FOLDER_MILLIS)) togetherWith
-                                fadeOut(tween(FOLDER_MILLIS / 2))
+                            slideInHorizontally(Motion.standard()) { if (deeper) it / 3 else -it / 3 } + fadeIn(Motion.standard()) togetherWith
+                                fadeOut(Motion.quick())
                         },
                         label = "folder",
                     ) { shown ->
@@ -636,7 +636,7 @@ fun BrowserScreen(
         )
     }
     // Over everything else, the bars included.
-    AnimatedVisibility(visible = viewing != null, enter = fadeIn(tween(FOLDER_MILLIS)), exit = fadeOut(tween(FOLDER_MILLIS))) {
+    AnimatedVisibility(visible = viewing != null, enter = fadeIn(Motion.screen()), exit = fadeOut(Motion.standard())) {
         val (pages, start) = lastViewing ?: return@AnimatedVisibility
         ViewerScreen(
             pages = pages,
@@ -652,7 +652,7 @@ fun BrowserScreen(
             },
         )
     }
-    AnimatedVisibility(visible = reading != null, enter = fadeIn(tween(FOLDER_MILLIS)), exit = fadeOut(tween(FOLDER_MILLIS))) {
+    AnimatedVisibility(visible = reading != null, enter = fadeIn(Motion.screen()), exit = fadeOut(Motion.standard())) {
         val page = lastReading ?: return@AnimatedVisibility
         val onSave: (ViewerViewModel.Page) -> Unit = {
             savingFromViewer = it.fileId
@@ -668,7 +668,7 @@ fun BrowserScreen(
             TextViewerScreen(page = page, onClose = viewModel::closeReading, onSave = onSave, onOpenWith = onOpenWith)
         }
     }
-    AnimatedVisibility(visible = listening.isNotEmpty() && playerExpanded, enter = fadeIn(tween(FOLDER_MILLIS)), exit = fadeOut(tween(FOLDER_MILLIS))) {
+    AnimatedVisibility(visible = listening.isNotEmpty() && playerExpanded, enter = fadeIn(Motion.screen()), exit = fadeOut(Motion.standard())) {
         AudioPlayerScreen(
             onSave = {
                 savingFromViewer = it.fileId
@@ -1099,6 +1099,7 @@ private const val DELETING_ALPHA = 0.5f
 private fun selectedBackground(selected: Boolean): Color {
     val color by animateColorAsState(
         if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else Color.Transparent,
+        Motion.standard(),
         label = "picked",
     )
     return color
@@ -1113,7 +1114,7 @@ private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVect
     AnimatedContent(targetState = selecting && selected, label = "pick") { picked ->
         if (picked) {
             Box(
-                Modifier.size(42.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.primary),
+                Modifier.size(42.dp).clip(RoundedCornerShape(Corners.Tile)).background(MaterialTheme.colorScheme.primary),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(Icons.Outlined.Check, stringResource(R.string.browser_cd_picked), tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
@@ -1131,10 +1132,10 @@ private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVect
 @Composable
 private fun PreviewTile(preview: ImageBitmap, icon: Pair<ImageVector, Color>) {
     val (vector, color) = icon
-    Box(Modifier.size(42.dp).clip(RoundedCornerShape(12.dp))) {
+    Box(Modifier.size(42.dp).clip(RoundedCornerShape(Corners.Tile))) {
         Image(preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         Box(
-            Modifier.align(Alignment.BottomStart).padding(3.dp).size(16.dp).clip(RoundedCornerShape(5.dp)).background(color),
+            Modifier.align(Alignment.BottomStart).padding(3.dp).size(16.dp).clip(RoundedCornerShape(Corners.Badge)).background(color),
             contentAlignment = Alignment.Center,
         ) {
             Icon(vector, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
@@ -1208,7 +1209,7 @@ private fun SelectionAction(label: Int, icon: ImageVector, onClick: () -> Unit, 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(Corners.Tile))
             .clickable(enabled = enabled, onClick = onClick)
             .alpha(if (enabled) 1f else 0.38f)
             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -1394,7 +1395,4 @@ private fun TransferRegistry.Failure.label() = when (this) {
     TransferRegistry.Failure.TARGET_FAILED -> R.string.browser_failure_target
 }
 
-private const val SLIDE_MILLIS = 350
 private const val UNDO_MARGIN_MILLIS = 500L
-private const val TITLE_MILLIS = 300
-private const val FOLDER_MILLIS = 250

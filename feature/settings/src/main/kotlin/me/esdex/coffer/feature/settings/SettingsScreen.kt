@@ -5,8 +5,6 @@ import android.content.ContextWrapper
 import androidx.activity.compose.BackHandler
 import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.EaseInOutCubic
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -25,6 +23,7 @@ import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import android.text.format.Formatter
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.feature.browser.stats.FileKind
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Sync
@@ -140,7 +139,7 @@ fun SettingsScreen(
     AnimatedContent(
         targetState = shown,
         transitionSpec = {
-            val spec = tween<androidx.compose.ui.unit.IntOffset>(SLIDE_MILLIS, easing = EaseInOutCubic)
+            val spec = Motion.screen<androidx.compose.ui.unit.IntOffset>()
             if (targetState.depth > initialState.depth) {
                 slideInHorizontally(spec) { it } togetherWith slideOutHorizontally(spec) { -it }
             } else {
@@ -340,4 +339,3 @@ private tailrec fun Context.fragmentActivity(): FragmentActivity? = when (this) 
     else -> null
 }
 
-private const val SLIDE_MILLIS = 350
