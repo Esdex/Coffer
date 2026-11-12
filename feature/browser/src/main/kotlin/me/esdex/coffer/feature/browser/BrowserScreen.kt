@@ -880,7 +880,9 @@ private fun AddSheet(onFiles: () -> Unit, onPhoneFolder: () -> Unit, onFolder: (
                         shape,
                         title = stringResource(R.string.browser_add_folder),
                         subtitle = stringResource(R.string.browser_add_folder_sub),
-                        leading = { GroupedRoundIcon(Icons.Outlined.DriveFolderUpload, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer) },
+                        // A hue of its own, as New folder has: the theme's secondary container, from the wallpaper's
+                        // colours, came out nearly grey and the row looked disabled (seen 2026-11-12).
+                        leading = { GroupedRoundIcon(Icons.Outlined.DriveFolderUpload, Color(0xFF3B82F6).copy(alpha = 0.85f)) },
                         onClick = onPhoneFolder,
                     )
                 }
