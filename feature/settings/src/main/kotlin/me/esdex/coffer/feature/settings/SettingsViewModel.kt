@@ -1,5 +1,6 @@
 package me.esdex.coffer.feature.settings
 
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,6 +16,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.Maintenance
@@ -87,6 +89,9 @@ class SettingsViewModel @Inject constructor(
     val breakdown: StateFlow<Breakdown?> = stats.breakdown.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     fun filesOf(kind: FileKind) = stats.filesOf(kind)
+
+    /** A file's preview if the files list has one in memory, for the list of a kind. */
+    fun preview(fileId: Id): ImageBitmap? = previews.cached(fileId)
 
     /** Counting Saved Messages: how far it got, then what it found; null before it is asked for. */
     sealed interface Counting {

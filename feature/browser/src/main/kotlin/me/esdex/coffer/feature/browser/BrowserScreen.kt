@@ -28,7 +28,6 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -130,7 +129,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
@@ -167,6 +165,7 @@ import me.esdex.coffer.core.ui.components.GroupedBox
 import me.esdex.coffer.core.ui.components.GroupedRoundIcon
 import me.esdex.coffer.core.ui.components.GroupedRow
 import me.esdex.coffer.core.ui.components.LocalHazeState
+import me.esdex.coffer.core.ui.components.PreviewTile
 import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.ui.components.TopBarSearchField
 import me.esdex.coffer.core.ui.components.TypeTile
@@ -1281,21 +1280,6 @@ private fun PickMark(selected: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         if (selected) Icon(Icons.Outlined.Check, stringResource(R.string.browser_cd_picked), tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(12.dp))
-    }
-}
-
-/** The file's own picture in the tile's place, with its type still marked on a corner. */
-@Composable
-private fun PreviewTile(preview: ImageBitmap, icon: Pair<ImageVector, Color>) {
-    val (vector, color) = icon
-    Box(Modifier.size(42.dp).clip(RoundedCornerShape(Corners.Tile))) {
-        Image(preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-        Box(
-            Modifier.align(Alignment.BottomStart).padding(3.dp).size(16.dp).clip(RoundedCornerShape(Corners.Badge)).background(color),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(vector, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
-        }
     }
 }
 

@@ -3,6 +3,8 @@ package me.esdex.coffer.feature.settings
 import android.os.Build
 import android.content.Intent
 import android.graphics.BitmapFactory
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -82,6 +84,7 @@ import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.ThemeMode
+import me.esdex.coffer.core.ui.theme.tabular
 
 /**
  * The frame of every settings section: its own large title and back button, and a column of groups
@@ -191,7 +194,7 @@ private fun AutoLockDelay(shape: Shape, minutes: Int, onChange: (Int) -> Unit) {
             Text(stringResource(R.string.settings_auto_lock_delay), style = MaterialTheme.typography.bodyLarge)
             Text(
                 pluralStringResource(R.plurals.settings_minutes, choices[index], choices[index]),
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.bodyLarge.tabular(),
                 color = MaterialTheme.colorScheme.primary,
             )
         }
@@ -298,6 +301,8 @@ internal fun AppearanceSection(viewModel: SettingsViewModel, onBack: () -> Unit)
                                 selected = appearance.themeMode == mode,
                                 onClick = { viewModel.setThemeMode(mode) },
                                 shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                                // No tick, as on the cache limit: the fill says which one is chosen.
+                                icon = {},
                                 label = { Text(themeLabel(mode), style = MaterialTheme.typography.labelMedium) },
                             )
                         }
@@ -402,6 +407,13 @@ internal fun AccountSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
     SectionScaffold(stringResource(R.string.settings_card_account), onBack) {
         val me = account
         // Who this is, the way Telegram's own profile opens: the picture, the name, and a star for Premium.
+        // Faded in once Telegram has answered, rather than the name and picture popping into place.
+        AnimatedContent(
+            me,
+            contentKey = { it != null },
+            transitionSpec = { fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick()) },
+            label = "account",
+        ) { me ->
         Column(
             Modifier.fillMaxWidth().padding(vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -425,6 +437,7 @@ internal fun AccountSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                 }
             }
             me?.username?.let { Text("@$it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
         }
         if (me != null) {
             SettingsGroup(stringResource(R.string.settings_group_telegram)) {
@@ -469,7 +482,11 @@ internal fun AccountSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
             onDismissRequest = { confirmLogOut = false },
             title = { Text(stringResource(R.string.settings_log_out_title)) },
             text = { Text(stringResource(R.string.settings_log_out_text)) },
-            confirmButton = { TextButton(onClick = { confirmLogOut = false; viewModel.logOut() }) { Text(stringResource(R.string.settings_log_out)) } },
+            confirmButton = {
+                TextButton(onClick = { confirmLogOut = false; viewModel.logOut() }) {
+                    Text(stringResource(R.string.settings_log_out), color = MaterialTheme.colorScheme.error)
+                }
+            },
             dismissButton = { TextButton(onClick = { confirmLogOut = false }) { Text(stringResource(R.string.settings_cancel)) } },
         )
     }
@@ -677,4 +694,5 @@ internal fun DebugSection(onBack: () -> Unit, onHide: () -> Unit, tools: @Compos
 
 /** Taps on the icon in About that bring up the screen lock for the debug tools, as in Arcanum. */
 private const val DEBUG_TAPS = 6
-private const val TAP_HINT_MILLIS = 550L
+// Long enough to read "3 more taps" between taps; it was 550 ms and blinked.
+private const val TAP_HINT_MILLIS = Motion.REVEAL.toLong()

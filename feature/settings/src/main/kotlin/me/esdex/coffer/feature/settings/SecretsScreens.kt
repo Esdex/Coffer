@@ -7,18 +7,15 @@ import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -31,14 +28,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.esdex.coffer.core.ui.components.CofferScaffold
+import me.esdex.coffer.core.ui.components.FieldError
 import me.esdex.coffer.core.ui.components.OperationLoading
 import me.esdex.coffer.core.ui.components.OperationSuccess
+import me.esdex.coffer.core.ui.components.PasswordField
+import me.esdex.coffer.core.ui.components.RecoveryWords
 import me.esdex.coffer.core.vault.PasswordPolicy
 
 /** A settings page that asks for the current password first (SPEC §9). */
@@ -57,18 +54,6 @@ private fun SecretPage(title: String, onBack: () -> Unit, modifier: Modifier, co
         ) { content() }
     }
 }
-
-@Composable
-private fun PasswordField(value: String, label: String, onChange: (String) -> Unit, isError: Boolean = false) = OutlinedTextField(
-    value = value,
-    onValueChange = onChange,
-    label = { Text(label) },
-    singleLine = true,
-    isError = isError,
-    visualTransformation = PasswordVisualTransformation(),
-    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-    modifier = Modifier.fillMaxWidth(),
-)
 
 @Composable
 fun ChangePasswordPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel: SettingsViewModel) {
@@ -98,11 +83,12 @@ fun ChangePasswordPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewMo
     SecretPage(stringResource(R.string.settings_password), onBack = leave, modifier = modifier) {
         Text(stringResource(R.string.settings_password_explanation), style = MaterialTheme.typography.bodyMedium)
         PasswordField(current, stringResource(R.string.settings_password_current), { current = it }, isError = wrong)
-        if (wrong) Text(stringResource(R.string.settings_password_wrong), color = MaterialTheme.colorScheme.error)
+        FieldError(wrong, stringResource(R.string.settings_password_wrong))
         PasswordField(password, stringResource(R.string.settings_password_new), { password = it })
         if (password.isNotEmpty()) StrengthMeter(check)
-        PasswordField(repeated, stringResource(R.string.settings_password_repeat), { repeated = it }, isError = repeated.isNotEmpty() && repeated != password)
-        if (repeated.isNotEmpty() && repeated != password) Text(stringResource(R.string.settings_password_mismatch), color = MaterialTheme.colorScheme.error)
+        val mismatch = repeated.isNotEmpty() && repeated != password
+        PasswordField(repeated, stringResource(R.string.settings_password_repeat), { repeated = it }, isError = mismatch)
+        FieldError(mismatch, stringResource(R.string.settings_password_mismatch))
         Button(
             onClick = { viewModel.changePassword(current, password) },
             enabled = current.isNotEmpty() && check.acceptable && repeated == password,
@@ -141,7 +127,7 @@ fun RecoveryKeyPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel
         if (shown == null) {
             Text(stringResource(R.string.settings_recovery_explanation), style = MaterialTheme.typography.bodyMedium)
             PasswordField(password, stringResource(R.string.settings_password_current), { password = it }, isError = wrong)
-            if (wrong) Text(stringResource(R.string.settings_password_wrong), color = MaterialTheme.colorScheme.error)
+            FieldError(wrong, stringResource(R.string.settings_password_wrong))
             Button(
                 onClick = { viewModel.showRecoveryKey(password) },
                 enabled = !busy && password.isNotEmpty(),
@@ -151,18 +137,7 @@ fun RecoveryKeyPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewModel
         } else {
             NoScreenshots(keepAfter = settings.blockScreenshots)
             Text(stringResource(R.string.settings_recovery_shown), style = MaterialTheme.typography.bodyMedium)
-            // Three columns, numbered top to bottom like the paper backup made at creation.
-            val rows = shown.size / 3
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                for (column in 0 until 3) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (row in 0 until rows) {
-                            val index = column * rows + row
-                            Text("%2d. %s".format(index + 1, shown[index]), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyLarge)
-                        }
-                    }
-                }
-            }
+            RecoveryWords(shown)
             Button(onClick = leave, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.settings_recovery_done)) }
         }
     }

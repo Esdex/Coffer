@@ -1,7 +1,10 @@
 package me.esdex.coffer.core.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -19,7 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import me.esdex.coffer.core.ui.theme.Corners
 
@@ -40,7 +45,25 @@ val FolderIcon: Pair<ImageVector, Color> = Icons.Outlined.Folder to Color(0xFFF5
 @Composable
 fun TypeTile(icon: Pair<ImageVector, Color>, modifier: Modifier = Modifier) {
     val (vector, color) = icon
-    Box(modifier.size(42.dp).clip(RoundedCornerShape(Corners.Tile)).background(color.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
+    Box(modifier.size(TILE_SIZE).clip(RoundedCornerShape(Corners.Tile)).background(color.copy(alpha = 0.12f)), contentAlignment = Alignment.Center) {
         Icon(vector, contentDescription = null, tint = color, modifier = Modifier.size(22.dp))
     }
 }
+
+/** The file's own picture in the tile's place, with its type still marked on a corner. */
+@Composable
+fun PreviewTile(preview: ImageBitmap, icon: Pair<ImageVector, Color>) {
+    val (vector, color) = icon
+    Box(Modifier.size(TILE_SIZE).clip(RoundedCornerShape(Corners.Tile))) {
+        Image(preview, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        Box(
+            Modifier.align(Alignment.BottomStart).padding(3.dp).size(16.dp).clip(RoundedCornerShape(Corners.Badge)).background(color),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(vector, contentDescription = null, tint = Color.White, modifier = Modifier.size(11.dp))
+        }
+    }
+}
+
+/** The side of a file's tile, in the list and wherever a file is shown in a row. */
+val TILE_SIZE = 42.dp

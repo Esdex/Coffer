@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +68,15 @@ fun EmptyStateView(title: String, modifier: Modifier = Modifier, subtitle: Strin
         }
     }
 }
+
+/** Something is on its way to this place on the screen: one size of spinner for the whole app. */
+@Composable
+fun LoadingSpinner(modifier: Modifier = Modifier) {
+    CircularProgressIndicator(modifier.size(SPINNER_SIZE))
+}
+
+/** The spinner's size, for a place that draws its own in another colour. */
+val SPINNER_SIZE = 40.dp
 
 /** "This is running, wait": a looping animation over a title, and an optional line under it. */
 @Composable

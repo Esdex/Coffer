@@ -2,14 +2,19 @@ package me.esdex.coffer.feature.settings
 
 import android.text.format.Formatter
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,7 +30,6 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.Videocam
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,6 +46,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.draw.alpha
 import me.esdex.coffer.core.ui.components.AppDialog
 import me.esdex.coffer.core.ui.components.GroupedSwitch
+import me.esdex.coffer.core.ui.components.LoadingSpinner
+import me.esdex.coffer.core.ui.components.PreviewTile
+import me.esdex.coffer.core.ui.components.TILE_SIZE
 import me.esdex.coffer.core.ui.theme.CachePrefs
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,6 +77,7 @@ import me.esdex.coffer.core.ui.components.TypeTile
 import me.esdex.coffer.core.ui.components.fileTypeIcon
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
+import me.esdex.coffer.core.ui.theme.tabular
 import me.esdex.coffer.feature.browser.rowKey
 import me.esdex.coffer.feature.browser.stats.FileKind
 
@@ -106,11 +114,7 @@ internal fun StorageSection(viewModel: SettingsViewModel, onBack: () -> Unit, on
     LaunchedEffect(Unit) { if (viewModel.counting.value == null) viewModel.count() }
 
     SectionScaffold(stringResource(R.string.settings_card_storage), onBack) {
-        val current = breakdown
-        if (current == null) {
-            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            return@SectionScaffold
-        }
+      LoadedFade(breakdown) { current ->
         Ring(
             segments = current.kinds.map { it.bytes to it.kind.look().second },
             center = size(current.bytes),
@@ -124,7 +128,7 @@ internal fun StorageSection(viewModel: SettingsViewModel, onBack: () -> Unit, on
                     title = stringResource(total.kind.label()),
                     subtitle = pluralStringResource(R.plurals.settings_storage_files, total.count, total.count),
                     leading = { TypeTile(total.kind.look()) },
-                    trailing = { Text(size(total.bytes), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    trailing = { Text(size(total.bytes), style = MaterialTheme.typography.bodyMedium.tabular(), color = MaterialTheme.colorScheme.onSurfaceVariant) },
                     onClick = if (total.count > 0) ({ onKind(total.kind) }) else null,
                 )
             }
@@ -134,7 +138,7 @@ internal fun StorageSection(viewModel: SettingsViewModel, onBack: () -> Unit, on
                 null, is SettingsViewModel.Counting.Running -> row { shape ->
                     GroupedBox(shape) {
                         val read = (c as? SettingsViewModel.Counting.Running)?.read ?: 0
-                        Text(pluralStringResource(R.plurals.settings_storage_counting, read, read), style = MaterialTheme.typography.bodyMedium)
+                        Text(pluralStringResource(R.plurals.settings_storage_counting, read, read), style = MaterialTheme.typography.bodyMedium.tabular())
                         Spacer(Modifier.height(8.dp))
                         LinearProgressIndicator(Modifier.fillMaxWidth())
                     }
@@ -146,6 +150,27 @@ internal fun StorageSection(viewModel: SettingsViewModel, onBack: () -> Unit, on
                 }
                 is SettingsViewModel.Counting.Done -> censusRows(c.census, ::size, onRecount = viewModel::count)
             }
+        }
+      }
+    }
+}
+
+/**
+ * [value] once it is there, faded in over a spinner instead of popping up in its place. Keyed on whether
+ * it is there, so later changes to it just redraw.
+ */
+@Composable
+private fun <T : Any> LoadedFade(value: T?, content: @Composable ColumnScope.(T) -> Unit) {
+    AnimatedContent(
+        value,
+        contentKey = { it != null },
+        transitionSpec = { fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick()) },
+        label = "loaded",
+    ) { shown ->
+        if (shown == null) {
+            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { LoadingSpinner() }
+        } else {
+            Column { content(shown) }
         }
     }
 }
@@ -161,7 +186,7 @@ private fun GroupBuilder.censusRows(census: Census, size: (Long) -> String, onRe
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(pluralStringResource(R.plurals.settings_storage_messages, census.coffer.count, census.coffer.count), style = MaterialTheme.typography.bodyLarge)
-                    Text(size(census.coffer.bytes), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(size(census.coffer.bytes), style = MaterialTheme.typography.bodyMedium.tabular(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 TextButton(onClick = onRecount) { Text(stringResource(R.string.settings_storage_recount)) }
             }
@@ -177,7 +202,7 @@ private fun GroupBuilder.censusRows(census: Census, size: (Long) -> String, onRe
             subtitle = pluralStringResource(R.plurals.settings_storage_messages, tally.count, tally.count),
             info = stringResource(info),
             leading = { Dot(color) },
-            trailing = { Text(size(tally.bytes), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            trailing = { Text(size(tally.bytes), style = MaterialTheme.typography.bodyMedium.tabular(), color = MaterialTheme.colorScheme.onSurfaceVariant) },
         )
     }
     line(PARTS, R.string.settings_storage_parts, R.string.settings_storage_parts_info, census.parts)
@@ -196,19 +221,26 @@ internal fun KindPage(viewModel: SettingsViewModel, kind: FileKind, onBack: () -
     val context = LocalContext.current
     BackHandler(onBack = onBack)
     CofferScaffold(title = stringResource(kind.label()), onBack = onBack) { padding ->
-        val list = files
-        if (list == null) {
-            Box(Modifier.fillMaxWidth().padding(padding).padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            return@CofferScaffold
-        }
-        LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxWidth()) {
+        AnimatedContent(
+            files,
+            contentKey = { it != null },
+            transitionSpec = { fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick()) },
+            label = "files",
+        ) { list ->
+          if (list == null) {
+            Box(Modifier.fillMaxWidth().padding(padding).padding(48.dp), contentAlignment = Alignment.Center) { LoadingSpinner() }
+          } else {
+           LazyColumn(contentPadding = padding, modifier = Modifier.fillMaxWidth()) {
             items(list, key = { it.first.fileId.rowKey() }) { (file, path) ->
+                // As the files list draws a file: its preview if the list has made one, its type otherwise.
                 Row(
                     Modifier.fillMaxWidth().clickable { onShowFolder(file.folderId) }.padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    TypeTile(fileTypeIcon(file.name))
+                    val icon = fileTypeIcon(file.name)
+                    val preview = remember(file.fileId) { viewModel.preview(file.fileId) }
+                    if (preview != null) PreviewTile(preview, icon) else TypeTile(icon)
                     Column(Modifier.weight(1f)) {
                         Text(file.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
@@ -219,9 +251,11 @@ internal fun KindPage(viewModel: SettingsViewModel, kind: FileKind, onBack: () -
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Text(Formatter.formatShortFileSize(context, file.size), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(Formatter.formatShortFileSize(context, file.size), style = MaterialTheme.typography.bodyMedium.tabular(), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+           }
+          }
         }
     }
 }
@@ -248,15 +282,11 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
     LaunchedEffect(Unit) { viewModel.measurePhone() }
 
     SectionScaffold(stringResource(R.string.settings_card_phone), onBack) {
-        val usage = phone
-        if (usage == null) {
-            Box(Modifier.fillMaxWidth().padding(48.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            return@SectionScaffold
-        }
+      LoadedFade(phone) { usage ->
         SettingsGroup(title = null) {
             row { shape ->
                 GroupedBox(shape) {
-                    Text(size(usage.total), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                    Text(size(usage.total), style = MaterialTheme.typography.headlineSmall.tabular(), fontWeight = FontWeight.SemiBold)
                     Text(stringResource(R.string.settings_phone_total), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
                     Bar(listOf(usage.telegramFiles to TELEGRAM_FILES, usage.telegramDatabase to TELEGRAM_DATABASE, usage.index to INDEX, usage.previews to PREVIEWS, usage.temporary to TEMPORARY))
@@ -270,7 +300,7 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                     title = stringResource(title),
                     info = stringResource(info),
                     leading = { Dot(color) },
-                    trailing = { Text(size(bytes), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    trailing = { Text(size(bytes), style = MaterialTheme.typography.bodyMedium.tabular(), color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 )
             }
             row { shape ->
@@ -280,7 +310,7 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                     subtitle = if (cache.enabled) stringResource(R.string.settings_phone_cache_limit, CachePrefs.limitLabel(cache.limitMb)) else stringResource(R.string.settings_phone_cache_off),
                     info = stringResource(R.string.settings_phone_downloads_info),
                     leading = { Dot(TELEGRAM_FILES) },
-                    trailing = { Text(size(usage.telegramFiles), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    trailing = { Text(size(usage.telegramFiles), style = MaterialTheme.typography.bodyMedium.tabular(), color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 )
             }
             line(TELEGRAM_DATABASE, R.string.settings_phone_database, R.string.settings_phone_database_info, usage.telegramDatabase)
@@ -336,13 +366,18 @@ internal fun PhoneSection(viewModel: SettingsViewModel, onBack: () -> Unit) {
                 GroupedRow(shape, title = stringResource(R.string.settings_cache_clear), titleColor = MaterialTheme.colorScheme.error, onClick = { confirmClear = true })
             }
         }
+      }
     }
     if (confirmClear) {
         AppDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text(stringResource(R.string.settings_cache_clear_title)) },
             text = { Text(stringResource(R.string.settings_cache_clear_text)) },
-            confirmButton = { TextButton(onClick = { confirmClear = false; viewModel.clearCache() }) { Text(stringResource(R.string.settings_cache_clear_confirm)) } },
+            confirmButton = {
+                TextButton(onClick = { confirmClear = false; viewModel.clearCache() }) {
+                    Text(stringResource(R.string.settings_cache_clear_confirm), color = MaterialTheme.colorScheme.error)
+                }
+            },
             dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.settings_cancel)) } },
         )
     }
@@ -376,16 +411,18 @@ private fun Ring(segments: List<Pair<Long, Color>>, center: String, under: Strin
                     start += angle
                 }
             }
-            Text(center, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+            Text(center, style = MaterialTheme.typography.headlineSmall.tabular(), fontWeight = FontWeight.SemiBold)
         }
         Spacer(Modifier.height(12.dp))
         Text(under, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
-/** One bar split by share of [segments]; parts too small to see still get a sliver. */
+/** One bar split by share of [segments], drawn in on first show as the ring is; parts too small to see still get a sliver. */
 @Composable
 private fun Bar(segments: List<Pair<Long, Color>>) {
+    val grow = remember { Animatable(0f) }
+    LaunchedEffect(Unit) { grow.animateTo(1f, tween(Motion.REVEAL, easing = Motion.Easing)) }
     val empty = MaterialTheme.colorScheme.surfaceContainerHighest
     Canvas(Modifier.fillMaxWidth().height(14.dp).clip(Corners.pill)) {
         drawRect(empty)
@@ -394,7 +431,7 @@ private fun Bar(segments: List<Pair<Long, Color>>) {
         if (total <= 0f) return@Canvas
         val sliver = 3.dp.toPx()
         val widths = shown.map { maxOf(sliver, size.width * it.first / total) }
-        val scale = size.width / widths.sum()
+        val scale = size.width / widths.sum() * grow.value
         var x = 0f
         for ((i, segment) in shown.withIndex()) {
             val w = widths[i] * scale
@@ -404,7 +441,10 @@ private fun Bar(segments: List<Pair<Long, Color>>) {
     }
 }
 
+/** A kind's colour, centred where a file's tile would be, so dots and tiles line up down a page. */
 @Composable
 private fun Dot(color: Color) {
-    Box(Modifier.padding(horizontal = 13.dp).size(16.dp).clip(CircleShape).background(color))
+    Box(Modifier.padding(horizontal = (TILE_SIZE - DOT_SIZE) / 2).size(DOT_SIZE).clip(CircleShape).background(color))
 }
+
+private val DOT_SIZE = 16.dp

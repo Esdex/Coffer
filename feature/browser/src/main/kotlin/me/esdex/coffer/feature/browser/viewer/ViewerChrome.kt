@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import me.esdex.coffer.core.ui.components.BackButton
 import me.esdex.coffer.core.ui.components.EmptyStateView
+import me.esdex.coffer.core.ui.components.SPINNER_SIZE
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.tabular
 import me.esdex.coffer.feature.browser.R
@@ -59,7 +60,7 @@ internal val OverlayScrim = Color.Black.copy(alpha = 0.6f)
 internal val OverlayEdge = Color.Black.copy(alpha = 0.7f)
 
 /** One spinner size for every viewer, on its own or inside the play button. */
-internal val ViewerSpinner = 40.dp
+internal val ViewerSpinner = SPINNER_SIZE
 
 /** The bar of a viewer on the app's own background: the way back, the file's name, its actions, the menu. */
 @Composable
