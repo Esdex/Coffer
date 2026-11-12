@@ -15,8 +15,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -25,6 +30,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -43,6 +49,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -62,6 +69,7 @@ import androidx.compose.material.icons.outlined.DownloadForOffline
 import androidx.compose.material.icons.outlined.DriveFolderUpload
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileOpen
+import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
@@ -69,16 +77,17 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.SaveAlt
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.SearchOff
 import androidx.compose.material.icons.outlined.SelectAll
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -103,6 +112,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -115,13 +125,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -345,23 +360,30 @@ fun BrowserScreen(
                        } else {
                         TopAppBar(
                             title = {
-                                if (searching) {
-                                    TopBarSearchField(query, viewModel::search, stringResource(R.string.browser_search), Modifier.fillMaxWidth())
-                                } else {
-                                    // Like Telegram's own apps: while there is no link the title says so, and the
-                                    // change rolls down. Only that change: a folder's name moves with its list.
-                                    AnimatedContent(
-                                        targetState = connection.label(),
-                                        transitionSpec = {
-                                            (slideInVertically(Motion.standard()) { -it } + fadeIn(Motion.standard())) togetherWith
-                                                (slideOutVertically(Motion.standard()) { it } + fadeOut(Motion.standard()))
-                                        },
-                                        label = "title",
-                                    ) { label ->
-                                        val title = label?.let { stringResource(it) }
-                                            ?: listing.path.lastOrNull()?.name
-                                            ?: stringResource(R.string.browser_title)
-                                        Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                // The search field takes the title's place in a cross-fade, not at once.
+                                AnimatedContent(
+                                    targetState = searching,
+                                    transitionSpec = { fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick()) },
+                                    label = "search",
+                                ) { inSearch ->
+                                    if (inSearch) {
+                                        TopBarSearchField(query, viewModel::search, stringResource(R.string.browser_search), Modifier.fillMaxWidth())
+                                    } else {
+                                        // Like Telegram's own apps: while there is no link the title says so, and the
+                                        // change rolls down. Only that change: a folder's name moves with its list.
+                                        AnimatedContent(
+                                            targetState = connection.label(),
+                                            transitionSpec = {
+                                                (slideInVertically(Motion.standard()) { -it } + fadeIn(Motion.standard())) togetherWith
+                                                    (slideOutVertically(Motion.standard()) { it } + fadeOut(Motion.standard()))
+                                            },
+                                            label = "title",
+                                        ) { label ->
+                                            val title = label?.let { stringResource(it) }
+                                                ?: listing.path.lastOrNull()?.name
+                                                ?: stringResource(R.string.browser_title)
+                                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
                                     }
                                 }
                             },
@@ -377,12 +399,22 @@ fun BrowserScreen(
                                 }
                             },
                             actions = {
-                                if (!searching) {
+                                AnimatedVisibility(!searching, enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
+                                  Row {
                                     IconButton(onClick = { searching = true }) { Icon(Icons.Outlined.Search, stringResource(R.string.browser_search)) }
-                                    if (transfers.isNotEmpty()) {
-                                        IconButton(onClick = { showTransfers = true }) {
-                                            BadgedBox(badge = { Badge { Text("${transfers.size}") } }) {
+                                    AnimatedVisibility(
+                                        transfers.isNotEmpty(),
+                                        enter = fadeIn(Motion.standard()) + scaleIn(Motion.standard(), initialScale = 0.6f),
+                                        exit = fadeOut(Motion.quick()) + scaleOut(Motion.quick(), targetScale = 0.6f),
+                                    ) {
+                                        // The count over the button, not inside it: an icon button clips to its
+                                        // circle, which cut the right end off a count of two digits.
+                                        Box {
+                                            IconButton(onClick = { showTransfers = true }) {
                                                 Icon(Icons.Outlined.SwapVert, stringResource(R.string.browser_transfers))
+                                            }
+                                            Badge(Modifier.align(Alignment.TopEnd).offset(x = (-2).dp, y = 6.dp)) {
+                                                Text(if (transfers.size > 99) "99+" else "${transfers.size}")
                                             }
                                         }
                                     }
@@ -395,6 +427,7 @@ fun BrowserScreen(
                                             MenuItem(Icons.Outlined.Settings, R.string.browser_settings) { menuOpen = false; onSettings() }
                                         }
                                     }
+                                  }
                                 }
                             },
                             colors = if (amoled) TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent) else TopAppBarDefaults.topAppBarColors(),
@@ -404,13 +437,22 @@ fun BrowserScreen(
                         AnimatedVisibility(visible = !searching && !selecting && listing.path.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
                             Breadcrumbs(listing.path, onRoot = viewModel::goToRoot, onFolder = viewModel::openFolder)
                         }
-                        catchingUp?.let {
-                            LinearProgressIndicator(Modifier.fillMaxWidth())
-                            Text(
-                                pluralStringResource(R.plurals.browser_catching_up, it, it),
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            )
+                        // Kept while it folds away, so the count does not blank out on the way.
+                        var lastCaughtUp by remember { mutableIntStateOf(0) }
+                        catchingUp?.let { lastCaughtUp = it }
+                        AnimatedVisibility(
+                            catchingUp != null,
+                            enter = expandVertically(Motion.standard()) + fadeIn(Motion.standard()),
+                            exit = shrinkVertically(Motion.quick()) + fadeOut(Motion.quick()),
+                        ) {
+                            Column {
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                                Text(
+                                    pluralStringResource(R.plurals.browser_catching_up, lastCaughtUp, lastCaughtUp),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                                )
+                            }
                         }
                     }
                 },
@@ -439,7 +481,11 @@ fun BrowserScreen(
                     }
                 },
                 floatingActionButton = {
-                    if (!searching && !selecting) {
+                    AnimatedVisibility(
+                        !searching && !selecting,
+                        enter = fadeIn(Motion.standard()) + scaleIn(Motion.standard(), initialScale = 0.6f),
+                        exit = fadeOut(Motion.quick()) + scaleOut(Motion.quick(), targetScale = 0.6f),
+                    ) {
                         FloatingActionButton(onClick = { adding = true }) { Icon(Icons.Filled.Add, stringResource(R.string.browser_add)) }
                     }
                 },
@@ -463,9 +509,9 @@ fun BrowserScreen(
                             selection = selection,
                             onToggle = viewModel::toggleSelected,
                             empty = when {
-                                query.isNotBlank() -> R.string.browser_no_match
-                                shown.folderId != null -> R.string.browser_folder_empty
-                                else -> R.string.browser_empty
+                                query.isNotBlank() -> Empty.SEARCH
+                                shown.folderId != null -> Empty.FOLDER
+                                else -> Empty.VAULT
                             },
                             onOpenFolder = { viewModel.openFolder(it.folderId) },
                             onFolderMenu = { item, action ->
@@ -695,6 +741,13 @@ private const val PDF = "application/pdf"
 
 private enum class RowAction { OPEN, EXPORT, CACHE, RENAME, MOVE, DELETE }
 
+/** Each kind of empty list says what it is and what to do about it. */
+private enum class Empty(val title: Int, val hint: Int, val icon: ImageVector) {
+    VAULT(R.string.browser_empty, R.string.browser_empty_hint, Icons.Outlined.UploadFile),
+    FOLDER(R.string.browser_folder_empty, R.string.browser_folder_empty_hint, Icons.Outlined.FolderOpen),
+    SEARCH(R.string.browser_no_match, R.string.browser_no_match_hint, Icons.Outlined.SearchOff),
+}
+
 @Composable
 private fun Listing(
     shown: Listing,
@@ -702,7 +755,7 @@ private fun Listing(
     previews: Previews,
     selection: Set<Id>,
     onToggle: (Id) -> Unit,
-    empty: Int,
+    empty: Empty,
     onOpenFolder: (FolderItem) -> Unit,
     onFolderMenu: (FolderItem, RowAction) -> Unit,
     onOpenFile: (FileItem) -> Unit,
@@ -711,8 +764,9 @@ private fun Listing(
 ) {
     if (shown.folders.isEmpty() && shown.files.isEmpty()) {
         EmptyStateView(
-            title = stringResource(empty),
-            subtitle = if (empty == R.string.browser_no_match) null else stringResource(R.string.browser_empty_hint),
+            title = stringResource(empty.title),
+            subtitle = stringResource(empty.hint),
+            icon = empty.icon,
             modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
         )
         return
@@ -755,15 +809,16 @@ private fun Breadcrumbs(path: List<FolderItem>, onRoot: () -> Unit, onFolder: (I
     val scroll = rememberScrollState()
     LaunchedEffect(path) { scroll.animateScrollTo(scroll.maxValue) }
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = 16.dp, vertical = 6.dp),
+        Modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            Icons.Outlined.Home,
-            contentDescription = stringResource(R.string.browser_root),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(18.dp).clickable(onClick = onRoot),
-        )
+        // Each step a pill of its own, big enough for a thumb, rippling in its own shape.
+        Box(
+            Modifier.clip(Corners.pill).clickable(onClick = onRoot).padding(horizontal = 8.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.Home, contentDescription = stringResource(R.string.browser_root), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        }
         path.forEachIndexed { index, folder ->
             val last = index == path.lastIndex
             Icon(Icons.AutoMirrored.Outlined.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
@@ -773,7 +828,10 @@ private fun Breadcrumbs(path: List<FolderItem>, onRoot: () -> Unit, onFolder: (I
                 fontWeight = if (last) FontWeight.Bold else FontWeight.Normal,
                 color = if (last) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
-                modifier = if (last) Modifier else Modifier.clickable { onFolder(folder.folderId) },
+                modifier = Modifier
+                    .clip(Corners.pill)
+                    .then(if (last) Modifier else Modifier.clickable { onFolder(folder.folderId) })
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
             )
         }
     }
@@ -834,23 +892,31 @@ private fun MenuItem(icon: ImageVector, label: Int, enabled: Boolean = true, des
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SortSheet(sorting: Sorting, onSortBy: (SortBy) -> Unit, onToggleDirection: () -> Unit, onDismiss: () -> Unit) {
+    // In the same grouped rows as the Add sheet, so the two sheets of this screen look alike.
     AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.padding(bottom = 32.dp)) {
-            Text(stringResource(R.string.browser_sort_title), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-            for (by in SortBy.entries) {
-                Row(
-                    Modifier.fillMaxWidth().clickable { onSortBy(by) }.padding(horizontal = 16.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(selected = sorting.by == by, onClick = { onSortBy(by) })
-                    Text(stringResource(by.label()), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    if (sorting.by == by) {
-                        IconButton(onClick = onToggleDirection) {
-                            Icon(
-                                if (sorting.descending) Icons.Outlined.KeyboardArrowDown else Icons.Outlined.KeyboardArrowUp,
-                                contentDescription = stringResource(if (sorting.descending) R.string.browser_sort_descending else R.string.browser_sort_ascending),
-                            )
-                        }
+        Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 32.dp)) {
+            SettingsGroup(title = stringResource(R.string.browser_sort_title)) {
+                for (by in SortBy.entries) {
+                    row { shape ->
+                        val chosen = sorting.by == by
+                        GroupedRow(
+                            shape,
+                            title = stringResource(by.label()),
+                            leading = { RadioButton(selected = chosen, onClick = null) },
+                            trailing = if (chosen) {
+                                {
+                                    IconButton(onClick = onToggleDirection) {
+                                        Icon(
+                                            if (sorting.descending) Icons.Outlined.KeyboardArrowDown else Icons.Outlined.KeyboardArrowUp,
+                                            contentDescription = stringResource(if (sorting.descending) R.string.browser_sort_descending else R.string.browser_sort_ascending),
+                                        )
+                                    }
+                                }
+                            } else {
+                                null
+                            },
+                            onClick = { if (chosen) onToggleDirection() else onSortBy(by) },
+                        )
                     }
                 }
             }
@@ -978,6 +1044,7 @@ private fun FolderRow(
 ) {
     var menu by remember { mutableStateOf(false) }
     val idle = !folder.deleting
+    val haptic = LocalHapticFeedback.current
     Row(
         modifier.fillMaxWidth()
             .background(selectedBackground(selected))
@@ -985,7 +1052,13 @@ private fun FolderRow(
             .combinedClickable(
                 enabled = idle,
                 onClick = { if (selecting) onToggle() else onOpen() },
-                onLongClick = { if (folder.selectable) onToggle() },
+                onLongClick = {
+                    if (folder.selectable) {
+                        // Felt as well as seen: picking has started.
+                        if (!selecting) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onToggle()
+                    }
+                },
             )
             .alpha(if (idle) 1f else DELETING_ALPHA)
             .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
@@ -996,13 +1069,21 @@ private fun FolderRow(
         Column(Modifier.weight(1f)) {
             Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             if (idle) {
-                Text(stringResource(R.string.browser_type_folder), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // What is in it, rather than that it is a folder: the icon says that already.
+                val folders = pluralStringResource(R.plurals.browser_folder_folders, folder.folders, folder.folders)
+                val files = pluralStringResource(R.plurals.browser_folder_files, folder.files, folder.files)
+                val contents = when {
+                    folder.folders > 0 && folder.files > 0 -> stringResource(R.string.browser_folder_both, folders, files)
+                    folder.folders > 0 -> folders
+                    folder.files > 0 -> files
+                    else -> stringResource(R.string.browser_folder_nothing)
+                }
+                Text(contents, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Text(stringResource(R.string.browser_status_deleting), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
         }
-        if (!selecting) Box {
-            IconButton(onClick = { menu = true }, enabled = idle) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
+        RowMenu(selecting, idle, onOpen = { menu = true }) {
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 MenuItem(Icons.Outlined.Edit, R.string.browser_rename) { menu = false; onAction(RowAction.RENAME) }
                 MenuItem(Icons.AutoMirrored.Outlined.DriveFileMove, R.string.browser_move) { menu = false; onAction(RowAction.MOVE) }
@@ -1036,6 +1117,7 @@ private fun FileRow(
     // Until its part 0 is in Saved Messages a rename would lose to it (SPEC §5.2), so uploads are left alone.
     val settled = file.status != FileStatus.UPLOADING
     val idle = !file.deleting
+    val haptic = LocalHapticFeedback.current
     Row(
         modifier.fillMaxWidth()
             .background(selectedBackground(selected))
@@ -1050,7 +1132,14 @@ private fun FileRow(
                         else -> menu = true
                     }
                 },
-                onLongClick = { if (file.selectable) onToggle() else if (!selecting) menu = true },
+                onLongClick = {
+                    if (file.selectable) {
+                        if (!selecting) haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onToggle()
+                    } else if (!selecting) {
+                        menu = true
+                    }
+                },
             )
             .alpha(if (idle && (!selecting || file.selectable)) 1f else DELETING_ALPHA)
             .padding(start = 16.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
@@ -1066,21 +1155,29 @@ private fun FileRow(
         Column(Modifier.weight(1f)) {
             Text(file.name, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.height(2.dp))
-            val details = Formatter.formatShortFileSize(context, file.size) + " · " + DateFormat.getMediumDateFormat(context).format(Date(file.modifiedAt))
-            Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (!idle) {
-                Text(stringResource(R.string.browser_status_deleting), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            } else file.status.label()?.let {
-                Text(
-                    stringResource(it),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (file.status == FileStatus.DAMAGED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                )
+            // Two lines for every file: a status takes the date's place, in its colour, instead of adding a line.
+            val status = if (!idle) R.string.browser_status_deleting else file.status.label()
+            val statusColor = if (file.status == FileStatus.DAMAGED && idle) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+            val date = fileDate(file.modifiedAt)
+            val details = buildAnnotatedString {
+                append(Formatter.formatShortFileSize(context, file.size))
+                append(" · ")
+                if (status == null) append(date) else withStyle(SpanStyle(color = statusColor)) { append(stringResource(status)) }
             }
+            Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        if (!selecting) Box {
-            IconButton(onClick = { menu = true }, enabled = idle) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
+        RowMenu(selecting, idle, onOpen = { menu = true }) {
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                // What the short status on the row means, where there is room for it.
+                file.status.explanation()?.let { explanation ->
+                    Text(
+                        stringResource(explanation),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (file.status == FileStatus.DAMAGED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.widthIn(max = 280.dp).padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                    HorizontalDivider()
+                }
                 MenuItem(Icons.Outlined.FileOpen, R.string.browser_open, enabled = ready) { menu = false; onOpen() }
                 MenuItem(Icons.Outlined.SaveAlt, R.string.browser_export, enabled = ready) { menu = false; export.launch(file.name) }
                 MenuItem(Icons.Outlined.DownloadForOffline, R.string.browser_cache, enabled = ready && !file.cached) { menu = false; onAction(RowAction.CACHE) }
@@ -1095,6 +1192,30 @@ private fun FileRow(
 /** A row whose delete is on the way: still there, but nothing to do with it. */
 private const val DELETING_ALPHA = 0.5f
 
+/**
+ * A row's menu button. While picking it fades out but keeps its place, so the row's text does not jump
+ * across when the picking starts.
+ */
+@Composable
+private fun RowMenu(selecting: Boolean, idle: Boolean, onOpen: () -> Unit, menu: @Composable () -> Unit) {
+    val shown by animateFloatAsState(if (selecting) 0f else 1f, Motion.standard(), label = "row menu")
+    Box(Modifier.alpha(shown)) {
+        IconButton(onClick = onOpen, enabled = idle && !selecting) { Icon(Icons.Outlined.MoreVert, stringResource(R.string.browser_cd_more)) }
+        menu()
+    }
+}
+
+/** Today's and yesterday's by name, at a glance; older ones by their date. */
+@Composable
+private fun fileDate(millis: Long): String {
+    val context = LocalContext.current
+    return when (dayOf(millis, System.currentTimeMillis())) {
+        Day.TODAY -> stringResource(R.string.browser_date_today, DateFormat.getTimeFormat(context).format(Date(millis)))
+        Day.YESTERDAY -> stringResource(R.string.browser_date_yesterday)
+        Day.OLDER -> DateFormat.getMediumDateFormat(context).format(Date(millis))
+    }
+}
+
 @Composable
 private fun selectedBackground(selected: Boolean): Color {
     val color by animateColorAsState(
@@ -1106,25 +1227,37 @@ private fun selectedBackground(selected: Boolean): Color {
 }
 
 /**
- * The type tile, or while picking a check box in its place, as in Arcanum's file manager. A file whole
- * on the phone has a green check on the tile's corner.
+ * The type tile or the file's preview. While picking, every tile gets a round check box on its corner,
+ * empty or ticked, so what can be picked shows as plainly as what is; the picture stays to pick by. A
+ * file whole on the phone has a green check on the opposite corner.
  */
 @Composable
 private fun PickTile(selecting: Boolean, selected: Boolean, icon: Pair<ImageVector, Color>, cached: Boolean = false, preview: ImageBitmap? = null) {
-    AnimatedContent(targetState = selecting && selected, label = "pick") { picked ->
-        if (picked) {
-            Box(
-                Modifier.size(42.dp).clip(RoundedCornerShape(Corners.Tile)).background(MaterialTheme.colorScheme.primary),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(Icons.Outlined.Check, stringResource(R.string.browser_cd_picked), tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
-            }
-        } else {
-            Box {
-                if (preview != null) PreviewTile(preview, icon) else TypeTile(icon)
-                if (cached) CachedBadge(Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp))
-            }
+    Box {
+        if (preview != null) PreviewTile(preview, icon) else TypeTile(icon)
+        if (cached) CachedBadge(Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp))
+        AnimatedVisibility(
+            selecting,
+            enter = fadeIn(Motion.quick()) + scaleIn(Motion.quick(), initialScale = 0.6f),
+            exit = fadeOut(Motion.quick()) + scaleOut(Motion.quick(), targetScale = 0.6f),
+            modifier = Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp),
+        ) {
+            PickMark(selected)
         }
+    }
+}
+
+/** A round check box in a ring of the background: empty, or filled and ticked. */
+@Composable
+private fun PickMark(selected: Boolean) {
+    val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, Motion.quick(), label = "pick fill")
+    Box(
+        Modifier.size(20.dp).clip(CircleShape).background(MaterialTheme.colorScheme.background).padding(2.dp)
+            .clip(CircleShape).background(fill)
+            .then(if (selected) Modifier else Modifier.border(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant, CircleShape)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) Icon(Icons.Outlined.Check, stringResource(R.string.browser_cd_picked), tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(12.dp))
     }
 }
 
@@ -1220,11 +1353,19 @@ private fun SelectionAction(label: Int, icon: ImageVector, onClick: () -> Unit, 
     }
 }
 
+/** A file's state in a word, for its row. */
 private fun FileStatus.label() = when (this) {
     FileStatus.UPLOADING -> R.string.browser_status_uploading
+    FileStatus.INCOMPLETE -> R.string.browser_status_incomplete_short
+    FileStatus.DAMAGED -> R.string.browser_status_damaged_short
+    FileStatus.READY -> null
+}
+
+/** What that word means, at the top of the file's menu; the upload says it plainly enough. */
+private fun FileStatus.explanation() = when (this) {
     FileStatus.INCOMPLETE -> R.string.browser_status_incomplete
     FileStatus.DAMAGED -> R.string.browser_status_damaged
-    FileStatus.READY -> null
+    FileStatus.UPLOADING, FileStatus.READY -> null
 }
 
 /** Transfers in progress or waiting, one card each (SPEC §9). */

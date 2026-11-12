@@ -15,12 +15,13 @@
     <string name="browser_transfers_count">Transfers (%1$d)</string>
     <string name="browser_back">Back</string>
     <string name="browser_empty">No files yet</string>
-    <string name="browser_no_match">No file name matches.</string>
+    <string name="browser_no_match">Nothing by that name</string>
+    <string name="browser_no_match_hint">Search looks through the names of every file and folder in the vault.</string>
     <string name="browser_folder_empty">This folder is empty</string>
-    <string name="browser_empty_hint">Tap + to add files or a folder.</string>
+    <string name="browser_folder_empty_hint">Tap + to add files here, or move some in from another folder.</string>
+    <string name="browser_empty_hint">Tap + to add files or a whole folder. They are encrypted on this phone before they go to Telegram.</string>
     <string name="browser_cd_close_search">Close the search</string>
     <string name="browser_cd_more">More</string>
-    <string name="browser_type_folder">Folder</string>
     <string name="browser_add_files_sub">Pick files on this phone; they are encrypted before they leave it</string>
     <string name="browser_new_folder_sub">Inside the folder on screen</string>
     <plurals name="browser_catching_up">
@@ -209,4 +210,20 @@
     <string name="browser_cache_confirm">Cache</string>
     <string name="browser_cache_raise">Raise to %1$s and cache</string>
     <string name="browser_cache_anyway">Cache anyway</string>
+
+    <!-- What a folder holds, on its row -->
+    <plurals name="browser_folder_folders">
+        <item quantity="one">%1$d folder</item>
+        <item quantity="other">%1$d folders</item>
+    </plurals>
+    <plurals name="browser_folder_files">
+        <item quantity="one">%1$d file</item>
+        <item quantity="other">%1$d files</item>
+    </plurals>
+    <string name="browser_folder_both">%1$s, %2$s</string>
+    <string name="browser_folder_nothing">Empty</string>
+    <string name="browser_date_today">Today %1$s</string>
+    <string name="browser_date_yesterday">Yesterday</string>
+    <string name="browser_status_incomplete_short">Incomplete</string>
+    <string name="browser_status_damaged_short">Damaged</string>
 </resources>

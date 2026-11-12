@@ -62,7 +62,14 @@ data class FileItem(
     val selectable: Boolean get() = status != FileStatus.UPLOADING && !deleting
 }
 
-data class FolderItem(val folderId: Id, val name: String, val deleting: Boolean = false) {
+/** A folder, with how many folders and files are right inside it (not deeper), for its row. */
+data class FolderItem(
+    val folderId: Id,
+    val name: String,
+    val deleting: Boolean = false,
+    val folders: Int = 0,
+    val files: Int = 0,
+) {
     val selectable: Boolean get() = !deleting
 }
 
@@ -299,7 +306,12 @@ class BrowserViewModel @Inject constructor(
             .map { it.copy(deleting = it.fileId in deleting, cached = it.fileId in marks.cached) }
 
         // Folders are listed by name whatever the sorting; they have no size or date of their own.
-        val folderItems = folders.map { FolderItem(it, tree.folders.getValue(it).name, deleting = it in deleting) }
+        // Counted once for all rows; what is deleted and waiting for its undo is already out of sight.
+        val folderCounts = tree.folders.keys.filterNot(::hiddenFolder).groupingBy { tree.parentOf(it) }.eachCount()
+        val fileCounts = tree.files.keys.filterNot { it in hidden }.groupingBy { tree.folderOf(it) }.eachCount()
+        val folderItems = folders.map {
+            FolderItem(it, tree.folders.getValue(it).name, deleting = it in deleting, folders = folderCounts[it] ?: 0, files = fileCounts[it] ?: 0)
+        }
             .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
             .let { if (sorting.by == SortBy.NAME && sorting.descending) it.reversed() else it }
         val sorted = when (sorting.by) {
