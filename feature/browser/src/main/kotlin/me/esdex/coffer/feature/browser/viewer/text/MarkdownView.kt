@@ -3,6 +3,7 @@ package me.esdex.coffer.feature.browser.viewer.text
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -232,7 +233,8 @@ private fun FrontMatterBlock(block: MdBlock.FrontMatter, base: androidx.compose.
  * word as wide as a column of a sentence. So every cell is measured once with the text style
  * it will be drawn in, each column takes its widest, and the whole thing scrolls sideways
  * when the sum is wider than the screen - a table is the one block that may legitimately be
- * wider than the page.
+ * wider than the page. A narrower one is stretched to the page's width, each column by its
+ * share, so it does not stop two thirds of the way across with room to spare.
  */
 @Composable
 private fun TableBlock(
@@ -245,42 +247,50 @@ private fun TableBlock(
     val density  = LocalDensity.current
     val columns  = maxOf(block.header.size, block.rows.maxOfOrNull { it.size } ?: 0)
 
-    val widths = remember(block, base) {
+    val measured = remember(block, base) {
         (0 until columns).map { column ->
             val cells = listOf(block.header.getOrNull(column).orEmpty()) +
                 block.rows.map { it.getOrNull(column).orEmpty() }
-            val widest = cells.maxOf { cell ->
-                measurer.measure(AnnotatedString(cell.ifEmpty { " " }), style).size.width
-            }
-            with(density) { widest.toDp() }.coerceIn(48.dp, 260.dp) + 24.dp
+            // Measured as drawn, the header bold, so its words fit in the column too.
+            val widest = cells.mapIndexed { index, cell ->
+                val weight = if (index == 0) FontWeight.SemiBold else FontWeight.Normal
+                measurer.measure(AnnotatedString(cell.ifEmpty { " " }), style.copy(fontWeight = weight)).size.width
+            }.max()
+            // A dp more than the text: the padding is rounded to whole pixels, and a pixel short
+            // put "Trams and taxi" on two lines with room to spare (seen at 420 dpi).
+            with(density) { widest.toDp() }.coerceIn(48.dp, 260.dp) + 24.dp + 1.dp
         }
     }
 
-    Column(
-        modifier = Modifier
-            .padding(vertical = 8.dp)
-            .clip(RoundedCornerShape(Corners.Tile))
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .horizontalScroll(rememberScrollState())
-    ) {
-        Row(modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
-            block.header.forEachIndexed { column, cell ->
-                TableCell(cell, widths.getOrElse(column) { 96.dp }, block.aligns.getOrElse(column) { -1 },
-                          base, bold = true, onLink = onLink)
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val total = measured.fold(0.dp) { sum, width -> sum + width }
+        val widths = if (total < maxWidth) measured.map { it * (maxWidth / total) } else measured
+        Column(
+            modifier = Modifier
+                .padding(vertical = 8.dp)
+                .clip(RoundedCornerShape(Corners.Tile))
+                .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                .horizontalScroll(rememberScrollState())
+        ) {
+            Row(modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+                block.header.forEachIndexed { column, cell ->
+                    TableCell(cell, widths.getOrElse(column) { 96.dp }, block.aligns.getOrElse(column) { -1 },
+                              base, bold = true, onLink = onLink)
+                }
             }
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-        block.rows.forEachIndexed { rowIndex, row ->
-            Row(
-                modifier = Modifier.background(
-                    // The faint stripe is what keeps a wide row readable across the screen.
-                    if (rowIndex % 2 == 1) MaterialTheme.colorScheme.surfaceContainer
-                    else Color.Transparent
-                )
-            ) {
-                for (column in 0 until columns) {
-                    TableCell(row.getOrNull(column).orEmpty(), widths.getOrElse(column) { 96.dp },
-                              block.aligns.getOrElse(column) { -1 }, base, bold = false, onLink = onLink)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            block.rows.forEachIndexed { rowIndex, row ->
+                Row(
+                    modifier = Modifier.background(
+                        // The faint stripe is what keeps a wide row readable across the screen.
+                        if (rowIndex % 2 == 1) MaterialTheme.colorScheme.surfaceContainer
+                        else Color.Transparent
+                    )
+                ) {
+                    for (column in 0 until columns) {
+                        TableCell(row.getOrNull(column).orEmpty(), widths.getOrElse(column) { 96.dp },
+                                  block.aligns.getOrElse(column) { -1 }, base, bold = false, onLink = onLink)
+                    }
                 }
             }
         }
