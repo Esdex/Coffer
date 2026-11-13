@@ -35,6 +35,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
@@ -292,6 +297,14 @@ private fun PhoneStep(viewModel: LoginViewModel, busy: Boolean, errorText: Strin
                 // Over the code half's right border, so the two share one line.
                 .offset(x = (-1).dp)
                 .focusRequester(numberFocus)
+                // Erasing an empty number changes nothing, so no change is reported; the key itself is.
+                // Right after the code moved the cursor here, the number is empty and this is the only
+                // sign the user wants back (seen 2026-11-13: 48, then erase, stayed put).
+                .onPreviewKeyEvent { event ->
+                    val erase = event.key == Key.Backspace && event.type == KeyEventType.KeyDown && numberField.text.isEmpty()
+                    if (erase) backToCode()
+                    erase
+                }
                 .onFocusChanged { focus ->
                     // The number waits for its code: a tap here with none sends the typing there first,
                     // and a whole code sends it back (the code field's own jump). Without Telegram's list of
