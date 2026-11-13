@@ -9,7 +9,6 @@ dependencies {
     api(libs.androidx.compose.material3)
     api(libs.androidx.compose.material.icons.extended)
     api(libs.haze)
-    implementation(libs.lottie.compose)
     implementation(libs.kotlinx.coroutines.core)
 
     testImplementation(libs.junit)

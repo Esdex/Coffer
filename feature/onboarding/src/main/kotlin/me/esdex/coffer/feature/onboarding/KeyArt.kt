@@ -6,7 +6,7 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Key
@@ -18,11 +18,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.unit.dp
 import me.esdex.coffer.core.ui.theme.Motion
 
 /**
- * The key that only the user holds, for the welcome page that says so: in a circle, as the account on
+ * The key that only the user holds, for the welcome page that says so and the step for API keys: in a circle, as the account on
  * the sign-in step, turning a whole round about its upright now and then, as a coin turns, and resting
  * between, so it does not read as something loading. In the theme's colours.
  */
@@ -43,14 +42,14 @@ internal fun KeyArt(modifier: Modifier = Modifier) {
     )
     Box(modifier, contentAlignment = Alignment.Center) {
         Box(
-            Modifier.size(CIRCLE).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
+            Modifier.fillMaxSize(CIRCLE).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
                 Icons.Filled.Key,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(CIRCLE * 0.58f).graphicsLayer {
+                modifier = Modifier.fillMaxSize(0.58f).graphicsLayer {
                     rotationY = turn
                     // A little depth, so the turn reads as a turn and not a squeeze.
                     cameraDistance = 12f * density
@@ -60,7 +59,8 @@ internal fun KeyArt(modifier: Modifier = Modifier) {
     }
 }
 
-private val CIRCLE = 168.dp
+/** The circle's share of the square: 168 of the welcome's 220. */
+private const val CIRCLE = 0.76f
 
 // A rest, then one round over a little more than a screen's change.
 private const val REST = 1_600

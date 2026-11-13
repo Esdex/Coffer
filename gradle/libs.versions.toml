@@ -10,7 +10,6 @@ composeBom = "2026.09.00"
 # The Material icon set stopped at 1.7.8 and newer BOMs no longer list it.
 materialIcons = "1.7.8"
 haze = "1.5.3"
-lottieCompose = "6.6.4"
 media3 = "1.9.0"
 # The one media3 already brings; the platform ExifInterface has had parsing bugs.
 exifinterface = "1.4.2"
@@ -49,7 +48,6 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIcons" }
 haze = { module = "dev.chrisbanes.haze:haze", version.ref = "haze" }
-lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottieCompose" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }

@@ -14,12 +14,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.edit
-import me.esdex.coffer.core.ui.components.Hero
-import me.esdex.coffer.core.ui.components.HeroAnimation
 import me.esdex.coffer.core.ui.theme.Motion
 
 private val pages = listOf(
-    IntroPage(R.string.welcome_title, R.string.welcome_what) { HeroAnimation(Hero.HELLO, size = INTRO_PICTURE) },
+    // Coffer's own icon, where a waving hand from LottieFiles was (Esdex, 2026-11-13).
+    IntroPage(R.string.welcome_title, R.string.welcome_what) { shown -> AppIconArt(shown, Modifier.size(INTRO_PICTURE)) },
     // Names turning into noise, for what "encrypted on this phone" means (Esdex, 2026-11-13).
     IntroPage(R.string.welcome_encrypt_title, R.string.welcome_encrypt) { CipherArt(Modifier.size(INTRO_PICTURE)) },
     // The key itself, for "Only you hold the key", rather than a shield (Esdex, 2026-11-13).

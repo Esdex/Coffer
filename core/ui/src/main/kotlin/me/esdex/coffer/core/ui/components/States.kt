@@ -21,7 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,16 +31,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.airbnb.lottie.compose.LottieAnimation
-import com.airbnb.lottie.compose.LottieCompositionSpec
-import com.airbnb.lottie.compose.LottieConstants
-import com.airbnb.lottie.compose.animateLottieCompositionAsState
-import com.airbnb.lottie.compose.rememberLottieComposition
 import me.esdex.coffer.core.ui.R
 
 /**
  * An empty list: a title, and under it what to do about it. Over them [hero], an animation (the ghost
- * where there is nothing to show, as in Arcanum; the error where something could not be), or else
+ * where there is nothing to show; the error where something could not be), or else
  * [icon], a still one in a circle.
  */
 @Composable
@@ -89,10 +83,9 @@ val SPINNER_SIZE = 40.dp
 /** "This is running, wait": a looping animation over a title, and an optional line under it. */
 @Composable
 fun OperationLoading(title: String, modifier: Modifier = Modifier, subtitle: String? = null) {
-    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(R.raw.loading))
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            LottieAnimation(composition, iterations = LottieConstants.IterateForever, modifier = Modifier.size(160.dp))
+            HeroAnimation(Hero.LOADING, size = 160.dp)
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
             if (subtitle != null) {
                 Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LocalContentColor.current.copy(alpha = 0.7f), textAlign = TextAlign.Center)
@@ -109,16 +102,16 @@ fun OperationSuccess(
     modifier: Modifier = Modifier,
     body: String? = null,
     extra: (@Composable ColumnScope.() -> Unit)? = null,
-) = OperationResult(R.raw.success_check, title, body, onDone, modifier, FontWeight.Bold, extra)
+) = OperationResult(success = true, title, body, onDone, modifier, FontWeight.Bold, extra)
 
-/** "It did not work": the same shape as [OperationSuccess] with the other animation, so a failure is as much of a screen. */
+/** "It did not work": the same shape as [OperationSuccess] with a cross for the check, so a failure is as much of a screen. */
 @Composable
 fun OperationFailure(title: String, onDone: () -> Unit, modifier: Modifier = Modifier, body: String? = null) =
-    OperationResult(R.raw.error, title, body, onDone, modifier, FontWeight.SemiBold, null)
+    OperationResult(success = false, title, body, onDone, modifier, FontWeight.SemiBold, null)
 
 @Composable
 private fun OperationResult(
-    animation: Int,
+    success: Boolean,
     title: String,
     body: String?,
     onDone: () -> Unit,
@@ -127,13 +120,11 @@ private fun OperationResult(
     extra: (@Composable ColumnScope.() -> Unit)?,
 ) {
     val haptic = LocalHapticFeedback.current
-    val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(animation))
-    val progress by animateLottieCompositionAsState(composition, iterations = 1)
     LaunchedEffect(Unit) { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
     Column(modifier.fillMaxSize().padding(horizontal = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                LottieAnimation(composition, progress = { progress }, modifier = Modifier.size(180.dp))
+                ResultMark(success, Modifier.size(180.dp))
                 Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = weight, textAlign = TextAlign.Center)
                 if (body != null) {
                     Text(body, style = MaterialTheme.typography.bodyMedium, color = LocalContentColor.current.copy(alpha = 0.7f), textAlign = TextAlign.Center)

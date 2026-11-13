@@ -9,6 +9,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,8 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import me.esdex.coffer.core.ui.components.FieldError
-import me.esdex.coffer.core.ui.components.Hero
-import me.esdex.coffer.core.ui.components.HeroAnimation
 import me.esdex.coffer.core.ui.theme.Motion
 
 /*
@@ -38,11 +37,13 @@ internal fun StepTitle(text: String) = Text(text, style = MaterialTheme.typograp
 @Composable
 internal fun StepBody(text: String) = Text(text, style = MaterialTheme.typography.bodyMedium)
 
-/** The animation at the head of a step, centred. */
+/** The picture at the head of a step, centred, in a square of [STEP_HERO]. */
 @Composable
-internal fun StepHero(hero: Hero) = Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-    HeroAnimation(hero, size = 140.dp)
+internal fun StepHero(picture: @Composable (Modifier) -> Unit) = Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+    picture(Modifier.size(STEP_HERO))
 }
+
+internal val STEP_HERO = 140.dp
 
 /** Another way through a step, quieter than its main button and centred under it. */
 @Composable

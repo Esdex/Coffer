@@ -184,7 +184,7 @@ private fun ApiKeysStep(busy: Boolean, errorText: String?, onSubmit: (String, St
     var apiId by rememberSaveable { mutableStateOf("") }
     var apiHash by rememberSaveable { mutableStateOf("") }
     val uriHandler = LocalUriHandler.current
-    StepHero(Hero.SHIELD)
+    StepHero { KeyArt(it) }
     StepTitle(stringResource(R.string.login_api_keys_title))
     StepBody(stringResource(if (onBuiltIn != null) R.string.login_api_keys_optional else R.string.login_api_keys_explanation))
     StepBody(stringResource(R.string.login_api_keys_steps))
@@ -372,7 +372,7 @@ private fun CodeStep(
     onStartOver: () -> Unit,
 ) {
     var code by rememberSaveable(state.phoneNumber) { mutableStateOf("") }
-    StepHero(Hero.SHIELD)
+    StepHero { CodeArt(it) }
     StepTitle(stringResource(R.string.login_code_title))
     StepBody(
         when (state.delivery) {
@@ -450,7 +450,7 @@ private fun EmailCodeStep(state: AuthState.WaitEmailCode, busy: Boolean, errorTe
 private fun PasswordStep(state: AuthState.WaitPassword, busy: Boolean, errorText: String?, onSubmit: (String) -> Unit, onStartOver: () -> Unit) {
     // Not saved across process death: a password does not belong in the saved instance state.
     var password by remember { mutableStateOf("") }
-    StepHero(Hero.SHIELD)
+    StepHero { ShuttingPadlock(it) }
     StepTitle(stringResource(R.string.login_password_title))
     StepBody(stringResource(R.string.login_password_explanation))
     PasswordField(password, stringResource(R.string.login_password), { password = it }, isError = errorText != null)
