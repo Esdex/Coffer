@@ -187,7 +187,8 @@ private fun ApiKeysStep(busy: Boolean, errorText: String?, onSubmit: (String, St
 @Composable
 private fun PhoneStep(busy: Boolean, errorText: String?, onSubmit: (String) -> Unit, onQr: () -> Unit) {
     var phone by rememberSaveable { mutableStateOf("") }
-    StepHero(Hero.HELLO)
+    // An account and its key, rather than a wave.
+    SignInHero()
     StepTitle(stringResource(R.string.login_phone_title))
     StepBody(stringResource(R.string.login_phone_explanation))
     OutlinedTextField(
