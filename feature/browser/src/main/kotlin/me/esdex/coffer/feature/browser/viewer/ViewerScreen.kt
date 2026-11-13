@@ -42,13 +42,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.Check
-import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Fullscreen
 import androidx.compose.material.icons.outlined.LockOpen
 import androidx.compose.material.icons.outlined.MoreVert
@@ -440,8 +438,7 @@ fun ViewerScreen(
             // An error says so instead of an endless black screen.
             if (playbackError != null || videoFailed) {
                 ViewerFailure(
-                    icon = Icons.Outlined.ErrorOutline,
-                    title = stringResource(R.string.viewer_video_failed),
+                                        title = stringResource(R.string.viewer_video_failed),
                     subtitle = null,
                     onDark = true,
                     detail = playbackError,
@@ -775,8 +772,7 @@ private fun ZoomablePicture(picture: ViewerViewModel.Picture, preview: ImageBitm
                 Image(rememberDrawablePainter(picture.drawable), null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize().graphicsLayer { alpha = reveal })
             is ViewerViewModel.Picture.Loading -> Unit
             ViewerViewModel.Picture.Failed -> ViewerFailure(
-                icon = Icons.Filled.BrokenImage,
-                title = stringResource(R.string.viewer_failed),
+                                title = stringResource(R.string.viewer_failed),
                 subtitle = null,
                 onDark = true,
             )

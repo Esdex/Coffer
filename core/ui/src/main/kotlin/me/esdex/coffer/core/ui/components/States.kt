@@ -41,7 +41,8 @@ import me.esdex.coffer.core.ui.R
 
 /**
  * An empty list: a title, and under it what to do about it. Over them [hero], an animation (the ghost
- * where there is nothing to show, as in Arcanum), or else [icon], a still one in a circle.
+ * where there is nothing to show, as in Arcanum; the error where something could not be), or else
+ * [icon], a still one in a circle.
  */
 @Composable
 fun EmptyStateView(title: String, modifier: Modifier = Modifier, subtitle: String? = null, icon: ImageVector? = null, hero: Hero? = null) {
@@ -50,7 +51,7 @@ fun EmptyStateView(title: String, modifier: Modifier = Modifier, subtitle: Strin
             // What kind of empty this is, before a word is read.
             if (hero != null) {
                 // Arcanum's size and pace for its empty lists: big enough to wander in, slow enough to be calm.
-                HeroAnimation(hero, size = EMPTY_HERO_SIZE, speed = EMPTY_HERO_SPEED)
+                HeroAnimation(hero, size = EMPTY_HERO_SIZE, speed = if (hero.loops) EMPTY_HERO_SPEED else 1f)
                 Spacer(Modifier.height(16.dp))
             } else if (icon != null) {
                 Box(

@@ -111,6 +111,7 @@ fun ShareScreen(onDone: (added: Int) -> Unit, modifier: Modifier = Modifier, vie
                 is ShareInbox.State.Failed -> EmptyStateView(
                     stringResource(if (s.reason == ShareInbox.Reason.NO_SPACE) R.string.share_no_space else R.string.share_unreadable),
                     Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                    hero = Hero.ERROR,
                 )
                 is ShareInbox.State.Ready -> {
                     val shown = s.items.take(SHOWN)

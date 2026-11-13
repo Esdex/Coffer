@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -134,8 +133,7 @@ fun TextViewerScreen(
                 when {
                     state.loading -> FileLoading(0, 0, onDark = false)
                     failure != null -> ViewerFailure(
-                        icon = Icons.Outlined.ErrorOutline,
-                        title = stringResource(
+                                                title = stringResource(
                             when (failure) {
                                 TextViewModel.Failure.TOO_LARGE -> R.string.viewer_text_too_large
                                 TextViewModel.Failure.NOT_TEXT -> R.string.viewer_text_not_text

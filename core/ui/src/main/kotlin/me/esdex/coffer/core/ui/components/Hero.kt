@@ -29,7 +29,7 @@ import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
 
 /** The animations the first screens use, from Arcanum. */
-enum class Hero(@RawRes val raw: Int) {
+enum class Hero(@RawRes val raw: Int, val loops: Boolean = true) {
     HELLO(R.raw.hello_wave),
     VAULT(R.raw.vault),
     SHIELD(R.raw.shield),
@@ -37,13 +37,16 @@ enum class Hero(@RawRes val raw: Int) {
 
     /** Wanders to and fro where there is nothing to show, as in Arcanum's empty lists. */
     GHOST(R.raw.ghost),
+
+    /** Something could not be shown: plays once, as the failed operations' does, rather than going on. */
+    ERROR(R.raw.error, loops = false),
 }
 
 /** A looping animation at the head of a screen. */
 @Composable
 fun HeroAnimation(hero: Hero, modifier: Modifier = Modifier, size: Dp = 160.dp, speed: Float = 1f) {
     val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(hero.raw))
-    val progress by animateLottieCompositionAsState(composition, iterations = LottieConstants.IterateForever, speed = speed)
+    val progress by animateLottieCompositionAsState(composition, iterations = if (hero.loops) LottieConstants.IterateForever else 1, speed = speed)
     LottieAnimation(composition, progress = { progress }, modifier = modifier.size(size))
 }
 

@@ -29,9 +29,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ErrorOutline
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -181,8 +178,7 @@ fun PdfViewerScreen(
                     // The whole document comes first (see MemoryCopy): how much of it, once its size is known.
                     state.loading -> FileLoading(state.loaded, state.size, onDark = false)
                     failure != null -> ViewerFailure(
-                        icon = if (failure == PdfViewModel.Failure.PASSWORD_PROTECTED) Icons.Outlined.Lock else Icons.Outlined.ErrorOutline,
-                        title = stringResource(
+                                                title = stringResource(
                             when (failure) {
                                 PdfViewModel.Failure.PASSWORD_PROTECTED -> R.string.viewer_pdf_password
                                 PdfViewModel.Failure.NOT_AVAILABLE -> R.string.viewer_pdf_not_available

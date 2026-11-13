@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import me.esdex.coffer.core.ui.components.AppMenu
 import me.esdex.coffer.core.ui.components.BackButton
 import me.esdex.coffer.core.ui.components.EmptyStateView
+import me.esdex.coffer.core.ui.components.Hero
 import me.esdex.coffer.core.ui.components.SPINNER_SIZE
 import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.tabular
@@ -147,16 +148,17 @@ internal fun FileLoading(loaded: Long, size: Long, onDark: Boolean, modifier: Mo
 }
 
 /**
- * A file a viewer could not show, the same in every viewer: the app's empty state, in white over a
+ * A file a viewer could not show, the same in every viewer: the app's empty state with the error
+ * animation playing once, in white over a
  * picture's black. [detail] is the player's own code, which tells a failed read from a format the
  * phone cannot play; shown in debug builds only, as it means nothing to anyone else.
  */
 @Composable
-internal fun ViewerFailure(icon: ImageVector, title: String, subtitle: String?, onDark: Boolean, modifier: Modifier = Modifier, detail: String? = null) {
+internal fun ViewerFailure(title: String, subtitle: String?, onDark: Boolean, modifier: Modifier = Modifier, detail: String? = null) {
     val debuggable = LocalContext.current.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
     val text = listOfNotNull(subtitle, detail?.takeIf { debuggable }).joinToString("\n").ifEmpty { null }
     if (!onDark) {
-        EmptyStateView(title = title, subtitle = text, icon = icon, modifier = modifier.padding(horizontal = 32.dp))
+        EmptyStateView(title = title, subtitle = text, hero = Hero.ERROR, modifier = modifier.padding(horizontal = 32.dp))
         return
     }
     val scheme = MaterialTheme.colorScheme.copy(
@@ -166,7 +168,7 @@ internal fun ViewerFailure(icon: ImageVector, title: String, subtitle: String?, 
     )
     MaterialTheme(colorScheme = scheme) {
         CompositionLocalProvider(LocalContentColor provides Color.White) {
-            EmptyStateView(title = title, subtitle = text, icon = icon, modifier = modifier.padding(horizontal = 32.dp))
+            EmptyStateView(title = title, subtitle = text, hero = Hero.ERROR, modifier = modifier.padding(horizontal = 32.dp))
         }
     }
 }
