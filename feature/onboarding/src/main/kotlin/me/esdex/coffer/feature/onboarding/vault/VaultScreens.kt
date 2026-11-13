@@ -6,6 +6,8 @@ import androidx.biometric.BiometricPrompt
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -37,7 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -72,7 +77,6 @@ import me.esdex.coffer.feature.onboarding.R
 import me.esdex.coffer.feature.onboarding.SecondaryAction
 import me.esdex.coffer.feature.onboarding.StepBody
 import me.esdex.coffer.feature.onboarding.StepError
-import me.esdex.coffer.feature.onboarding.StepHero
 import me.esdex.coffer.feature.onboarding.StepTitle
 import me.esdex.coffer.feature.onboarding.stepSlide
 import javax.crypto.Cipher
@@ -326,7 +330,7 @@ private fun NewPassword(viewModel: VaultViewModel, busy: Boolean, errorText: Str
     var repeated by remember { mutableStateOf("") }
     val check = remember(password) { PasswordPolicy.check(password) }
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
-    StepHero(Hero.SHIELD)
+    ClosingPadlock(if (password.isEmpty()) 0 else check.score, check.acceptable && password.isNotEmpty())
     StepTitle(stringResource(R.string.vault_create_title))
     // Where the vault went, said first: a create screen out of nowhere would look like data loss.
     deleted?.let {
@@ -359,6 +363,42 @@ private fun NewPassword(viewModel: VaultViewModel, busy: Boolean, errorText: Str
                 }) { Text(stringResource(R.string.vault_log_out)) }
             },
             dismissButton = { TextButton(onClick = { confirmLogOut = false }) { Text(stringResource(R.string.vault_cancel)) } },
+        )
+    }
+}
+
+/**
+ * The padlock of the new vault, shutting as the password gets stronger: open over an empty field, its
+ * shackle lowered a step with each step of the meter (score 0 to 4), but shut only once the password is
+ * [acceptable], with a little jump and a tap under the finger. The same padlock the unlock screen shows
+ * shut, and the one Lock sends flying there.
+ */
+@Composable
+private fun ClosingPadlock(score: Int, acceptable: Boolean) {
+    val closed by animateFloatAsState(
+        when {
+            acceptable -> 1f
+            // Short of shut until the password will do: the last step is the click.
+            else -> score / SCORE_STEPS * NEARLY_SHUT
+        },
+        Motion.standard(),
+        label = "padlock",
+    )
+    val jump = remember { Animatable(1f) }
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(acceptable) {
+        if (!acceptable) return@LaunchedEffect
+        haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+        jump.animateTo(JUMP_SCALE, Motion.quick())
+        jump.animateTo(1f, Motion.standard())
+    }
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Padlock(
+            closed = closed,
+            modifier = Modifier.size(LOCK_HERO).graphicsLayer {
+                scaleX = jump.value
+                scaleY = jump.value
+            },
         )
     }
 }
@@ -461,3 +501,10 @@ private const val OPEN_SCALE = 0.96f
 
 /** The padlock over the unlock screen: the size the other steps' animations have. */
 private val LOCK_HERO = 140.dp
+
+/** The strength meter's steps above none (PasswordPolicy scores 0 to 4). */
+private const val SCORE_STEPS = 4f
+
+/** How far a strong but not yet acceptable password lowers the shackle: close, not shut. */
+private const val NEARLY_SHUT = 0.8f
+private const val JUMP_SCALE = 1.08f
