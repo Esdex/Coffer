@@ -31,7 +31,7 @@ android {
         }
     }
 
-    flavorDimensions += "distribution"
+    flavorDimensions += listOf("distribution", "store")
     productFlavors {
         // Keys come from local.properties; onboarding skips the api_id step (SPEC §2).
         create("personal") {
@@ -42,6 +42,14 @@ android {
         // The user always enters the keys.
         create("public") {
             dimension = "distribution"
+        }
+        // GitHub Releases and F-Droid: the same build, with the donation page.
+        create("fdroid") {
+            dimension = "store"
+        }
+        // Google Play: no donation page, as Play's payments policy asks.
+        create("playstore") {
+            dimension = "store"
         }
     }
 

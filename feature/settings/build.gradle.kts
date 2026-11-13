@@ -4,6 +4,15 @@ plugins {
     alias(libs.plugins.coffer.hilt)
 }
 
+// Which store the build is for: the Play build carries no donation page (src/playstore), as Arcanum's.
+android {
+    flavorDimensions += "store"
+    productFlavors {
+        create("fdroid") { dimension = "store" }
+        create("playstore") { dimension = "store" }
+    }
+}
+
 dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:vault"))

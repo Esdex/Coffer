@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Info
@@ -60,6 +61,7 @@ import me.esdex.coffer.core.vault.DeviceUnlock
 /** Where in Settings the user is. [depth] decides which way a change slides; [parent] is where back goes. */
 private enum class Screen(val depth: Int) {
     MAIN(0),
+    SUPPORT(1),
     SECURITY(1),
     VAULT(1),
     APPEARANCE(1),
@@ -152,6 +154,7 @@ fun SettingsScreen(
     ) { screen ->
         when (screen) {
             Screen.MAIN -> MainList(onBack, viewModel, showDebug = debugTools != null && state.debugTools, onOpen = { current = it })
+            Screen.SUPPORT -> DonationsPage(back)
             Screen.SECURITY -> SecuritySection(viewModel, back, onDeviceUnlock)
             Screen.VAULT -> VaultSection(
                 back,
@@ -186,6 +189,7 @@ fun SettingsScreen(
 private class Hue(val circle: Color, val glyph: Color)
 
 private object SectionHue {
+    val Support = Hue(Color(0xFFFFC107), Color(0xFF5D4200))
     val Security = Hue(Color(0xFF60D5F3), Color(0xFF004E5D))
     val Vault = Hue(Color(0xFFB9C4FF), Color(0xFF1B2E82))
     val Appearance = Hue(Color(0xFFFFB683), Color(0xFF753403))
@@ -210,6 +214,13 @@ private fun MainList(onBack: () -> Unit, viewModel: SettingsViewModel, showDebug
         // Grouped as Android's own Settings groups its sections: no headings, a round icon of its own
         // colour on each row, and the gap between groups doing the sorting.
         Spacer(Modifier.height(8.dp))
+        // First, on its own, in the GitHub and F-Droid builds only (Esdex); the Play build has no such page.
+        if (DONATIONS) {
+            SettingsGroup(title = null) {
+                section(Screen.SUPPORT, Icons.Filled.Star, SectionHue.Support, R.string.settings_card_support, R.string.settings_card_support_desc, onOpen)
+            }
+            Spacer(Modifier.height(16.dp))
+        }
         SettingsGroup(title = null) {
             section(Screen.SECURITY, Icons.Outlined.Security, SectionHue.Security, R.string.settings_card_security, R.string.settings_card_security_desc, onOpen)
             section(Screen.VAULT, Icons.Outlined.Key, SectionHue.Vault, R.string.settings_card_vault, R.string.settings_card_vault_desc, onOpen)

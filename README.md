@@ -104,7 +104,7 @@ Coffer uses TDLib, Telegram's own client library, built from pinned sources. It 
 git clone https://github.com/Esdex/Coffer.git
 cd Coffer
 scripts/build-tdlib.sh
-./gradlew assemblePublicRelease
+./gradlew assemblePublicFdroidRelease
 ```
 
 **Requirements:**
@@ -114,6 +114,8 @@ scripts/build-tdlib.sh
 - Min SDK 30 / Target SDK 37, ABIs arm64-v8a and x86_64
 
 The APK comes out unsigned: sign it with your own key, or take a signed one from the releases.
+
+The `fdroid` flavor is the build for GitHub Releases and F-Droid. The `playstore` flavor leaves out the donation page, as Google Play's payments policy asks.
 
 **Telegram API keys.** The `public` flavor builds without keys: at sign-in each user enters their own `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org). To build keys in, put `COFFER_PUBLIC_API_ID` and `COFFER_PUBLIC_API_HASH` into `local.properties`. Keys never go into git.
 

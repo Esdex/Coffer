@@ -4,6 +4,8 @@
     <string name="settings_cancel">Cancel</string>
     <string name="settings_ok">OK</string>
 
+    <string name="settings_card_support">Support the project</string>
+    <string name="settings_card_support_desc">Donation links and wallet addresses</string>
     <string name="settings_card_security">Security</string>
     <string name="settings_card_security_desc">Auto-lock, fingerprint, screenshots</string>
     <string name="settings_card_vault">Vault</string>
