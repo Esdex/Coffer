@@ -6,8 +6,8 @@
 
     <string name="settings_card_security">Security</string>
     <string name="settings_card_security_desc">Auto-lock, fingerprint, screenshots</string>
-    <string name="settings_card_vault">Password and recovery key</string>
-    <string name="settings_card_vault_desc">Change the password, see the 24 words</string>
+    <string name="settings_card_vault">Vault</string>
+    <string name="settings_card_vault_desc">Password, recovery key, deleting the vault</string>
     <string name="settings_card_appearance">Appearance</string>
     <string name="settings_card_appearance_desc">Theme, pure black, colours</string>
     <string name="settings_card_player">Player</string>
