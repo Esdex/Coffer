@@ -4,7 +4,7 @@
 
 ### Added
 - The app icon: a golden chest on navy, shaped for every launcher's mask, with a themed version for Android 13 and later that follows the wallpaper's colours.
-- Sign in to Telegram with a QR code or a phone number, including two-step verification and email codes; the code from Telegram goes into a row of cells. Over it, an account picture with a key on its corner that turns now and then.
+- Sign in to Telegram with a QR code or a phone number, including two-step verification and email codes; the code from Telegram goes into a row of cells. The phone number is one field in two halves, the country code and the number: the country's flag shows by the code, the number takes the country's own spacing with the digits still to come as a hint, the cursor moves on once the code is whole and back when the number is erased, and a whole number pasted in splits by itself. Over it, an account picture with a key on its corner that turns now and then.
 - Built-in Telegram API keys, so signing in needs nothing from my.telegram.org; your own keys (api_id and api_hash) remain an option on the sign-in screen.
 - A first-start screen explaining what Coffer does and that its files in Saved Messages must not be deleted there.
 - Create a vault: a password checked for strength, with a padlock over it that shuts step by step as the password gets stronger and clicks shut once it will do; a 24-word recovery key, and a check that it was written down. Wherever the recovery key shows or is typed in, it is kept off screenshots, screen recordings and the recent apps screen.

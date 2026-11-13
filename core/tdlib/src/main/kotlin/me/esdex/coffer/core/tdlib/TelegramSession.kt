@@ -173,6 +173,15 @@ class TelegramSession(config: TdlibConfig) {
         send(TdApi.SetAuthenticationPhoneNumber(phoneNumber, settings))
     }
 
+    suspend fun phoneNumberInfo(prefix: String): PhoneNumberInfo {
+        val info = send(TdApi.GetPhoneNumberInfo(prefix))
+        return PhoneNumberInfo(info.countryCallingCode, info.country?.countryCode, info.country?.isHidden == true, info.formattedPhoneNumber)
+    }
+
+    /** Every country Telegram knows, with its calling codes: for settling a code and picking a flag. */
+    suspend fun countries(): List<PhoneCountry> =
+        send(TdApi.GetCountries()).countries.map { PhoneCountry(it.countryCode, it.callingCodes.toList(), it.isHidden) }
+
     suspend fun requestQrCode() {
         send(TdApi.RequestQrCodeAuthentication(LongArray(0)))
     }

@@ -6,11 +6,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -20,18 +24,35 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import me.esdex.coffer.core.tdlib.PhoneCountry
+import me.esdex.coffer.core.tdlib.PhoneNumberInfo
 import me.esdex.coffer.core.ui.components.Hero
 import me.esdex.coffer.core.ui.components.HeroAnimation
 import me.esdex.coffer.core.ui.components.PasswordField
@@ -41,6 +62,9 @@ import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.CodeDelivery
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
+import kotlinx.coroutines.delay
+import android.telephony.TelephonyManager
+import java.util.Locale
 
 /** Sign-in to Telegram, every step up to [AuthState.Ready] (SPEC §7, steps 2 and 3). */
 @Composable
@@ -75,7 +99,7 @@ fun LoginScreen(modifier: Modifier = Modifier, viewModel: LoginViewModel = hiltV
                             onBuiltIn = viewModel::useBuiltInKeys.takeIf { viewModel.hasBuiltInKeys },
                         )
                         AuthState.WaitPhoneNumber -> {
-                            PhoneStep(busy, errorText, viewModel::submitPhoneNumber, viewModel::useQrCode)
+                            PhoneStep(viewModel, busy, errorText, viewModel::submitPhoneNumber, viewModel::useQrCode)
                             KeysChoice(viewModel, busy)
                         }
                         is AuthState.WaitQrConfirmation -> QrStep(s.link, busy, errorText, viewModel::startOver)
@@ -185,25 +209,131 @@ private fun ApiKeysStep(busy: Boolean, errorText: String?, onSubmit: (String, St
 }
 
 @Composable
-private fun PhoneStep(busy: Boolean, errorText: String?, onSubmit: (String) -> Unit, onQr: () -> Unit) {
-    var phone by rememberSaveable { mutableStateOf("") }
+private fun PhoneStep(viewModel: LoginViewModel, busy: Boolean, errorText: String?, onSubmit: (String) -> Unit, onQr: () -> Unit) {
+    // With its cursor, so a move back from the number puts it at the end of the code.
+    var codeField by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    val code = codeField.text
+    // With its cursor too: digits moved here from the code put it after them, not before (seen 2026-11-13).
+    var numberField by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+    val number = numberField.text
+    val countries by produceState(emptyList<PhoneCountry>()) { value = viewModel.countries() }
+    val codes = remember(countries) { countries.flatMapTo(HashSet()) { it.callingCodes } }
+    // The phone's own country, from its SIM or else its language, for a calling code several countries share.
+    val context = LocalContext.current
+    val region = remember {
+        context.getSystemService(TelephonyManager::class.java)?.simCountryIso?.takeIf { it.length == 2 } ?: Locale.getDefault().country
+    }
+    // Asked again a moment after typing stops: the flag can change as the number goes on (+7 is two countries).
+    val info by produceState<PhoneNumberInfo?>(null, code, number) {
+        delay(INFO_DELAY_MS)
+        value = viewModel.phoneNumberInfo(code + number)
+    }
+    // Telegram's layout only while it is for this code: an answer a keystroke old may have parsed it otherwise.
+    // Telegram's reading, when it fits the fields: the same code, or a longer one the number begins (the Bahamas).
+    val read = info?.let { PhoneFormat.reading(code, number, it.callingCode, it.pattern) }
+    val parsed = info?.takeIf { read != null }
+    val pattern = PhoneFormat.patternFor(code, read, parsed?.countryHidden == true)
+    val codeFocus = remember { FocusRequester() }
+    val numberFocus = remember { FocusRequester() }
+    var codeFocused by remember { mutableStateOf(false) }
+    fun backToCode() {
+        codeField = codeField.copy(selection = TextRange(codeField.text.length))
+        codeFocus.requestFocus()
+    }
+    // One field cut in two, as the user sees it: square where the halves meet, one border between them,
+    // and the half with the cursor drawn over the other so its border shows whole.
+    val corner = MaterialTheme.shapes.extraSmall
     // An account and its key, rather than a wave.
     SignInHero()
     StepTitle(stringResource(R.string.login_phone_title))
     StepBody(stringResource(R.string.login_phone_explanation))
-    OutlinedTextField(
-        value = phone,
-        onValueChange = { phone = it },
-        label = { Text(stringResource(R.string.login_phone_number)) },
-        placeholder = { Text("+1 234 567 8900") },
-        singleLine = true,
-        isError = errorText != null,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-        modifier = Modifier.fillMaxWidth(),
-    )
+    Row {
+        OutlinedTextField(
+            value = codeField,
+            onValueChange = { typed ->
+                val split = PhoneFormat.split(typed.text.filter(Char::isDigit), codes)
+                codeField = TextFieldValue(split.code, TextRange(split.code.length))
+                if (split.rest.isNotEmpty()) numberField = TextFieldValue(split.rest, TextRange(split.rest.length))
+                // A settled code goes on to the number at once, as in Telegram's apps.
+                if (split.settled) numberFocus.requestFocus()
+            },
+            label = { Text(stringResource(R.string.login_phone_code)) },
+            prefix = { Text("+") },
+            // The flag only for the code in the field: one worked out for another reading of the digits misleads.
+            leadingIcon = PhoneFormat.countryFor(code, number.isNotEmpty(), parsed?.countryCode, parsed?.countryHidden == true, countries, region)
+                ?.takeIf { code in codes }
+                ?.let(PhoneFormat::flag)
+                ?.let { flag -> { Text(flag, style = MaterialTheme.typography.titleLarge) } },
+            singleLine = true,
+            isError = errorText != null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            shape = corner.copy(topEnd = CornerSize(0), bottomEnd = CornerSize(0)),
+            modifier = Modifier.width(CODE_FIELD).focusRequester(codeFocus).onFocusChanged { codeFocused = it.isFocused }.zIndex(if (codeFocused) 1f else 0f),
+        )
+        val hint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        OutlinedTextField(
+            value = numberField,
+            onValueChange = { typed ->
+                val digits = typed.text.filter(Char::isDigit)
+                // Erased down to nothing: the erasing goes on in the code, as if the two were one field.
+                // On the change itself, as a keyboard need not report a backspace on an empty field.
+                if (digits.isEmpty() && numberField.text.isNotEmpty()) backToCode()
+                // Anything not a digit is dropped; the cursor keeps its place among the digits.
+                val cursor = typed.text.take(typed.selection.end).count(Char::isDigit)
+                numberField = TextFieldValue(digits, TextRange(cursor))
+            },
+            label = { Text(stringResource(R.string.login_phone_number)) },
+            singleLine = true,
+            isError = errorText != null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+            visualTransformation = PhoneTransformation(pattern, hint),
+            shape = corner.copy(topStart = CornerSize(0), bottomStart = CornerSize(0)),
+            modifier = Modifier.weight(1f)
+                // Over the code half's right border, so the two share one line.
+                .offset(x = (-1).dp)
+                .focusRequester(numberFocus)
+                .onFocusChanged { focus ->
+                    // The number waits for its code: a tap here with none sends the typing there first,
+                    // and a whole code sends it back (the code field's own jump). Without Telegram's list of
+                    // codes only an empty one counts, or the number could not be reached at all.
+                    // The code as it is now, not as this composition saw it: the code field settles the code and
+                    // moves the focus here in one go, before anything is drawn again. Read from the composition,
+                    // it was still "12" when "121" had already made it 1, and sent the cursor back (seen 2026-11-13).
+                    val now = codeField.text
+                    val noCode = now.isEmpty() || (codes.isNotEmpty() && now !in codes)
+                    if (focus.isFocused && noCode) backToCode()
+                }
+                .zIndex(if (codeFocused) 0f else 1f),
+        )
+    }
     StepError(errorText)
-    SubmitButton(stringResource(R.string.login_continue), phone.count(Char::isDigit) >= 5, busy) { onSubmit(phone) }
+    SubmitButton(stringResource(R.string.login_continue), code.isNotEmpty() && (code + number).length >= 5, busy) { onSubmit("+$code$number") }
     SecondaryAction(stringResource(R.string.login_use_qr), !busy, onQr)
+}
+
+/**
+ * Shows the digits typed in the country's layout, the rest still expected as a faint hint, as Telegram's
+ * own apps do; the field itself holds digits only (see [PhoneFormat]).
+ */
+private class PhoneTransformation(private val pattern: String?, private val hint: Color) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val layout = PhoneFormat.layout(text.text, pattern)
+        val shown = buildAnnotatedString {
+            append(layout.text.take(layout.typedLength))
+            withStyle(SpanStyle(color = hint)) { append(layout.text.drop(layout.typedLength)) }
+        }
+        return TransformedText(
+            shown,
+            object : OffsetMapping {
+                override fun originalToTransformed(offset: Int) = layout.toShown(offset)
+                override fun transformedToOriginal(offset: Int) = layout.toTyped(offset)
+            },
+        )
+    }
+
+    // A new instance each recomposition must not count as a change of transformation.
+    override fun equals(other: Any?) = other is PhoneTransformation && other.pattern == pattern && other.hint == hint
+    override fun hashCode() = 31 * pattern.hashCode() + hint.hashCode()
 }
 
 @Composable
@@ -356,3 +486,9 @@ private fun formatWait(seconds: Int): String = when {
     seconds < 3600 -> "${(seconds + 59) / 60} min"
     else -> "${(seconds + 3599) / 3600} h"
 }
+
+/** Room for "+1242" and a flag. */
+private val CODE_FIELD = 128.dp
+
+// Long enough not to ask Telegram at every keystroke, short enough that the layout keeps up.
+private const val INFO_DELAY_MS = 150L

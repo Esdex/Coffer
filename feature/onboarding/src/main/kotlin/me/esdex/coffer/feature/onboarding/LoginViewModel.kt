@@ -10,6 +10,8 @@ import kotlinx.coroutines.launch
 import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.tdlib.ApiCredentials
 import me.esdex.coffer.core.tdlib.AuthState
+import me.esdex.coffer.core.tdlib.PhoneCountry
+import me.esdex.coffer.core.tdlib.PhoneNumberInfo
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.tdlib.TdlibException
 import javax.inject.Inject
@@ -50,6 +52,13 @@ class LoginViewModel @Inject constructor(private val telegram: Telegram) : ViewM
         }
         perform { telegram.submitApiCredentials(credentials) }
     }
+
+    /** The country and Telegram's layout for the start of a number; null when Telegram cannot say. */
+    suspend fun phoneNumberInfo(digits: String): PhoneNumberInfo? =
+        if (digits.isEmpty()) null else runCatching { telegram.phoneNumberInfo(digits) }.getOrNull()
+
+    /** Every country Telegram knows; empty until it answers, and the code field then just takes digits. */
+    suspend fun countries(): List<PhoneCountry> = runCatching { telegram.countries() }.getOrDefault(emptyList())
 
     fun submitPhoneNumber(phoneNumber: String) =
         perform { telegram.submitPhoneNumber(phoneNumber.filter { it.isDigit() || it == '+' }) }

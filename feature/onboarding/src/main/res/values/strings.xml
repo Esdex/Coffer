@@ -15,6 +15,7 @@
 
     <string name="login_phone_title">Sign in to Telegram</string>
     <string name="login_phone_explanation">Enter your phone number with the country code. Your files will be stored, encrypted, in your Saved Messages.</string>
+    <string name="login_phone_code">Code</string>
     <string name="login_phone_number">Phone number</string>
     <string name="login_use_qr">Sign in with a QR code instead</string>
     <string name="login_use_phone">Use phone number instead</string>

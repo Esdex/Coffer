@@ -173,6 +173,11 @@ class Telegram(
 
     suspend fun submitPhoneNumber(phoneNumber: String) = current().submitPhoneNumber(phoneNumber)
     suspend fun requestQrCode() = current().requestQrCode()
+
+    /** Before signing in too: the country and Telegram's own layout for the start of a number (digits only). */
+    suspend fun phoneNumberInfo(prefix: String): PhoneNumberInfo = current().phoneNumberInfo(prefix)
+
+    suspend fun countries(): List<PhoneCountry> = current().countries()
     suspend fun submitCode(code: String) = current().submitCode(code)
     suspend fun resendCode() = current().resendCode()
     suspend fun submitEmailAddress(email: String) = current().submitEmailAddress(email)
