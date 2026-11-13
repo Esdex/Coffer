@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
@@ -46,12 +47,19 @@ import me.esdex.coffer.core.ui.components.PillButton
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
 
-private class WelcomePage(val title: Int, val text: Int, val hero: Hero)
+/** What heads a welcome page: an animation, or a picture drawn for it. */
+private enum class Picture { WAVE, CIPHER, KEY, SAVED }
+
+private class WelcomePage(val title: Int, val text: Int, val picture: Picture)
 
 private val pages = listOf(
-    WelcomePage(R.string.welcome_title, R.string.welcome_what, Hero.HELLO),
-    WelcomePage(R.string.welcome_api_title, R.string.welcome_api, Hero.SHIELD),
-    WelcomePage(R.string.welcome_saved_title, R.string.welcome_saved_messages, Hero.VAULT),
+    WelcomePage(R.string.welcome_title, R.string.welcome_what, Picture.WAVE),
+    // Names turning into noise, for what "encrypted on this phone" means (Esdex, 2026-11-13).
+    WelcomePage(R.string.welcome_encrypt_title, R.string.welcome_encrypt, Picture.CIPHER),
+    // The key itself, for "Only you hold the key", rather than a shield (Esdex, 2026-11-13).
+    WelcomePage(R.string.welcome_api_title, R.string.welcome_api, Picture.KEY),
+    // Saved Messages itself, drawn, rather than a safe: that is where the files go (Esdex, 2026-11-13).
+    WelcomePage(R.string.welcome_saved_title, R.string.welcome_saved_messages, Picture.SAVED),
 )
 
 /** The first-start explanation (SPEC §7, step 1), shown once per install; then [content]. Paged as in Arcanum. */
@@ -77,7 +85,7 @@ private fun Pages(modifier: Modifier, onDone: () -> Unit) {
     Box(modifier.fillMaxSize()) {
         // Only the button turns the page: every page has to be read before the vault is set up.
         HorizontalPager(state = pager, userScrollEnabled = false, modifier = Modifier.fillMaxSize()) { index ->
-            Page(pages[index])
+            Page(pages[index], shown = pager.currentPage == index)
         }
         Column(
             Modifier.align(Alignment.BottomCenter).widthIn(max = 480.dp).padding(horizontal = 32.dp, vertical = 32.dp),
@@ -112,13 +120,18 @@ private fun Pages(modifier: Modifier, onDone: () -> Unit) {
 }
 
 @Composable
-private fun Page(page: WelcomePage) {
+private fun Page(page: WelcomePage, shown: Boolean) {
     Column(
         Modifier.fillMaxSize().padding(horizontal = 32.dp).padding(bottom = 140.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        HeroAnimation(page.hero, size = 220.dp)
+        when (page.picture) {
+            Picture.WAVE -> HeroAnimation(Hero.HELLO, size = 220.dp)
+            Picture.CIPHER -> CipherArt(Modifier.size(220.dp))
+            Picture.KEY -> KeyArt(Modifier.size(220.dp))
+            Picture.SAVED -> SavedMessagesArt(shown, Modifier.size(220.dp))
+        }
         Spacer(Modifier.height(24.dp))
         Text(stringResource(page.title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Spacer(Modifier.height(16.dp))

@@ -62,12 +62,14 @@
     <string name="login_error_api_id_published">Telegram has blocked these API keys. Create new ones at my.telegram.org.</string>
     <string name="login_error_other">Telegram error: %1$s</string>
     <string name="welcome_title">Coffer</string>
-    <string name="welcome_what">An encrypted file vault in your Telegram Saved Messages. Files, names and folders are encrypted on this phone before anything is sent; Telegram only stores blobs it cannot read.</string>
-    <string name="welcome_api">Coffer talks to Telegram through the official Telegram API with your own account. There is no Coffer server.</string>
-    <string name="welcome_saved_messages">Your files will show up in Saved Messages as files named like cfr_1a2b3c4d5e6f.bin. Do not delete them in the regular Telegram app, or the files they belong to will be lost.</string>
+    <string name="welcome_what">An encrypted file vault in your Telegram Saved Messages.</string>
+    <string name="welcome_encrypt_title">Encrypted on this phone</string>
+    <string name="welcome_encrypt">Files, names and folders are encrypted on this phone before anything is sent.</string>
+    <string name="welcome_api">Coffer has no server of its own. It talks straight to Telegram with your account, and the key to your files never leaves this phone.</string>
+    <string name="welcome_saved_messages">Your files live in the Saved Messages of your own Telegram account, encrypted. Sign in on another phone and they are all there.</string>
     <string name="welcome_start">Get started</string>
     <string name="welcome_next">Next</string>
-    <string name="welcome_api_title">Your account, no server</string>
+    <string name="welcome_api_title">Only you hold the key</string>
     <string name="welcome_saved_title">Kept in Saved Messages</string>
 
     <string name="vault_searching_title">Looking for your vault</string>
