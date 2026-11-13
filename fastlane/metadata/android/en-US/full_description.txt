@@ -1,0 +1,31 @@
+Coffer keeps your files in the Saved Messages of your own Telegram account, encrypted on your phone before anything is sent. Telegram stores them, but only you can open them.
+
+<b>How it works</b>
+
+- Files, their names and folders are encrypted on this phone, then sent to Saved Messages as documents
+- Coffer has no server of its own: it talks straight to Telegram with your account
+- The key to your files never leaves your phone; a 24-word recovery key opens the vault if you forget the password
+- Sign in on another phone and your files are all there
+
+<b>Your files, right inside</b>
+
+- Photos and videos open in Coffer, read a piece at a time and never written out decrypted
+- Music plays with cover, tags and the song's waveform, in the background and on the lock screen
+- PDFs, Markdown, text and code files open in their own viewers
+- Folders, search, sorting, moving and renaming, with changes showing on your other devices
+- Keep chosen files or folders on the phone, to open them with no network
+
+<b>Security</b>
+
+- XChaCha20-Poly1305 encryption with libsodium
+- Vault password stretched with Argon2id
+- File sizes and name lengths hidden from Telegram by padding
+- Unlock with fingerprint or face, auto-lock after a few minutes in the background
+- Screenshots blocked wherever the recovery key shows
+- No analytics, no ads, no tracking
+
+<b>Open source</b>
+
+Coffer is free software under the GNU GPL, version 3 or later. You can read the code, audit it and build the app yourself.
+
+Coffer is not affiliated with or endorsed by Telegram.

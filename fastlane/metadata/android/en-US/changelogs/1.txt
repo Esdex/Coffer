@@ -1,0 +1,1 @@
+First release: an encrypted vault in your Telegram Saved Messages, with viewers for photos, videos, music, PDFs and text, folders, offline files and fingerprint unlock.
