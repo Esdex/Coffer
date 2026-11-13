@@ -13,7 +13,7 @@
 - The vault locks after 5 minutes in the background.
 - Add files to the vault: they are encrypted on the phone and sent to Saved Messages; interrupted uploads resume. All uploads, downloads and caching run as one queue with one notification: how many, how many done and how far, instead of one notification per file. The Transfers screen shows each file as the files list does, with its preview and which way it goes; failures first, then what is moving, then what waits, and what it waits for: the network, Telegram's request to wait, or a retry, with a countdown. Over the list, how far the whole queue is; Cancel all in the menu, after a confirmation.
 - Files list with search by name and sorting by name, date or size; files added from other devices show up too.
-- The title of the files list says when Telegram cannot be reached: Waiting for network, Connecting, Updating.
+- The title of the files list says when Telegram cannot be reached: Waiting for network, Connecting, Updating, in grey with light running across it.
 - Select several files and folders with a long press to move, save or delete them together; saving puts decrypted copies into a folder you pick.
 - Add a whole folder from the phone, and save a vault folder back to the phone, keeping its subfolders.
 - A delete can be undone for a few seconds before it goes to Telegram, where it is final.

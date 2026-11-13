@@ -168,6 +168,7 @@ import me.esdex.coffer.core.ui.components.LocalHazeState
 import me.esdex.coffer.core.ui.components.LocalLockFlight
 import me.esdex.coffer.core.ui.components.PreviewTile
 import me.esdex.coffer.core.ui.components.SettingsGroup
+import me.esdex.coffer.core.ui.components.ShimmerText
 import me.esdex.coffer.core.ui.components.TopBarSearchField
 import me.esdex.coffer.core.ui.components.TypeTile
 import me.esdex.coffer.core.ui.components.fileTypeIcon
@@ -401,10 +402,16 @@ fun BrowserScreen(
                                             },
                                             label = "title",
                                         ) { label ->
-                                            val title = label?.let { stringResource(it) }
-                                                ?: listing.path.lastOrNull()?.name
-                                                ?: stringResource(R.string.browser_title)
-                                            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                            if (label != null) {
+                                                // Grey with light running over it: under way, not a name.
+                                                ShimmerText(stringResource(label))
+                                            } else {
+                                                Text(
+                                                    listing.path.lastOrNull()?.name ?: stringResource(R.string.browser_title),
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            }
                                         }
                                     }
                                 }
