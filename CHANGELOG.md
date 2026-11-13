@@ -39,6 +39,7 @@
 - Change the vault password, and show the recovery key again; both ask for the current password first. A password change locks the vault on your other devices, and only the new password opens it there.
 - Delete the vault, in Settings, Vault: after the current password and the word DELETE typed out, every file of the vault and everything Coffer keeps for it goes from Saved Messages, for good and on every device, with its progress shown; your own messages and anything Coffer cannot open stay. Cut short, it can be run again. Afterwards Coffer stays signed in and offers a new vault, and other devices say the vault was deleted there.
 - Log out from the screen that creates a vault, to sign in with another account instead.
+- Settings, About links to the source code on GitHub and to its issues, for reporting a problem.
 - Share to Coffer from any app: one file or several, into a folder you pick; Coffer returns to the app you shared from.
 - A new look, shared with Arcanum: grouped settings, large collapsing titles, file type icons, a path bar, search in the top bar, one + button for files and folders, sliding transitions, animated progress and results, and a paged welcome.
 - Appearance settings: theme (system, light or dark), pure black for AMOLED screens, and wallpaper colours.

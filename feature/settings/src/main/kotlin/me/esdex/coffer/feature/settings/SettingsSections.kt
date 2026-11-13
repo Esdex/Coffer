@@ -535,10 +535,11 @@ private fun Avatar(account: TelegramAccount?) {
  * and filling in the address is all it takes later.
  */
 private object AboutLinks {
-    val sourceCode: String? = null
+    val sourceCode: String? = "https://github.com/Esdex/Coffer"
+    // Waiting for GitHub Pages, which opens with the repository.
     val website: String? = null
     val privacyPolicy: String? = null
-    val reportProblem: String? = null
+    val reportProblem: String? = "https://github.com/Esdex/Coffer/issues"
 }
 
 @Composable
