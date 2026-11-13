@@ -54,6 +54,12 @@ class VaultStore(private val dir: File) {
 
         @Synchronized set(value) = updatePrefs { it.setProperty(BIOMETRIC_OFFERED, value.toString()) }
 
+    /** The note not to delete Coffer's messages in Telegram was read: once per install, after the vault first opens. */
+    var savedMessagesNoticeSeen: Boolean
+        @Synchronized get() = prefs().getProperty(SAVED_MESSAGES_NOTICE) == "true"
+
+        @Synchronized set(value) = updatePrefs { it.setProperty(SAVED_MESSAGES_NOTICE, value.toString()) }
+
     /** FLAG_SECURE on every screen (SPEC §9: off by default). */
     var blockScreenshots: Boolean
         @Synchronized get() = prefs().getProperty(BLOCK_SCREENSHOTS) == "true"
@@ -107,6 +113,7 @@ class VaultStore(private val dir: File) {
     private companion object {
         const val AUTO_LOCK = "autoLockMinutes"
         const val BIOMETRIC_OFFERED = "biometricOffered"
+        const val SAVED_MESSAGES_NOTICE = "savedMessagesNotice"
         const val BLOCK_SCREENSHOTS = "blockScreenshots"
         const val WEEKLY_CHECK = "weeklyCheck"
         const val HIDE_SIZES = "hideSizes"

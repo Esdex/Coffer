@@ -1,65 +1,31 @@
 package me.esdex.coffer.feature.onboarding
 
 import android.content.Context
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
-import kotlinx.coroutines.launch
 import me.esdex.coffer.core.ui.components.Hero
 import me.esdex.coffer.core.ui.components.HeroAnimation
-import me.esdex.coffer.core.ui.components.PillButton
-import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Motion
 
-/** What heads a welcome page: an animation, or a picture drawn for it. */
-private enum class Picture { WAVE, CIPHER, KEY, SAVED }
-
-private class WelcomePage(val title: Int, val text: Int, val picture: Picture)
-
 private val pages = listOf(
-    WelcomePage(R.string.welcome_title, R.string.welcome_what, Picture.WAVE),
+    IntroPage(R.string.welcome_title, R.string.welcome_what) { HeroAnimation(Hero.HELLO, size = INTRO_PICTURE) },
     // Names turning into noise, for what "encrypted on this phone" means (Esdex, 2026-11-13).
-    WelcomePage(R.string.welcome_encrypt_title, R.string.welcome_encrypt, Picture.CIPHER),
+    IntroPage(R.string.welcome_encrypt_title, R.string.welcome_encrypt) { CipherArt(Modifier.size(INTRO_PICTURE)) },
     // The key itself, for "Only you hold the key", rather than a shield (Esdex, 2026-11-13).
-    WelcomePage(R.string.welcome_api_title, R.string.welcome_api, Picture.KEY),
+    IntroPage(R.string.welcome_api_title, R.string.welcome_api) { KeyArt(Modifier.size(INTRO_PICTURE)) },
     // Saved Messages itself, drawn, rather than a safe: that is where the files go (Esdex, 2026-11-13).
-    WelcomePage(R.string.welcome_saved_title, R.string.welcome_saved_messages, Picture.SAVED),
+    IntroPage(R.string.welcome_saved_title, R.string.welcome_saved_messages) { shown -> SavedMessagesArt(shown, Modifier.size(INTRO_PICTURE)) },
 )
 
 /** The first-start explanation (SPEC §7, step 1), shown once per install; then [content]. Paged as in Arcanum. */
@@ -69,79 +35,14 @@ fun WelcomeGate(modifier: Modifier = Modifier, content: @Composable () -> Unit) 
     var seen by remember { mutableStateOf(prefs.getBoolean(WELCOME_SEEN, false)) }
     // The last page fades into signing in rather than being swapped for it.
     AnimatedContent(seen, transitionSpec = { fadeIn(Motion.screen()) togetherWith fadeOut(Motion.standard()) }, label = "welcome") { done ->
-        if (done) content() else Pages(modifier, onDone = {
-            prefs.edit { putBoolean(WELCOME_SEEN, true) }
-            seen = true
-        })
-    }
-}
-
-@Composable
-private fun Pages(modifier: Modifier, onDone: () -> Unit) {
-    val pager = rememberPagerState(pageCount = { pages.size })
-    val scope = rememberCoroutineScope()
-    // Back on a later page turns back a page, instead of leaving the app.
-    BackHandler(enabled = pager.currentPage > 0) { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }
-    Box(modifier.fillMaxSize()) {
-        // Only the button turns the page: every page has to be read before the vault is set up.
-        HorizontalPager(state = pager, userScrollEnabled = false, modifier = Modifier.fillMaxSize()) { index ->
-            Page(pages[index], shown = pager.currentPage == index)
-        }
-        Column(
-            Modifier.align(Alignment.BottomCenter).widthIn(max = 480.dp).padding(horizontal = 32.dp, vertical = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(24.dp),
-        ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                pages.indices.forEach { index ->
-                    val selected = pager.currentPage == index
-                    val width by animateDpAsState(if (selected) 24.dp else 8.dp, Motion.standard(), label = "dot")
-                    val color by animateColorAsState(
-                        if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                        Motion.standard(),
-                        label = "dot",
-                    )
-                    Box(Modifier.height(8.dp).width(width).clip(Corners.pill).background(color))
-                }
+        if (done) {
+            content()
+        } else {
+            IntroPager(pages, R.string.welcome_start, modifier) {
+                prefs.edit { putBoolean(WELCOME_SEEN, true) }
+                seen = true
             }
-            val last = pager.currentPage == pages.lastIndex
-            PillButton(
-                text = stringResource(if (last) R.string.welcome_start else R.string.welcome_next),
-                onClick = {
-                    if (last) {
-                        onDone()
-                    } else {
-                        scope.launch { pager.animateScrollToPage(pager.currentPage + 1) }
-                    }
-                },
-            )
         }
-    }
-}
-
-@Composable
-private fun Page(page: WelcomePage, shown: Boolean) {
-    Column(
-        Modifier.fillMaxSize().padding(horizontal = 32.dp).padding(bottom = 140.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        when (page.picture) {
-            Picture.WAVE -> HeroAnimation(Hero.HELLO, size = 220.dp)
-            Picture.CIPHER -> CipherArt(Modifier.size(220.dp))
-            Picture.KEY -> KeyArt(Modifier.size(220.dp))
-            Picture.SAVED -> SavedMessagesArt(shown, Modifier.size(220.dp))
-        }
-        Spacer(Modifier.height(24.dp))
-        Text(stringResource(page.title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(16.dp))
-        Text(
-            stringResource(page.text),
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
-        )
     }
 }
 

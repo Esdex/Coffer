@@ -83,6 +83,19 @@ class VaultViewModel @Inject constructor(
     /** After an unlock with password or recovery key, offer biometric unlock once (SPEC §3.8). */
     val offerDeviceUnlock: StateFlow<Boolean> = offerFlow.asStateFlow()
 
+    private val noticeFlow = MutableStateFlow(!store.savedMessagesNoticeSeen)
+
+    /**
+     * Not to delete Coffer's messages in Telegram: said once per install, as the vault first opens here,
+     * made or found (Esdex, 2026-11-13). Moved out of the welcome, which says where the files are, not this.
+     */
+    val showSavedMessagesNotice: StateFlow<Boolean> = noticeFlow.asStateFlow()
+
+    fun savedMessagesNoticeRead() {
+        store.savedMessagesNoticeSeen = true
+        noticeFlow.value = false
+    }
+
     private fun offerIfUseful() {
         offerFlow.value = !device.isEnabled && !store.biometricOffered && device.isAvailable()
     }

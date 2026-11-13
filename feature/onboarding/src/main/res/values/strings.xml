@@ -100,6 +100,11 @@
     <string name="vault_create_explanation">No vault was found in your Saved Messages. Choose a password for a new one. Anyone who gets into your Telegram account could try to guess it, so make it strong: a few unrelated words work well.</string>
     <string name="vault_deleted_here">The vault was deleted. You can create a new one.</string>
     <string name="vault_deleted_elsewhere">This vault was deleted on another device. You can create a new one.</string>
+    <string name="vault_notes_title">Leave Coffer\'s notes as they are</string>
+    <string name="vault_notes_text">Next to your files, Coffer keeps short text messages in Saved Messages that start with coffer:, one of them pinned. They hold your vault\'s key, folders and names. Editing or deleting them damages the vault.</string>
+    <string name="vault_notice_title">Leave these messages be</string>
+    <string name="vault_notice_text">Coffer keeps your files in Saved Messages as documents named like cfr_1a2b3c4d5e6f.bin. Deleting them in the Telegram app deletes the files they belong to, for good. Delete and move files only in Coffer, so your vault stays whole.</string>
+    <string name="vault_notice_ok">Got it</string>
     <string name="vault_log_out">Log out</string>
     <string name="vault_log_out_title">Log out?</string>
     <string name="vault_cancel">Cancel</string>

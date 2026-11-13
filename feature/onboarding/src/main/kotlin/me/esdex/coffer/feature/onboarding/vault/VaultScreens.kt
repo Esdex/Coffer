@@ -25,6 +25,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.EditOff
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -73,6 +76,8 @@ import me.esdex.coffer.core.vault.DeviceUnlock
 import me.esdex.coffer.core.vault.PasswordPolicy
 import me.esdex.coffer.core.vault.RecoveryQuiz
 import me.esdex.coffer.core.vault.VaultManager
+import me.esdex.coffer.feature.onboarding.IntroPage
+import me.esdex.coffer.feature.onboarding.IntroPager
 import me.esdex.coffer.feature.onboarding.R
 import me.esdex.coffer.feature.onboarding.SecondaryAction
 import me.esdex.coffer.feature.onboarding.StepBody
@@ -89,7 +94,9 @@ import javax.crypto.Cipher
 fun VaultGate(modifier: Modifier = Modifier, viewModel: VaultViewModel = hiltViewModel(), content: @Composable () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val offer by viewModel.offerDeviceUnlock.collectAsStateWithLifecycle()
-    val open = state is VaultManager.State.Unlocked && !offer
+    val notice by viewModel.showSavedMessagesNotice.collectAsStateWithLifecycle()
+    // Open, the files show; before them, once each, the offer of biometric unlock and the note on Saved Messages.
+    val open = state is VaultManager.State.Unlocked && !offer && !notice
     val flight = LocalLockFlight.current
     // Opening, the files come up with a slight zoom, as a viewer does. Locking goes at once, as nothing
     // of the vault may linger on screen; only when the user locked it themselves, the padlock flying in
@@ -112,6 +119,16 @@ fun VaultGate(modifier: Modifier = Modifier, viewModel: VaultViewModel = hiltVie
 @Composable
 private fun Gate(modifier: Modifier, viewModel: VaultViewModel, state: VaultManager.State) {
     val busy by viewModel.busy.collectAsStateWithLifecycle()
+    val offer by viewModel.offerDeviceUnlock.collectAsStateWithLifecycle()
+    // Open, past the offer of biometric unlock: the note on Saved Messages, a screen of its own like the welcome.
+    val notice = state is VaultManager.State.Unlocked && !offer
+    AnimatedContent(notice, transitionSpec = { stepSlide(forward = true) }, label = "notice") { showing ->
+        if (showing) SavedMessagesNotice(viewModel, modifier) else Steps(modifier, viewModel, state, busy)
+    }
+}
+
+@Composable
+private fun Steps(modifier: Modifier, viewModel: VaultViewModel, state: VaultManager.State, busy: Boolean) {
     val error by viewModel.error.collectAsStateWithLifecycle()
     val errorText = error?.let { vaultErrorText(it) }
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -269,6 +286,22 @@ private fun RecoveryKeyUnlock(viewModel: VaultViewModel, busy: Boolean, errorTex
         viewModel.dismissError()
         onBack()
     }
+}
+
+/**
+ * What not to touch in Saved Messages, said once per install as the vault first opens, on two pages
+ * laid out as the welcome is: Coffer's notes first, as they hold the vault itself (its key, folders and
+ * names), then the files' parts.
+ */
+@Composable
+private fun SavedMessagesNotice(viewModel: VaultViewModel, modifier: Modifier) {
+    val pages = remember {
+        listOf(
+            IntroPage(R.string.vault_notes_title, R.string.vault_notes_text) { shown -> NoticeArt(NOTE_ROWS, Icons.Outlined.EditOff, shown) },
+            IntroPage(R.string.vault_notice_title, R.string.vault_notice_text) { shown -> NoticeArt(FILE_ROWS, Icons.Outlined.Delete, shown) },
+        )
+    }
+    IntroPager(pages, R.string.vault_notice_ok, modifier, onDone = viewModel::savedMessagesNoticeRead)
 }
 
 @Composable
