@@ -4,6 +4,8 @@ import android.os.SystemClock
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -23,10 +25,10 @@ import me.esdex.coffer.core.vault.FoundHeader
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
 import me.esdex.coffer.feature.browser.preview.Previews
+import me.esdex.coffer.feature.browser.transfer.FileCache
 import me.esdex.coffer.feature.browser.transfer.VaultContent
+import me.esdex.coffer.feature.browser.transfer.readyStorage
 import me.esdex.coffer.feature.browser.viewer.audio.AudioPlayback
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Ties the vault to the rest of the app: looks for it once signed in, forgets it on sign-out
@@ -41,6 +43,7 @@ class VaultLifecycle @Inject constructor(
     private val content: VaultContent,
     private val playback: AudioPlayback,
     private val previews: Previews,
+    private val cache: FileCache,
 ) : DefaultLifecycleObserver {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var lockTimer: Job? = null
@@ -78,6 +81,10 @@ class VaultLifecycle @Inject constructor(
                     content.forget()
                     device.disable()
                     previews.clear()
+                    // The pieces of the vault's files kept on the phone go too (SPEC §5.9, audit 1, L7).
+                    cache.queue.clear()
+                    telegram.readyStorage()?.let { runCatching { cache.clear(it) } }
+                    cache.blobs.forget()
                 }
             }
         }
