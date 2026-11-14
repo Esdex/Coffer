@@ -135,7 +135,14 @@ interface VaultIndex {
     suspend fun maintainedAt(): Long?
     suspend fun setMaintainedAt(millis: Long)
 
-    /** Replaces everything except uploads, downloads and [maintainedAt], atomically. */
+    /**
+     * The oldest message of the vault the last complete pass over Saved Messages saw, so the next pass
+     * can tell a history cut short from one that really ends there (audit 1, M6); kept by [replaceContent].
+     */
+    suspend fun oldestRecord(): MessageId?
+    suspend fun setOldestRecord(messageId: MessageId)
+
+    /** Replaces everything except uploads, downloads, [maintainedAt] and [oldestRecord], atomically. */
     suspend fun replaceContent(content: IndexContent)
 
     fun observeUploads(): Flow<List<PendingUpload>>

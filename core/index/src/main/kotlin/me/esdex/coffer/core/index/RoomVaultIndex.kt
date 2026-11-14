@@ -236,6 +236,9 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
     override suspend fun maintainedAt(): Long? = dao.syncValue(MAINTAINED_AT)
     override suspend fun setMaintainedAt(millis: Long) = dao.putSync(SyncRow(MAINTAINED_AT, millis))
 
+    override suspend fun oldestRecord(): MessageId? = dao.syncValue(OLDEST_RECORD)?.let(::MessageId)
+    override suspend fun setOldestRecord(messageId: MessageId) = dao.putSync(SyncRow(OLDEST_RECORD, messageId.value))
+
     override suspend fun replaceContent(content: IndexContent): Unit = db.withTransactionCompat {
         dao.deleteAllFiles()
         dao.deleteAllParts()
@@ -279,6 +282,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         const val LAST_APPLIED = "lastAppliedMessageId"
         const val CONTENT_VERSION = "contentVersion"
         const val MAINTAINED_AT = "maintainedAt"
+        const val OLDEST_RECORD = "oldestRecord"
     }
 }
 

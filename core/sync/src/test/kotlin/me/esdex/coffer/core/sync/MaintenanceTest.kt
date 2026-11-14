@@ -1,26 +1,29 @@
 package me.esdex.coffer.core.sync
 
-import me.esdex.coffer.core.crypto.format.Captions
-import me.esdex.coffer.core.crypto.format.RecordKind
+import kotlin.random.Random
 import kotlinx.coroutines.runBlocking
 import me.esdex.coffer.core.crypto.Bytes
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.MasterKeys
 import me.esdex.coffer.core.crypto.format.BlobPayload
+import me.esdex.coffer.core.crypto.format.Captions
 import me.esdex.coffer.core.crypto.format.FileMeta
 import me.esdex.coffer.core.crypto.format.Op
+import me.esdex.coffer.core.crypto.format.RecordKind
 import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.index.IndexContent
 import me.esdex.coffer.core.storage.FakeCloud
 import me.esdex.coffer.core.storage.MessageContent
 import me.esdex.coffer.core.storage.MessageId
+import me.esdex.coffer.core.storage.StorageBackend
+import me.esdex.coffer.core.storage.StorageException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import kotlin.random.Random
 
 /** The integrity check (SPEC §5.7, §5.8) and compaction (§5.6). Expected outcomes are written out by hand. */
 class MaintenanceTest {
@@ -73,6 +76,58 @@ class MaintenanceTest {
         assertEquals(FileStatus.READY, here.index.file(fine)!!.status)
         // The snapshot sent first is part of what was read.
         assertEquals(cloud.allMessages().size, report.messagesRead)
+    }
+
+    @Test
+    fun aHistoryCutShortMarksNothingAndDeletesNothing() = runBlocking {
+        // Audit 1, M6: TDLib answering empty before the start of the chat, after the first few messages.
+        val here = device()
+        val early = here.upload("early.txt", bytes("e"))
+        here.sendOp(Op.FileRename(Id.random(sodium), 1, early, "renamed early.txt"))
+        clock += days(40)
+        repeat(3) { here.upload("later $it.txt", bytes("l")) }
+        here.indexer.catchUp()
+        here.maintenance.run()
+        val before = cloud.allMessages().map { it.id }.toSet()
+
+        val cut = here.index.parts(early).values.max()
+        val shortSighted = object : StorageBackend by here.storage {
+            override suspend fun historyBefore(before: MessageId?, limit: Int) =
+                here.storage.historyBefore(before, limit).filter { it.id > cut }
+        }
+        clock += days(40)
+        val maintenance = Maintenance(shortSighted, here.index, here.indexer, here.snapshotter, here.keys) { clock * 1000 }
+        assertThrows(StorageException::class.java) { runBlocking { maintenance.run() } }
+        assertEquals(FileStatus.READY, here.index.file(early)!!.status)
+        assertEquals("renamed early.txt", here.meta(here.index.file(early)!!).name)
+        // Nothing went but what the snapshot step adds and keeps.
+        assertTrue(before.all { id -> cloud.allMessages().any { it.id == id } || id in here.index.snapshots().map { it.messageId } })
+    }
+
+    @Test
+    fun aHistoryCutShortAboveTheOldestOperationIsNoticedToo() = runBlocking {
+        // Audit 1, M6: only operations below the cut, no part a file is known by. The folder's rename
+        // would look like one of a folder that never existed, and compaction would take it.
+        val here = device()
+        val folder = Id.random(sodium)
+        val created = here.sendOp(Op.FolderCreate(Id.random(sodium), 1, folder, null, "Trip"))
+        here.sendOp(Op.FolderRename(Id.random(sodium), 2, folder, "Trip 2026"))
+        here.upload("ticket.pdf", bytes("t"), folderId = folder)
+        here.indexer.catchUp()
+        // A complete run first, which remembers where the vault starts.
+        here.maintenance.run()
+
+        clock += days(40)
+        here.upload("later.txt", bytes("l"))
+        here.indexer.catchUp()
+        val shortSighted = object : StorageBackend by here.storage {
+            override suspend fun historyBefore(before: MessageId?, limit: Int) =
+                here.storage.historyBefore(before, limit).filter { it.id > created.id }
+        }
+        val maintenance = Maintenance(shortSighted, here.index, here.indexer, here.snapshotter, here.keys) { clock * 1000 }
+        val ops = cloud.allMessages().filter { Captions.parse((it.content as? MessageContent.Text)?.text)?.kind == RecordKind.OP }.map { it.id }
+        assertThrows(StorageException::class.java) { runBlocking { maintenance.run() } }
+        assertTrue(ops.all(::present))
     }
 
     @Test

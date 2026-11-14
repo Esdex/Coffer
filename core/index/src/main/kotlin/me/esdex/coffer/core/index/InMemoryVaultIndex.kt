@@ -21,6 +21,7 @@ class InMemoryVaultIndex : VaultIndex {
         val lastApplied: MessageId? = null,
         val contentVersion: MessageId? = null,
         val maintainedAt: Long? = null,
+        val oldestRecord: MessageId? = null,
         val snapshots: Map<MessageId, KnownSnapshot> = emptyMap(),
         val uploads: Map<String, PendingUpload> = emptyMap(),
         val downloads: Map<String, PendingDownload> = emptyMap(),
@@ -108,6 +109,8 @@ class InMemoryVaultIndex : VaultIndex {
 
     override suspend fun maintainedAt(): Long? = state.value.maintainedAt
     override suspend fun setMaintainedAt(millis: Long) = update { it.copy(maintainedAt = millis) }
+    override suspend fun oldestRecord(): MessageId? = state.value.oldestRecord
+    override suspend fun setOldestRecord(messageId: MessageId) = update { it.copy(oldestRecord = messageId) }
 
     override suspend fun replaceContent(content: IndexContent) = update { s ->
         val parts = content.files.flatMap { f -> f.parts.map { (i, m) -> (f.fileId to i) to m } } +
@@ -124,6 +127,7 @@ class InMemoryVaultIndex : VaultIndex {
             uploads = s.uploads,
             downloads = s.downloads,
             maintainedAt = s.maintainedAt,
+            oldestRecord = s.oldestRecord,
         )
     }
 

@@ -1,8 +1,11 @@
 package me.esdex.coffer.core.sync
 
+import me.esdex.coffer.core.crypto.format.Captions
 import me.esdex.coffer.core.index.VaultIndex
+import me.esdex.coffer.core.storage.MessageContent
 import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
+import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.storage.StoredMessage
 
 /**
@@ -31,6 +34,7 @@ class Maintenance(
         // A fresh snapshot first, so compaction can reach the most recent operations.
         snapshotter.snapshotIfNeeded()
         val history = readAll(onProgress)
+        checkComplete(history)
         val nowSeconds = clock() / 1000
         val reconciled = indexer.reconcile(history, nowSeconds)
         val gone = (reconciled.garbage + reconciled.oldSnapshots).toSet()
@@ -46,6 +50,8 @@ class Maintenance(
         }
         delete(compacted)
 
+        val removed = gone + compacted
+        history.filter { it.id !in removed && it.isRecord() }.minOfOrNull { it.id }?.let { index.setOldestRecord(it) }
         index.setMaintainedAt(clock())
         return Report(
             messagesRead = history.size,
@@ -55,6 +61,27 @@ class Maintenance(
             snapshotsDeleted = reconciled.oldSnapshots.size,
             operationsCompacted = compacted.size,
         )
+    }
+
+    /**
+     * TDLib can answer with an empty page before the real start of the chat; the backend takes the third
+     * such answer for the start. A history cut short would make live files look damaged and let compaction
+     * delete operations still in force (audit 1, M6). So every message the vault is known to have below
+     * where the reading stopped must be gone by Telegram's own answer; one still there means the reading
+     * was cut short, and nothing is marked or deleted.
+     */
+    private suspend fun checkComplete(history: List<StoredMessage>) {
+        val oldestRead = history.firstOrNull()?.id
+        val known = index.allParts().values.flatMap { it.values } + index.snapshots().map { it.messageId } + listOfNotNull(index.oldestRecord())
+        for (id in known.filter { oldestRead == null || it < oldestRead }.distinct().sorted()) {
+            if (storage.message(id) != null) throw StorageException("the history of Saved Messages was read only in part")
+        }
+    }
+
+    private fun StoredMessage.isRecord(): Boolean = when (val content = content) {
+        is MessageContent.Blob -> Captions.parse(content.caption) != null
+        is MessageContent.Text -> Captions.parse(content.text) != null
+        MessageContent.Other -> false
     }
 
     /** True if the last run was a week or more ago, or there was none. */
