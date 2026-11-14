@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -34,7 +35,11 @@ class MigrationTest {
         // Validates the migrated schema against 5.json.
         helper.runMigrationsAndValidate(name, 5, true).close()
 
-        val index = RoomVaultIndex(context, name)
+        // Audit 1, M9: the plain database is turned into an encrypted one, its rows kept.
+        val file = context.getDatabasePath(name)
+        assertTrue(RoomVaultIndex.isPlain(file))
+        val key = ByteArray(32) { (it * 7 + 3).toByte() }
+        val index = RoomVaultIndex(context, key, name)
         runBlocking {
             val file = index.files().single()
             assertEquals(10L, file.plainSize)
@@ -54,6 +59,11 @@ class MigrationTest {
             index.replaceContent(IndexContent.EMPTY)
             assertEquals(false, index.isOpApplied(op))
         }
+        // Encrypted on disk now: not a plain SQLite file, and not the rows' bytes in the clear.
+        assertFalse(RoomVaultIndex.isPlain(file))
+        assertFalse(String(file.readBytes(), Charsets.ISO_8859_1).contains("lastAppliedMessageId"))
+        // And it opens again with the same key; the transfer queue outlives replaceContent.
+        runBlocking { assertArrayEquals(byteArrayOf(4, 5), RoomVaultIndex(context, key, name).uploads().single().sealedRequest) }
         context.deleteDatabase(name)
     }
 }

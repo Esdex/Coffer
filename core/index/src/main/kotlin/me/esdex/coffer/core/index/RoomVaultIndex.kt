@@ -14,13 +14,16 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.withTransaction
+import java.io.File
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.storage.MessageId
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 // Ids are stored as lowercase hex: readable in a debugger, and the same everywhere.
 private fun Id.hex(): String = toByteArray().joinToString("") { "%02x".format(it) }
@@ -124,6 +127,7 @@ internal interface IndexDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun markFolderDeleted(row: DeletedFolderRow)
 
     @Query("SELECT value FROM sync_state WHERE `key` = :key") suspend fun syncValue(key: String): Long?
+    @Query("SELECT * FROM sync_state") suspend fun syncRows(): List<SyncRow>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSync(row: SyncRow)
 
     @Query("SELECT * FROM uploads") fun observeUploads(): Flow<List<UploadRow>>
@@ -134,6 +138,7 @@ internal interface IndexDao {
     @Query("SELECT COUNT(*) FROM applied_ops WHERE opId = :opId") suspend fun appliedOpCount(opId: String): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun markOpApplied(row: AppliedOpRow)
     @Query("DELETE FROM applied_ops") suspend fun deleteAllAppliedOps()
+    @Query("SELECT * FROM applied_ops") suspend fun appliedOps(): List<AppliedOpRow>
 
     @Query("SELECT * FROM downloads") fun observeDownloads(): Flow<List<DownloadRow>>
     @Query("SELECT * FROM downloads") suspend fun downloads(): List<DownloadRow>
@@ -161,8 +166,13 @@ internal abstract class IndexDatabase : RoomDatabase() {
 class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultIndex {
     private val dao = db.dao()
 
-    constructor(context: Context, name: String = "index.db") :
-        this(Room.databaseBuilder(context, IndexDatabase::class.java, name).build())
+    /**
+     * The index, encrypted with [key] by SQLCipher (audit 1, M9): file sizes, part counts, access times
+     * and the transfer queue are not readable from a copy of the phone's storage. A database left plain
+     * by an older version is turned into an encrypted one first, its rows kept.
+     */
+    constructor(context: Context, key: ByteArray, name: String = "index.db") : this(open(context, key, name))
+
 
     private fun FileRow.indexed(parts: List<PartRow>) = IndexedFile(
         fileId = idOf(fileId),
@@ -294,11 +304,70 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
     // clearAllTables blocks and runs its own transaction.
     override suspend fun clear() = withContext(Dispatchers.IO) { db.clearAllTables() }
 
-    private companion object {
-        const val LAST_APPLIED = "lastAppliedMessageId"
-        const val CONTENT_VERSION = "contentVersion"
-        const val MAINTAINED_AT = "maintainedAt"
-        const val OLDEST_RECORD = "oldestRecord"
+    companion object {
+        private fun open(context: Context, key: ByteArray, name: String): IndexDatabase {
+            // sqlcipher-android does not load its own native library (as Arcanum found).
+            System.loadLibrary("sqlcipher")
+            // A raw key, so SQLCipher skips its own key derivation: the key is random already.
+            val passphrase = "x'${key.joinToString("") { "%02x".format(it) }}'".toByteArray(Charsets.US_ASCII)
+            val factory = SupportOpenHelperFactory(passphrase)
+            encryptIfPlain(context, name, factory)
+            return Room.databaseBuilder(context, IndexDatabase::class.java, name).openHelperFactory(factory).build()
+        }
+
+        /** True if [file] is a plain SQLite database: its first 16 bytes say so. Encrypted ones look random. */
+        fun isPlain(file: File): Boolean {
+            if (!file.exists() || file.length() < PLAIN_HEADER.size) return false
+            val head = ByteArray(PLAIN_HEADER.size)
+            file.inputStream().use { it.read(head) }
+            return head.contentEquals(PLAIN_HEADER)
+        }
+
+        /**
+         * Copies a plain index, as an older version left it, row by row into an encrypted one, then puts
+         * that in its place. Through Room on both sides: it brings the plain one up to the current schema
+         * first, and SQLCipher's own export runs its statements on whichever connection of its pool is
+         * free, where the attached database may not be (seen on the emulator).
+         */
+        private fun encryptIfPlain(context: Context, name: String, factory: SupportOpenHelperFactory) {
+            val file = context.getDatabasePath(name)
+            if (!isPlain(file)) return
+            val temporary = "$name.encrypting"
+            context.deleteDatabase(temporary)
+            val plain = Room.databaseBuilder(context, IndexDatabase::class.java, name).build()
+            val encrypted = Room.databaseBuilder(context, IndexDatabase::class.java, temporary).openHelperFactory(factory).build()
+            try {
+                runBlocking { copy(plain.dao(), encrypted.dao()) }
+            } finally {
+                plain.close()
+                encrypted.close()
+            }
+            context.deleteDatabase(name)
+            for (suffix in listOf("", "-wal", "-shm", "-journal")) {
+                val from = context.getDatabasePath(temporary + suffix)
+                if (from.exists()) check(from.renameTo(context.getDatabasePath(name + suffix))) { "could not replace the plain index" }
+            }
+        }
+
+        private suspend fun copy(from: IndexDao, to: IndexDao) {
+            to.insertFiles(from.files())
+            to.insertParts(from.allParts())
+            to.insertDeletedFiles(from.deletedFiles())
+            to.insertFolders(from.folders())
+            to.insertDeletedFolders(from.deletedFolders())
+            to.insertSnapshots(from.snapshots())
+            from.syncRows().forEach { to.putSync(it) }
+            from.uploads().forEach { to.putUpload(it) }
+            from.downloads().forEach { to.putDownload(it) }
+            from.appliedOps().forEach { to.markOpApplied(it) }
+        }
+
+        private val PLAIN_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
+
+        private const val LAST_APPLIED = "lastAppliedMessageId"
+        private const val CONTENT_VERSION = "contentVersion"
+        private const val MAINTAINED_AT = "maintainedAt"
+        private const val OLDEST_RECORD = "oldestRecord"
     }
 }
 

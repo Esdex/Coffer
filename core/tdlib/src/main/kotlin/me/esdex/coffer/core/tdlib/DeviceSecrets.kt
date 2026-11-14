@@ -30,6 +30,26 @@ class DeviceSecrets(private val dir: File) {
         return key
     }
 
+    /**
+     * The key for Coffer's own index database, created on first use; as TDLib's, it opens without the
+     * user, so transfers run in the background, and only on this phone (audit 1, M9). Null if a stored
+     * one can no longer be unwrapped.
+     */
+    @Synchronized
+    fun indexKey(): ByteArray? {
+        val file = File(dir, INDEX_KEY_FILE)
+        if (file.exists()) return unwrap(file.readBytes(), INDEX_KEY_AD)
+        val key = ByteArray(DB_KEY_BYTES).also(SecureRandom()::nextBytes)
+        write(file, wrap(key, INDEX_KEY_AD))
+        return key
+    }
+
+    /** Forgets the index key, for when the index is wiped with it. */
+    @Synchronized
+    fun resetIndexKey() {
+        File(dir, INDEX_KEY_FILE).delete()
+    }
+
     /** Forgets the database key, for when TDLib's data is wiped with it. */
     @Synchronized
     fun resetDatabaseKey() {
@@ -92,7 +112,11 @@ class DeviceSecrets(private val dir: File) {
         return keyStore.getKey(KEY_ALIAS, null) as SecretKey?
     }
 
-    private fun keystoreKey(): SecretKey = existingKeystoreKey() ?: KeyGenerator
+    // One Keystore key for every instance: two made at once would each generate it, and the second would
+    // replace the first, leaving what was wrapped with it unreadable.
+    private fun keystoreKey(): SecretKey = synchronized(KEYSTORE_LOCK) { existingKeystoreKey() ?: newKeystoreKey() }
+
+    private fun newKeystoreKey(): SecretKey = KeyGenerator
         .getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
         .apply {
             init(
@@ -115,6 +139,9 @@ class DeviceSecrets(private val dir: File) {
         const val DB_KEY_FILE = "tdlib-db.key"
         const val API_FILE = "api.bin"
         const val DB_KEY_AD = "coffer/device/tdlib-db-key"
+        const val INDEX_KEY_FILE = "index-db.key"
+        const val INDEX_KEY_AD = "coffer/device/index-db-key"
+        val KEYSTORE_LOCK = Any()
         const val API_HASH_AD = "coffer/device/api-hash"
     }
 }

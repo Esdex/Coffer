@@ -19,6 +19,7 @@ dependencies {
     api(project(":core:storage"))
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.sqlcipher)
     ksp(libs.androidx.room.compiler)
     androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.test.runner)

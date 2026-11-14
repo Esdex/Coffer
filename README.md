@@ -130,7 +130,7 @@ The `fdroid` flavor is the build for GitHub Releases and F-Droid. The `playstore
 | Crypto | `:core:crypto`, pure Kotlin over libsodium (lazysodium): XChaCha20-Poly1305, Argon2id, BLAKE2b |
 | Vault format | Encrypted blobs, a vault header and an operation log in Saved Messages, CBOR inside |
 | Sync | `:core:sync`, tested against a fake storage backend on the JVM |
-| Local index | Room |
+| Local index | Room over SQLCipher, key in the Android Keystore |
 | DI | Hilt |
 | Background work | WorkManager, one queue for all transfers |
 | Media | Media3 / ExoPlayer, reading straight from Telegram |
@@ -236,6 +236,7 @@ Coffer is not affiliated with or endorsed by Telegram.
 - **[TDLib](https://github.com/tdlib/td)**: the Telegram client library under every request
 - **[libsodium](https://libsodium.org)** and **[Lazysodium](https://github.com/terl/lazysodium-android)**: XChaCha20-Poly1305, Argon2id, BLAKE2b
 - **[OpenSSL](https://www.openssl.org)**: built into TDLib
+- **[SQLCipher](https://www.zetetic.net/sqlcipher/)**: encryption of Coffer's own index database
 - **[Media3 / ExoPlayer](https://developer.android.com/media/media3)**: video and music, read straight from Telegram
 - **[Haze](https://github.com/chrisbanes/haze)**: frosted glass effects
 - **[ZXing](https://github.com/zxing/zxing)**: the QR code for signing in

@@ -22,8 +22,10 @@ Settings, Security, **Hide exact file sizes** turns the file padding off.
 - Fingerprint unlock wraps the master key with a key in the phone's secure hardware that needs your
   fingerprint or face. The phone's PIN does not open the vault.
 - Locking wipes the keys from memory.
-- Coffer's index keeps names and folders encrypted. Telegram's database is encrypted with a key in
-  Android's Keystore. The file cache and previews are encrypted.
+- Coffer's index is an encrypted database (SQLCipher), with a key in Android's Keystore, so file
+  sizes and the transfer queue are not readable from a copy of the phone's storage; names and folders
+  are encrypted once more inside it. Telegram's database is encrypted the same way. The file cache
+  and previews are encrypted.
 - Coffer's data is left out of Android backups.
 - Nothing secret goes into logs: no keys, passwords, recovery words, file names or decrypted
   metadata.

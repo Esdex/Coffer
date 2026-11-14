@@ -34,7 +34,7 @@ connect from.
 ## On your phone
 
 Coffer keeps an index of your files so the vault opens without reading Saved Messages each time.
-Names and folders in it are encrypted. Telegram's own database on the phone is encrypted with a
+The whole index is an encrypted database, and names and folders are encrypted again inside it. Telegram's own database on the phone is encrypted with a
 key kept in Android's Keystore. Opened files can be kept in an encrypted cache: see
 [Offline files and the cache](offline.md).
 
