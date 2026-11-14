@@ -65,6 +65,10 @@ internal class UploadRow(
     val abandonOp: String?,
 )
 
+/** Operations already applied, so one sent again under a new message id is not applied twice (audit 1, M4). */
+@Entity(tableName = "applied_ops")
+internal class AppliedOpRow(@PrimaryKey val opId: String)
+
 @Entity(tableName = "downloads")
 internal class DownloadRow(@PrimaryKey val downloadId: String, val fileId: String, val sealedTarget: ByteArray?)
 
@@ -127,6 +131,10 @@ internal interface IndexDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putUpload(row: UploadRow)
     @Query("DELETE FROM uploads WHERE uploadId = :uploadId") suspend fun deleteUpload(uploadId: String)
 
+    @Query("SELECT COUNT(*) FROM applied_ops WHERE opId = :opId") suspend fun appliedOpCount(opId: String): Int
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun markOpApplied(row: AppliedOpRow)
+    @Query("DELETE FROM applied_ops") suspend fun deleteAllAppliedOps()
+
     @Query("SELECT * FROM downloads") fun observeDownloads(): Flow<List<DownloadRow>>
     @Query("SELECT * FROM downloads") suspend fun downloads(): List<DownloadRow>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putDownload(row: DownloadRow)
@@ -136,11 +144,14 @@ internal interface IndexDao {
 @Database(
     entities = [
         FileRow::class, PartRow::class, DeletedRow::class, FolderRow::class, DeletedFolderRow::class,
-        SnapshotRow::class, SyncRow::class, UploadRow::class, DownloadRow::class,
+        SnapshotRow::class, SyncRow::class, UploadRow::class, DownloadRow::class, AppliedOpRow::class,
     ],
-    version = 4,
+    version = 5,
     // Only new tables and columns so far: the queue of transfers survives the update.
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
+        AutoMigration(from = 4, to = 5),
+    ],
 )
 internal abstract class IndexDatabase : RoomDatabase() {
     abstract fun dao(): IndexDao
@@ -236,6 +247,9 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
     override suspend fun maintainedAt(): Long? = dao.syncValue(MAINTAINED_AT)
     override suspend fun setMaintainedAt(millis: Long) = dao.putSync(SyncRow(MAINTAINED_AT, millis))
 
+    override suspend fun isOpApplied(opId: Id): Boolean = dao.appliedOpCount(opId.hex()) > 0
+    override suspend fun markOpApplied(opId: Id) = dao.markOpApplied(AppliedOpRow(opId.hex()))
+
     override suspend fun oldestRecord(): MessageId? = dao.syncValue(OLDEST_RECORD)?.let(::MessageId)
     override suspend fun setOldestRecord(messageId: MessageId) = dao.putSync(SyncRow(OLDEST_RECORD, messageId.value))
 
@@ -246,6 +260,8 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         dao.deleteAllFolders()
         dao.deleteAllDeletedFolders()
         dao.deleteAllSnapshots()
+        // Read again from the history, or past a snapshot, which holds no operations.
+        dao.deleteAllAppliedOps()
         dao.deleteSync(LAST_APPLIED)
         dao.deleteSync(CONTENT_VERSION)
         dao.insertFiles(content.files.map { FileRow(it.fileId.hex(), it.plainSize, it.partCount, it.sealedMeta, it.status.name, it.padded) })

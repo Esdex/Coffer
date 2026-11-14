@@ -22,6 +22,7 @@ class InMemoryVaultIndex : VaultIndex {
         val contentVersion: MessageId? = null,
         val maintainedAt: Long? = null,
         val oldestRecord: MessageId? = null,
+        val appliedOps: Set<Id> = emptySet(),
         val snapshots: Map<MessageId, KnownSnapshot> = emptyMap(),
         val uploads: Map<String, PendingUpload> = emptyMap(),
         val downloads: Map<String, PendingDownload> = emptyMap(),
@@ -109,6 +110,8 @@ class InMemoryVaultIndex : VaultIndex {
 
     override suspend fun maintainedAt(): Long? = state.value.maintainedAt
     override suspend fun setMaintainedAt(millis: Long) = update { it.copy(maintainedAt = millis) }
+    override suspend fun isOpApplied(opId: Id): Boolean = opId in state.value.appliedOps
+    override suspend fun markOpApplied(opId: Id) = update { it.copy(appliedOps = it.appliedOps + opId) }
     override suspend fun oldestRecord(): MessageId? = state.value.oldestRecord
     override suspend fun setOldestRecord(messageId: MessageId) = update { it.copy(oldestRecord = messageId) }
 

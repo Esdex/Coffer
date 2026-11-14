@@ -136,6 +136,14 @@ interface VaultIndex {
     suspend fun setMaintainedAt(millis: Long)
 
     /**
+     * Whether an operation with [opId] was applied already: one sent again under a new message id, as
+     * anyone in the Telegram account can, is not applied twice (audit 1, M4). Emptied by [replaceContent];
+     * past a loaded snapshot, which holds no operations, older ones sent again still count as new.
+     */
+    suspend fun isOpApplied(opId: Id): Boolean
+    suspend fun markOpApplied(opId: Id)
+
+    /**
      * The oldest message of the vault the last complete pass over Saved Messages saw, so the next pass
      * can tell a history cut short from one that really ends there (audit 1, M6); kept by [replaceContent].
      */

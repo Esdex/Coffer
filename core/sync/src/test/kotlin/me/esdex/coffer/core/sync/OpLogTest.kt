@@ -131,6 +131,58 @@ class OpLogTest {
         puppet.job.cancel()
     }
 
+    /** [message] sent again, as anyone in the Telegram account can: the same text or document, a new id. */
+    private suspend fun Device.replay(message: MessageId) {
+        when (val content = cloud.allMessages().single { it.id == message }.content) {
+            is MessageContent.Text -> storage.sendText(content.text)
+            is MessageContent.Blob -> {
+                val copy = temp.newFile("cfr_" + kotlin.random.Random.nextLong().toULong().toString(16).padStart(12, '0').take(12) + ".bin")
+                copy.writeBytes(storage.openBlob(message).use { it.readBytes() })
+                storage.sendBlob(copy, content.caption)
+            }
+            MessageContent.Other -> error("not a vault message")
+        }
+    }
+
+    private fun lastMessage() = cloud.allMessages().maxOf { it.id }
+
+    @Test
+    fun anOperationSentAgainIsNotAppliedTwice() = runBlocking {
+        // Audit 1, M4: an old rename forwarded later must not undo the newer one.
+        val here = device()
+        val folder = here.ops.createFolder("Trip", null)
+        here.ops.renameFolder(folder, "Trip 2025")
+        val firstRename = lastMessage()
+        here.ops.renameFolder(folder, "Trip 2026")
+        here.indexer.catchUp()
+        here.replay(firstRename)
+
+        val there = device()
+        there.indexer.catchUp()
+        here.indexer.catchUp()
+        for (device in listOf(here, there)) assertEquals(setOf("Trip 2026" to null), device.view().folders)
+    }
+
+    @Test
+    fun aFilesFirstPartSentAgainDoesNotBringBackItsOldName() = runBlocking {
+        val here = device()
+        val fileId = here.upload("draft.txt", bytes("d"))
+        here.indexer.catchUp()
+        val first = here.index.parts(fileId).getValue(0)
+        here.ops.renameFile(fileId, "final.txt")
+        here.indexer.catchUp()
+        here.replay(first)
+        here.indexer.catchUp()
+
+        val there = device()
+        there.indexer.catchUp()
+        for (device in listOf(here, there)) {
+            assertEquals(setOf("final.txt"), device.view().files.map { it.first }.toSet())
+            // The part stays the one first sent.
+            assertEquals(first, device.index.parts(fileId).getValue(0))
+        }
+    }
+
     @Test
     fun foldersRenamesAndMovesReachAnotherDevice() = runBlocking {
         val here = device()

@@ -31,8 +31,8 @@ class MigrationTest {
             db.execSQL("INSERT INTO uploads VALUES ('u1', ?, NULL, '', NULL)", arrayOf(byteArrayOf(4, 5)))
             db.execSQL("INSERT INTO sync_state VALUES ('lastAppliedMessageId', 1048576)")
         }
-        // Validates the migrated schema against 4.json.
-        helper.runMigrationsAndValidate(name, 4, true).close()
+        // Validates the migrated schema against 5.json.
+        helper.runMigrationsAndValidate(name, 5, true).close()
 
         val index = RoomVaultIndex(context, name)
         runBlocking {
@@ -46,6 +46,13 @@ class MigrationTest {
             assertEquals(1048576L, index.lastApplied()?.value)
             assertTrue(index.folders().isEmpty())
             assertTrue(index.snapshots().isEmpty())
+            // Version 5: operations applied are remembered, and forgotten with the content (audit 1, M4).
+            val op = me.esdex.coffer.core.crypto.Id.of(ByteArray(16) { 7 })
+            assertEquals(false, index.isOpApplied(op))
+            index.markOpApplied(op)
+            assertEquals(true, index.isOpApplied(op))
+            index.replaceContent(IndexContent.EMPTY)
+            assertEquals(false, index.isOpApplied(op))
         }
         context.deleteDatabase(name)
     }

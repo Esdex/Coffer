@@ -295,6 +295,10 @@ class Indexer(
         val payload = keys.meta.decodeBlob(record) ?: return false
         val fileId = payload.fileId
         if (index.isDeleted(fileId)) return false
+        // A part sent again under a new message id is the same part: the first one stays. Its part 0 would
+        // otherwise bring back the name and folder the file had when it was added (audit 1, M4).
+        val known = index.parts(fileId)[payload.partIndex]
+        if (known != null && known != messageId) return false
         index.putPart(fileId, payload.partIndex, messageId)
         val meta = payload.meta
         if (meta != null) {
@@ -311,8 +315,11 @@ class Indexer(
     /** True if the index (may have) changed. */
     private suspend fun applyText(text: String): Boolean {
         val record = Captions.parse(text)?.takeIf { it.kind == RecordKind.OP } ?: return false
-        when (val op = keys.meta.decodeOp(record)) {
-            null -> return false
+        val op = keys.meta.decodeOp(record) ?: return false
+        // Sent again under a new message id, by anyone in the Telegram account: the op_id gives it away (audit 1, M4).
+        if (index.isOpApplied(op.opId)) return false
+        index.markOpApplied(op.opId)
+        when (op) {
             is Op.FolderCreate -> {
                 // Delete wins over everything, and an id is created once.
                 if (index.isFolderDeleted(op.folderId) || index.folder(op.folderId) != null) return false
