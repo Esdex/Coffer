@@ -36,6 +36,7 @@ class AudioService : MediaSessionService() {
             ?.let { PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
         session = MediaSession.Builder(this, NeutralPlayer(playback.player) { playback.prefs.value.showPlaying })
             .apply { open?.let(::setSessionActivity) }
+            .setCallback(Gatekeeper(packageName))
             .build()
             // Added here, not waited for: the screen drives the player directly, so no controller ever
             // connects to hand the session to the service, and without one there is no notification.
@@ -64,6 +65,22 @@ class AudioService : MediaSessionService() {
     }
 
     /**
+     * Who may connect as a Media3 controller. [onGetSession] guards the service, but a platform controller,
+     * such as an app with notification access holds, can turn its session token into a Media3 controller,
+     * and that comes in here: through the default, it would get the player's real tags with each change
+     * and could drive the queue (audit 1, M13). Coffer itself and the system connect as before; other
+     * platform controllers stay on the platform session, which shows only "Coffer" unless asked for.
+     */
+    private class Gatekeeper(private val ownPackage: String) : MediaSession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
+            if (mayConnect(controller.packageName, controller.uid, controller.controllerVersion, ownPackage)) {
+                super.onConnect(session, controller)
+            } else {
+                MediaSession.ConnectionResult.reject()
+            }
+    }
+
+    /**
      * What a session shows is mirrored to the notification, the lock screen, notification listeners and
      * every connected controller: all outside Coffer, past its lock and FLAG_SECURE. So unless asked for,
      * it shows "Coffer" and nothing else, whatever tags the player has read from the file (Arcanum's rule).
@@ -72,7 +89,16 @@ class AudioService : MediaSessionService() {
         override fun getMediaMetadata(): MediaMetadata = if (show()) super.getMediaMetadata() else NEUTRAL
     }
 
-    private companion object {
-        val NEUTRAL: MediaMetadata = MediaMetadata.Builder().setTitle("Coffer").build()
+    companion object {
+        private val NEUTRAL: MediaMetadata = MediaMetadata.Builder().setTitle("Coffer").build()
+
+        /**
+         * Coffer, the system, and platform controllers (lock screen, headset, notification listeners), which
+         * see the platform session's neutral metadata; never another app's Media3 controller (audit 1, M13).
+         */
+        internal fun mayConnect(packageName: String, uid: Int, controllerVersion: Int, ownPackage: String): Boolean =
+            packageName == ownPackage || uid == SYSTEM_UID || controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+
+        private const val SYSTEM_UID = Process.SYSTEM_UID
     }
 }
