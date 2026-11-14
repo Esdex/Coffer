@@ -10,7 +10,9 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.Padme
 import me.esdex.coffer.core.crypto.format.Captions
 import me.esdex.coffer.core.crypto.format.FileMeta
 import me.esdex.coffer.core.crypto.format.IndexPayload
@@ -27,12 +29,12 @@ import me.esdex.coffer.core.index.IndexedFile
 import me.esdex.coffer.core.index.IndexedFolder
 import me.esdex.coffer.core.index.KnownSnapshot
 import me.esdex.coffer.core.index.VaultIndex
+import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.MessageContent
 import me.esdex.coffer.core.storage.MessageId
-import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.StorageBackend
-import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.storage.StorageEvent
+import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.storage.StoredMessage
 
 /**
@@ -169,6 +171,9 @@ class Indexer(
                 if (!useSnapshots) continue
                 val snapshot = snapshotOf(message) ?: continue
                 if (last != null && snapshot.lastAppliedMessageId <= last.value) continue
+                // The caption says how big the document is; one of another size was swapped in, and would
+                // be downloaded whole before anything checked it (audit 1, L12).
+                if (!sizeFits(message, snapshot)) continue
                 found += message.id to snapshot
             }
             onProgress(fetched)
@@ -191,6 +196,12 @@ class Indexer(
             onProgress(seen)
             from = page.last().id
         }
+    }
+
+    private fun sizeFits(message: StoredMessage, snapshot: IndexPayload): Boolean {
+        val size = (message.content as? MessageContent.Blob)?.size ?: return false
+        val expected = runCatching { ContentLayout.encryptedPartSize(Padme.contentSize(snapshot.plainSize, snapshot.padded), 0) }.getOrNull()
+        return size == expected
     }
 
     private fun snapshotOf(message: StoredMessage): IndexPayload? {

@@ -1,17 +1,20 @@
 package me.esdex.coffer.core.sync
 
-import me.esdex.coffer.core.crypto.format.Captions
-import me.esdex.coffer.core.crypto.format.RecordKind
+import kotlin.random.Random
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.MasterKeys
+import me.esdex.coffer.core.crypto.Padme
 import me.esdex.coffer.core.crypto.format.BlobPayload
+import me.esdex.coffer.core.crypto.format.Captions
 import me.esdex.coffer.core.crypto.format.IndexPayload
+import me.esdex.coffer.core.crypto.format.RecordKind
 import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.storage.FakeCloud
 import me.esdex.coffer.core.storage.MessageContent
@@ -24,7 +27,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import kotlin.random.Random
 
 /** Index snapshots (SPEC §4.4, §5.4) and the full rescan (§5.5), between devices on one Saved Messages. */
 class SnapshotSyncTest {
@@ -200,10 +202,11 @@ class SnapshotSyncTest {
         here.upload("after.txt", bytes("a"))
         here.indexer.catchUp()
         val reference = here.view()
-        // A caption that opens, over a document that does not.
+        // A caption that opens, over a document that does not: of the right size, so it is opened and tried.
         val last = here.index.lastApplied()!!.value
+        val rightSize = ContentLayout.encryptedPartSize(Padme.contentSize(460, true), 0).toInt()
         here.storage.sendBlob(
-            temp.newFile("cfr_cccccccccccc.bin").apply { writeBytes(Random(1).nextBytes(500)) },
+            temp.newFile("cfr_cccccccccccc.bin").apply { writeBytes(Random(1).nextBytes(rightSize)) },
             here.keys.meta.encodeIndex(IndexPayload(Id.random(sodium), last, 1, 460, padded = true)),
         )
 
@@ -213,7 +216,7 @@ class SnapshotSyncTest {
         assertEquals(reference, there.view())
 
         // With the good one gone too, the whole history is read.
-        cloud.deleteFromOutside(indexBlobs().filter { it.content.let { c -> c is MessageContent.Blob && c.size != 500L } }.map { it.id })
+        cloud.deleteFromOutside(indexBlobs().filter { it.content.let { c -> c is MessageContent.Blob && c.size != rightSize.toLong() } }.map { it.id })
         val third = device()
         third.indexer.catchUp()
         assertEquals(1, third.storage.blobsOpened)
@@ -350,6 +353,24 @@ class SnapshotSyncTest {
         val there = device()
         assertTrue(there.indexer.catchUp().snapshotUsed)
         assertEquals(FileStatus.DAMAGED, there.index.file(hurt)!!.status)
+    }
+
+    @Test
+    fun aSnapshotWhoseDocumentWasSwappedIsNotDownloaded() = runBlocking {
+        // Audit 1, L12: a real caption over a document of another size, as editMessageMedia could leave.
+        val here = device()
+        here.upload("a.txt", bytes("a"))
+        here.indexer.catchUp()
+        assertTrue(here.snapshotter.snapshotIfNeeded())
+        val real = indexBlobs().single()
+        val caption = (real.content as MessageContent.Blob).caption
+        val swapped = temp.newFile("cfr_eeeeeeeeeeee.bin").apply { writeBytes(Random(2).nextBytes(3 * 1024 * 1024)) }
+        here.storage.sendBlob(swapped, caption)
+
+        val there = device()
+        assertTrue(there.indexer.catchUp().snapshotUsed)
+        // Only the real one was opened.
+        assertEquals(1, there.storage.blobsOpened)
     }
 
     @Test
