@@ -298,6 +298,12 @@ class SettingsViewModel @Inject constructor(
 
     private val wordsFlow = MutableStateFlow<List<String>?>(null)
 
+    init {
+        // A lock forgets the words on screen: after the next unlock, a fingerprint one too, the page must ask
+        // for the password again (SPEC §9, audit 1, AND-3). This view model outlives the lock.
+        viewModelScope.launch { vault.state.collect { if (it !is VaultManager.State.Unlocked) leaveSecrets() } }
+    }
+
     /** The recovery key, while it is on screen. */
     val recoveryWords: StateFlow<List<String>?> = wordsFlow.asStateFlow()
 
