@@ -366,6 +366,26 @@ class VaultManagerTest {
     }
 
     @Test
+    fun aChangeWhosePinFailsLeavesNoHeaderBehind() = runTest {
+        // Audit 1, L15.
+        val cloud = FakeCloud()
+        val storage = cloud.device()
+        val manager = manager()
+        manager.locate(storage)
+        manager.publish(storage, manager.prepareNew("the old password of the vault"))
+        val before = cloud.allMessages().map { it.id }.toSet()
+        val noPins = object : StorageBackend by storage {
+            override suspend fun pin(id: MessageId) = throw StorageException("connection lost")
+        }
+        assertThrows(StorageException::class.java) {
+            kotlinx.coroutines.runBlocking { manager.changePassword(noPins, "the old password of the vault", "a new password nobody saw") }
+        }
+        assertEquals(before, cloud.allMessages().map { it.id }.toSet())
+        manager.lockVault()
+        assertTrue(manager.unlockWithPassword("the old password of the vault", storage))
+    }
+
+    @Test
     fun aPasswordChangedElsewhereTurnsTheFingerprintHereOff() = runTest {
         // Audit 1, M7: the master key stays the same, so the fingerprint would still open the vault.
         val cloud = FakeCloud()

@@ -371,7 +371,14 @@ class VaultManager(
         require(acceptPassword(newPassword)) { "the password is too weak" }
         val header = withContext(work) { VaultCreation.rewrap(sodium, open, newPassword, clock()) }
         val sent = storage.sendText(VaultHeaderCodec.encode(header))
-        storage.pin(sent.id)
+        try {
+            storage.pin(sent.id)
+        } catch (e: StorageException) {
+            // Not left behind unpinned, where it would open the vault with the new password for good while
+            // this device still asks for the old one (audit 1, L15).
+            runCatching { storage.delete(listOf(sent.id)) }
+            throw e
+        }
         val published = FoundHeader(sent.id, header)
         // What this device knew, and what Saved Messages holds now, in case another device added one.
         val old = (lock.withLock { headers } + VaultHeaders.find(storage))
