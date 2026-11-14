@@ -340,6 +340,49 @@ class VaultManagerTest {
         assertEquals(words, other.recoveryWords())
     }
 
+    @Test
+    fun theRecoveryKeySetsANewPasswordPastAForgedHeader() = runTest {
+        // Audit 2, N1: the real header deleted, a forged one with its master_id copied in its place. The
+        // recovery key opens the vault, no password does, and the old password is not known to change it.
+        val cloud = FakeCloud()
+        val storage = cloud.device()
+        val owner = manager()
+        owner.locate(storage)
+        val created = owner.prepareNew("the password of the real vault")
+        val words = created.recoveryWords
+        val masterId = created.vault.masterId
+        val forgedHeader = created.header.copy(
+            salt = PasswordKdf.newSalt(sodium),
+            wrappedMaster = Bytes.of(sodium.randomBytes(created.header.wrappedMaster.size)),
+        )
+        owner.publish(storage, created)
+        storage.delete(cloud.allMessages().filter { FoundHeader.from(it) != null }.map { it.id })
+        storage.pin(storage.sendHeader(forgedHeader).id)
+
+        val device = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        val deviceStorage = cloud.device()
+        device.locate(deviceStorage)
+        assertFalse(device.unlockWithPassword("the password of the real vault", deviceStorage))
+        assertTrue(device.unlockWithRecoveryKey(words, deviceStorage) is VaultUnlock.MnemonicResult.Unlocked)
+
+        // Another vault's words, or no recovery key at all, do not stand in for the password.
+        val otherWords = newVault("another vault's password").recoveryWords
+        assertEquals(VaultManager.PasswordChange.WrongPassword, device.changePasswordWithRecoveryKey(deviceStorage, otherWords, "a new password after the loss"))
+        assertEquals(VaultManager.PasswordChange.WrongPassword, device.changePasswordWithRecoveryKey(deviceStorage, words.drop(1), "a new password after the loss"))
+        assertEquals(listOf(forgedHeader), cloud.allMessages().mapNotNull(FoundHeader::from).map { it.header })
+
+        assertEquals(VaultManager.PasswordChange.Changed, device.changePasswordWithRecoveryKey(deviceStorage, words, "a new password after the loss"))
+        // The forged header is gone with the change; the new password opens the same vault anywhere.
+        val headers = cloud.allMessages().mapNotNull(FoundHeader::from)
+        assertEquals(1, headers.size)
+        assertNotEquals(forgedHeader, headers.single().header)
+        val other = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        val otherStorage = cloud.device()
+        other.locate(otherStorage)
+        assertTrue(other.unlockWithPassword("a new password after the loss", otherStorage))
+        assertEquals(masterId, (other.state.value as VaultManager.State.Unlocked).vault.masterId)
+    }
+
     /** Two devices on one Saved Messages: [here] made the vault, [there] found and opened it. */
     private suspend fun twoDevices(cloud: FakeCloud, password: String): Triple<VaultManager, VaultManager, Pair<StorageBackend, StorageBackend>> {
         val hereStorage = cloud.device()

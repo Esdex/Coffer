@@ -17,7 +17,9 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.bip39.Bip39
 import me.esdex.coffer.core.storage.FloodWaitException
+import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.Maintenance
 import me.esdex.coffer.core.sync.VaultDeletion
@@ -336,13 +338,19 @@ class SettingsViewModel @Inject constructor(
         passwordChangedFlow.value = false
     }
 
-    fun changePassword(current: String, newPassword: String) {
+    fun changePassword(current: String, newPassword: String) = changePassword { storage -> vault.changePassword(storage, current, newPassword) }
+
+    /** With the 24 words in place of a forgotten password (audit 2, N1). */
+    fun changePasswordWithRecoveryKey(words: String, newPassword: String) =
+        changePassword { storage -> vault.changePasswordWithRecoveryKey(storage, Bip39.split(words), newPassword) }
+
+    private fun changePassword(change: suspend (StorageBackend) -> VaultManager.PasswordChange) {
         if (busyFlow.value) return
         busyFlow.value = true
         act {
             try {
                 val storage = telegram.readyStorage() ?: throw StorageException("not signed in")
-                when (vault.changePassword(storage, current, newPassword)) {
+                when (change(storage)) {
                     VaultManager.PasswordChange.Changed -> {
                         wrongPasswordFlow.value = false
                         passwordChangedFlow.value = true

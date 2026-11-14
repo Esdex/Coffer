@@ -147,7 +147,7 @@ private fun Steps(modifier: Modifier, viewModel: VaultViewModel, state: VaultMan
                         VaultManager.State.Unknown -> Searching(null, errorText)
                         is VaultManager.State.Searching -> Searching(s.scanned, errorText)
                         VaultManager.State.NotFound -> CreateFlow(viewModel, busy, errorText)
-                        is VaultManager.State.Locked -> UnlockStep(viewModel, busy, errorText, s.passwordChangedElsewhere)
+                        is VaultManager.State.Locked -> LockedSteps(viewModel, busy, errorText, s.passwordChangedElsewhere)
                         is VaultManager.State.Unlocked -> OfferDeviceUnlock(viewModel, errorText)
                     }
                 }
@@ -199,6 +199,21 @@ private tailrec fun Context.fragmentActivity(): FragmentActivity? = when (this) 
     is FragmentActivity -> this
     is ContextWrapper -> baseContext.fragmentActivity()
     else -> null
+}
+
+/**
+ * The unlock, or a restore begun from it: a recovery key that opens none of the headers here brings
+ * its own vault back with a new password, as on the screen that offers a new vault (audit 2, N1).
+ */
+@Composable
+private fun LockedSteps(viewModel: VaultViewModel, busy: Boolean, errorText: String?, passwordChangedElsewhere: Boolean) {
+    val step by viewModel.createStep.collectAsStateWithLifecycle()
+    val restoring = step == CreateStep.RestorePassword || step == CreateStep.Publishing
+    AnimatedContent(restoring, transitionSpec = { stepSlide(forward = targetState) }, label = "restore from unlock") { r ->
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            if (r) CreateFlow(viewModel, busy, errorText) else UnlockStep(viewModel, busy, errorText, passwordChangedElsewhere)
+        }
+    }
 }
 
 @Composable
@@ -254,19 +269,24 @@ private fun PasswordUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: 
 }
 
 @Composable
-private fun RecoveryKeyUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: String?, onBack: () -> Unit) = RecoveryWordsEntry(
-    title = stringResource(R.string.vault_recovery_unlock_title),
-    explanation = stringResource(R.string.vault_recovery_unlock_explanation),
-    action = stringResource(R.string.vault_unlock),
-    busy = busy,
-    errorText = errorText,
-    onSubmit = viewModel::unlockWithRecoveryKey,
-    back = stringResource(R.string.vault_use_password),
-    onBack = {
-        viewModel.dismissError()
-        onBack()
-    },
-)
+private fun RecoveryKeyUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: String?, onBack: () -> Unit) {
+    val error by viewModel.error.collectAsStateWithLifecycle()
+    RecoveryWordsEntry(
+        title = stringResource(R.string.vault_recovery_unlock_title),
+        explanation = stringResource(R.string.vault_recovery_unlock_explanation),
+        action = stringResource(R.string.vault_unlock),
+        busy = busy,
+        errorText = errorText,
+        onSubmit = viewModel::unlockWithRecoveryKey,
+        back = stringResource(R.string.vault_use_password),
+        onBack = {
+            viewModel.dismissError()
+            onBack()
+        },
+        // No header here is this key's: its vault's own was deleted, maybe with another put in its place.
+        restore = if (error == VaultError.OtherVaultsKey) viewModel::restoreWordsEntered else null,
+    )
+}
 
 /** The 24 words typed in, for unlocking and for bringing back a vault whose header is gone. */
 @Composable
@@ -279,6 +299,7 @@ private fun RecoveryWordsEntry(
     onSubmit: (String) -> Unit,
     back: String,
     onBack: () -> Unit,
+    restore: ((String) -> Unit)? = null,
 ) {
     var text by remember { mutableStateOf("") }
     val words = Bip39.split(text)
@@ -305,6 +326,7 @@ private fun RecoveryWordsEntry(
     )
     StepError(errorText)
     WideButton(action, words.size == Bip39.WORD_COUNT && unknown.isEmpty(), busy) { onSubmit(text) }
+    if (restore != null) SecondaryAction(stringResource(R.string.vault_restore_with_these_words), !busy) { restore(text) }
     SecondaryAction(back, !busy, onBack)
 }
 

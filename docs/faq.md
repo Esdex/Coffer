@@ -21,8 +21,9 @@ is active. Everything else in Coffer works the same without it.
 
 ## I forgot the password
 
-Open the vault with the recovery key: see [Your recovery key](recovery-key.md). Without the password
-and the recovery key, nobody can open the vault.
+Open the vault with the recovery key, then set a new password with it in Settings, Vault, Change
+password: see [Your recovery key](recovery-key.md). Without the password and the recovery key, nobody
+can open the vault.
 
 ## A file says Damaged
 

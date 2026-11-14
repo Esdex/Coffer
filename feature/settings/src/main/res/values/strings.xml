@@ -1,4 +1,4 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <string name="settings_title">Settings</string>
     <string name="settings_back">Back</string>
     <string name="settings_cancel">Cancel</string>
@@ -197,13 +197,19 @@
     <string name="settings_password_changing">Changing the password</string>
     <string name="settings_password_changed_body">Use the new password from now on, on all your devices. The recovery key stays the same.</string>
     <string name="settings_password">Change password</string>
-    <string name="settings_password_summary">Asks for the current password first</string>
+    <string name="settings_password_summary">Asks for the current password or the recovery key first</string>
     <string name="settings_password_explanation">The new password replaces the old one on all your devices. Your files and recovery key stay the same, and so does the key they are encrypted with: someone who knew the old password and kept a copy of the vault from your Telegram account could still open it. If you think that happened, move your files to a new vault.</string>
     <string name="settings_password_current">Current password</string>
     <string name="settings_password_new">New password</string>
     <string name="settings_password_repeat">Repeat the new password</string>
     <string name="settings_password_mismatch">The two new passwords are not the same.</string>
     <string name="settings_password_wrong">That is not the current password.</string>
+    <string name="settings_password_use_recovery_key">Forgot it? Use the recovery key</string>
+    <string name="settings_password_use_current">Use the current password</string>
+    <string name="settings_password_recovery_key">Recovery key</string>
+    <string name="settings_password_wrong_key">That is not this vault\'s recovery key.</string>
+    <string name="settings_recovery_word_count" tools:ignore="PluralsCandidate">%1$d of %2$d words</string>
+    <string name="settings_recovery_unknown_words">Not in the word list: %1$s</string>
     <string name="settings_password_change">Change password</string>
     <string name="settings_password_changed">Password changed</string>
     <string name="settings_strength_0">Very weak</string>

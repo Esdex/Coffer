@@ -14,7 +14,8 @@ word list. It opens the vault if you forget the password.
 On the unlock screen, tap **Use the recovery key instead** and type the 24 words, separated by
 spaces. Coffer checks each word against the list and tells you which ones it does not know.
 
-Then set a new password in Settings, Vault, **Change password**.
+Then set a new password in Settings, Vault, **Change password**: tap **Forgot it? Use the recovery
+key**, type the 24 words in place of the current password, and choose the new one.
 
 ## If the vault itself was deleted
 
@@ -23,6 +24,10 @@ example by mistake in the Telegram app, Coffer finds no vault, even though your 
 On the screen that offers a new vault, tap **Restore a vault with its recovery key**, type the 24 words
 and choose a new password. The vault comes back with all its files, and the recovery key stays the
 same.
+
+If Coffer asks for a password instead, because another vault's note is in Saved Messages, tap **Use
+the recovery key instead** and type the 24 words. Coffer says the key belongs to a different vault
+and offers **Restore my vault with these words**.
 
 ## See the words again
 

@@ -107,6 +107,7 @@
     <string name="vault_notice_ok">Got it</string>
     <string name="vault_restore">Restore a vault with its recovery key</string>
     <string name="vault_restore_title">Restore your vault</string>
+    <string name="vault_restore_with_these_words">Restore my vault with these words</string>
     <string name="vault_restore_explanation">If your files are still in Saved Messages but Coffer\'s pinned note that holds the vault was deleted, the 24 words bring the vault back. Enter them, separated by spaces.</string>
     <string name="vault_restore_back">Back</string>
     <string name="vault_restore_password_title">Choose a new password</string>
@@ -148,7 +149,7 @@
     <string name="vault_error_word_count">A recovery key has 24 words.</string>
     <string name="vault_error_unknown_word">Some words are not in the recovery word list.</string>
     <string name="vault_error_checksum">These words are not a valid recovery key. Check for a misspelled or swapped word.</string>
-    <string name="vault_error_other_vault">This recovery key belongs to a different vault.</string>
+    <string name="vault_error_other_vault">This recovery key belongs to a different vault. If the pinned note of your own vault was deleted in Telegram, bring it back with these words.</string>
     <string name="vault_error_words_mismatch">These words do not match. Check your paper copy, or show the words again.</string>
     <string name="vault_error_passwords_differ">The passwords do not match.</string>
     <string name="vault_error_vault_appeared">A vault was just created from another device. Unlock that one instead.</string>

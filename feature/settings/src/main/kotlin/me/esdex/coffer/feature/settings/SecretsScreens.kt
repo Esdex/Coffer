@@ -16,6 +16,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -25,8 +26,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.esdex.coffer.core.crypto.bip39.Bip39
 import me.esdex.coffer.core.ui.components.CofferScaffold
 import me.esdex.coffer.core.ui.components.FieldError
 import me.esdex.coffer.core.ui.components.OperationLoading
@@ -59,7 +62,11 @@ fun ChangePasswordPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewMo
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val wrong by viewModel.wrongPassword.collectAsStateWithLifecycle()
     val changed by viewModel.passwordChanged.collectAsStateWithLifecycle()
+    val settings by viewModel.state.collectAsStateWithLifecycle()
     var current by remember { mutableStateOf("") }
+    // A forgotten password: the 24 words stand in for it (audit 2, N1).
+    var useRecoveryKey by remember { mutableStateOf(false) }
+    var words by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var repeated by remember { mutableStateOf("") }
     val check = remember(password) { PasswordPolicy.check(password) }
@@ -81,19 +88,64 @@ fun ChangePasswordPage(onBack: () -> Unit, modifier: Modifier = Modifier, viewMo
     }
     SecretPage(stringResource(R.string.settings_password), onBack = leave, modifier = modifier) {
         Text(stringResource(R.string.settings_password_explanation), style = MaterialTheme.typography.bodyMedium)
-        PasswordField(current, stringResource(R.string.settings_password_current), { current = it }, isError = wrong)
-        FieldError(wrong, stringResource(R.string.settings_password_wrong))
+        val keyComplete = if (useRecoveryKey) {
+            // The 24 words typed in show in full: the same care as where they are shown.
+            NoScreenshots(keepAfter = settings.blockScreenshots)
+            val complete = RecoveryKeyField(words, { words = it }, isError = wrong)
+            FieldError(wrong, stringResource(R.string.settings_password_wrong_key))
+            complete
+        } else {
+            PasswordField(current, stringResource(R.string.settings_password_current), { current = it }, isError = wrong)
+            FieldError(wrong, stringResource(R.string.settings_password_wrong))
+            current.isNotEmpty()
+        }
+        TextButton(
+            onClick = {
+                viewModel.leaveSecrets()
+                useRecoveryKey = !useRecoveryKey
+            },
+        ) {
+            Text(stringResource(if (useRecoveryKey) R.string.settings_password_use_current else R.string.settings_password_use_recovery_key))
+        }
         PasswordField(password, stringResource(R.string.settings_password_new), { password = it })
         if (password.isNotEmpty()) StrengthMeter(check)
         val mismatch = repeated.isNotEmpty() && repeated != password
         PasswordField(repeated, stringResource(R.string.settings_password_repeat), { repeated = it }, isError = mismatch)
         FieldError(mismatch, stringResource(R.string.settings_password_mismatch))
         Button(
-            onClick = { viewModel.changePassword(current, password) },
-            enabled = current.isNotEmpty() && check.acceptable && repeated == password,
+            onClick = {
+                if (useRecoveryKey) viewModel.changePasswordWithRecoveryKey(words, password) else viewModel.changePassword(current, password)
+            },
+            enabled = keyComplete && check.acceptable && repeated == password,
             modifier = Modifier.fillMaxWidth(),
         ) { Text(stringResource(R.string.settings_password_change)) }
     }
+}
+
+/** The 24 words, typed in; true once they are 24 words of the list. */
+@Composable
+private fun RecoveryKeyField(text: String, onChange: (String) -> Unit, isError: Boolean): Boolean {
+    val words = Bip39.split(text)
+    val unknown = words.filterNot(Bip39::isWord)
+    OutlinedTextField(
+        value = text,
+        onValueChange = onChange,
+        label = { Text(stringResource(R.string.settings_password_recovery_key)) },
+        supportingText = {
+            Text(
+                if (unknown.isEmpty()) {
+                    stringResource(R.string.settings_recovery_word_count, words.size, Bip39.WORD_COUNT)
+                } else {
+                    stringResource(R.string.settings_recovery_unknown_words, unknown.joinToString(", "))
+                },
+            )
+        },
+        isError = unknown.isNotEmpty() || isError,
+        minLines = 4,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, capitalization = KeyboardCapitalization.None),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    return words.size == Bip39.WORD_COUNT && unknown.isEmpty()
 }
 
 @Composable

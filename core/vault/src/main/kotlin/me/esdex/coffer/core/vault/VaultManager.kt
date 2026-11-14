@@ -9,8 +9,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.esdex.coffer.core.crypto.Bytes
+import me.esdex.coffer.core.crypto.MasterKeys
 import me.esdex.coffer.core.crypto.SecretKey
 import me.esdex.coffer.core.crypto.bip39.Bip39
+import me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException
 import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
 import me.esdex.coffer.core.crypto.sodium.Sodium
 import me.esdex.coffer.core.storage.MessageId
@@ -349,6 +351,22 @@ class VaultManager(
         return vault.use { it.masterId == open.masterId }
     }
 
+    /**
+     * True if [words] are the recovery key of the vault open now: what stands in for the password when
+     * it is forgotten, to set a new one (audit 2, N1).
+     */
+    suspend fun checkRecoveryKey(words: List<String>): Boolean {
+        val open = (stateFlow.value as? State.Unlocked)?.vault ?: return false
+        return withContext(work) {
+            val master = try {
+                Bip39.toMasterKey(words)
+            } catch (_: InvalidMnemonicException) {
+                return@withContext false
+            }
+            master.use { MasterKeys.masterId(sodium, it) == open.masterId }
+        }
+    }
+
     /** The recovery key of the open vault (SPEC §3.7), or null while locked. */
     fun recoveryWords(): List<String>? = (stateFlow.value as? State.Unlocked)?.vault?.withMasterKey(Bip39::toMnemonic)
 
@@ -363,8 +381,18 @@ class VaultManager(
      * vault is deleted. Interrupted after the send, both passwords keep working: unlocking tries every
      * header with the same master_id. Other devices see the header change and lock (see [headersChanged]).
      */
-    suspend fun changePassword(storage: StorageBackend, current: CharSequence, newPassword: CharSequence): PasswordChange {
-        if (!checkPassword(current)) {
+    suspend fun changePassword(storage: StorageBackend, current: CharSequence, newPassword: CharSequence): PasswordChange =
+        replaceHeader(storage, newPassword) { checkPassword(current) }
+
+    /**
+     * As [changePassword], with the recovery key in place of the forgotten password. Every other header of
+     * the vault goes, so a forged one that only the recovery key got past is gone too (audit 2, N1).
+     */
+    suspend fun changePasswordWithRecoveryKey(storage: StorageBackend, words: List<String>, newPassword: CharSequence): PasswordChange =
+        replaceHeader(storage, newPassword) { checkRecoveryKey(words) }
+
+    private suspend fun replaceHeader(storage: StorageBackend, newPassword: CharSequence, authorised: suspend () -> Boolean): PasswordChange {
+        if (!authorised()) {
             return if (stateFlow.value is State.Unlocked) PasswordChange.WrongPassword else PasswordChange.Locked
         }
         val open = (stateFlow.value as? State.Unlocked)?.vault ?: return PasswordChange.Locked
