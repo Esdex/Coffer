@@ -3,55 +3,56 @@ package me.esdex.coffer
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.widget.Toast
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.layout.Box
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.core.content.IntentCompat
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.content.IntentCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import kotlinx.coroutines.launch
 import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+import kotlinx.coroutines.launch
 import me.esdex.coffer.core.ui.components.LocalLockFlight
 import me.esdex.coffer.core.ui.components.LockFlight
 import me.esdex.coffer.core.ui.components.LockFlightOverlay
+import me.esdex.coffer.core.ui.components.NoKeyboardLearning
+import me.esdex.coffer.core.ui.theme.CofferTheme
 import me.esdex.coffer.core.ui.theme.Motion
-import me.esdex.coffer.feature.onboarding.LoginScreen
-import me.esdex.coffer.feature.onboarding.WelcomeGate
-import me.esdex.coffer.feature.onboarding.vault.VaultGate
 import me.esdex.coffer.debug.DebugTools
 import me.esdex.coffer.feature.browser.BrowserScreen
 import me.esdex.coffer.feature.browser.BrowserViewModel
-import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import me.esdex.coffer.feature.browser.R as BrowserR
 import me.esdex.coffer.feature.browser.ShareScreen
 import me.esdex.coffer.feature.browser.viewer.audio.AudioPlayback
-import javax.inject.Inject
+import me.esdex.coffer.feature.onboarding.LoginScreen
+import me.esdex.coffer.feature.onboarding.WelcomeGate
+import me.esdex.coffer.feature.onboarding.vault.VaultGate
 import me.esdex.coffer.feature.settings.SettingsScreen
-import me.esdex.coffer.core.ui.theme.CofferTheme
 
 // A FragmentActivity, because BiometricPrompt needs one.
 @AndroidEntryPoint
@@ -80,6 +81,8 @@ class MainActivity : FragmentActivity() {
             CofferTheme(appearance) {
               // The padlock that flies to the unlock screen when the user locks, drawn over everything.
               val lockFlight = remember { LockFlight() }
+              // Every field in the app asks the keyboard not to learn what is typed (audit 1, L6).
+              NoKeyboardLearning {
               CompositionLocalProvider(LocalLockFlight provides lockFlight) {
                Box(Modifier.fillMaxSize()) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -99,6 +102,7 @@ class MainActivity : FragmentActivity() {
                 }
                 LockFlightOverlay(lockFlight)
                }
+              }
               }
             }
         }

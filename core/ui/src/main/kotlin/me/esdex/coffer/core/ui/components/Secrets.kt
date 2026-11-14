@@ -73,7 +73,8 @@ fun PasswordField(value: String, label: String, onChange: (String) -> Unit, modi
         singleLine = true,
         isError = isError,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = if (visible) KeyboardType.Text else KeyboardType.Password, autoCorrectEnabled = false),
+        // A password keyboard even while it shows: switching to a text one let it learn the password (audit 1, L6).
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
         trailingIcon = {
             IconButton(onClick = { visible = !visible }) {
                 Icon(
