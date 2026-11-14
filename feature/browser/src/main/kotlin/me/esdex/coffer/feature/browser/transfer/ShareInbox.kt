@@ -49,9 +49,16 @@ class ShareInbox @Inject constructor(@ApplicationContext private val context: Co
     /** Copies [uris] right away; anything received before and not added yet is discarded. */
     // usableSpace on purpose, as for uploads: refusing early beats running out halfway through a copy.
     @SuppressLint("UsableSpace")
-    fun receive(uris: List<Uri>, typeHint: String?) {
+    fun receive(received: List<Uri>, typeHint: String?) {
         discard()
-        if (uris.isEmpty()) return
+        if (received.isEmpty()) return
+        // Only what another app hands over: a file:// path, or Coffer's own provider, would have Coffer read
+        // its own private files on another app's behalf (audit 1, M10).
+        val uris = received.filter { accepts(it.scheme, it.authority, context.packageName) }
+        if (uris.isEmpty()) {
+            stateFlow.value = State.Failed(Reason.UNREADABLE)
+            return
+        }
         stateFlow.value = State.Copying(0, null)
         job = scope.launch {
             val items = mutableListOf<Item>()
@@ -71,11 +78,7 @@ class ShareInbox @Inject constructor(@ApplicationContext private val context: Co
                     val input = context.contentResolver.openInputStream(uri) ?: throw IOException("cannot open")
                     input.use { from ->
                         file.outputStream().use { to ->
-                            val buffer = ByteArray(1 shl 16)
-                            while (true) {
-                                val n = from.read(buffer)
-                                if (n < 0) break
-                                to.write(buffer, 0, n)
+                            copyWhileThereIsRoom(from, to, freeSpace = { dir.usableSpace }) { n ->
                                 done += n
                                 stateFlow.value = State.Copying(done, total)
                             }
@@ -121,9 +124,39 @@ class ShareInbox @Inject constructor(@ApplicationContext private val context: Co
         null
     }
 
-    private fun Exception.isNoSpace() = this is IOException && message?.contains("ENOSPC") == true
+    private fun Exception.isNoSpace() = this is NoRoomException || (this is IOException && message?.contains("ENOSPC") == true)
+
+    /** The phone ran short of room while copying: a stream that says nothing of its size can be endless. */
+    internal class NoRoomException : IOException("not enough room left to copy into")
 
     companion object {
+        /** Only content:// from another app, never a path or Coffer's own provider (audit 1, M10). */
+        internal fun accepts(scheme: String?, authority: String?, ownPackage: String): Boolean =
+            scheme == "content" && authority != null && !authority.startsWith("$ownPackage.") && authority != ownPackage
+
+        /**
+         * Copies [from] into [to], stopping with [NoRoomException] as soon as [freeSpace] falls under the
+         * margin: another app's stream may give no size and never end, and must not fill the phone (audit 1,
+         * M10). Checked every few megabytes.
+         */
+        internal fun copyWhileThereIsRoom(from: java.io.InputStream, to: java.io.OutputStream, freeSpace: () -> Long, onCopied: (Int) -> Unit) {
+            val buffer = ByteArray(1 shl 16)
+            var sinceCheck = 0L
+            while (true) {
+                val n = from.read(buffer)
+                if (n < 0) break
+                sinceCheck += n
+                if (sinceCheck >= CHECK_EVERY) {
+                    sinceCheck = 0
+                    if (freeSpace() < SPACE_MARGIN) throw NoRoomException()
+                }
+                to.write(buffer, 0, n)
+                onCopied(n)
+            }
+        }
+
+        private const val CHECK_EVERY = 8L * 1024 * 1024
+
         // Room for the encrypted part the upload writes next to the copy, and for TDLib (SPEC §6, step 4).
         private const val SPACE_MARGIN = 64L * 1024 * 1024
 

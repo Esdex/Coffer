@@ -677,12 +677,15 @@ class VaultContent @Inject constructor(
         (vault.state.value as? VaultManager.State.Unlocked)?.let { open(keysOf(it.vault)) }
     }
 
-    /** Signing out (SPEC §9): stop everything and forget the index. */
+    /** Signing out or the vault deleted (SPEC §9, §5.9): stop everything and forget the index. */
     suspend fun forget() {
         close()
         WorkManager.getInstance(context).cancelAllWorkByTag(TransferWorker.TAG)
         registry.clear()
         index.clear()
+        // Files shared in and not uploaded are plain copies; none of them is to outlive the vault (audit 1, M10).
+        inbox.discard()
+        ShareInbox.dir(context).deleteRecursively()
     }
 }
 
