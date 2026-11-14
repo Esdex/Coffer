@@ -12,12 +12,16 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.IOException
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
@@ -29,9 +33,6 @@ import me.esdex.coffer.core.ui.theme.PlayerStore
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import me.esdex.coffer.feature.browser.viewer.ReaderDataSource
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
-import java.io.IOException
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * The music: one player for the app, its queue, and the keys of that queue's files (pre-release item 5).
@@ -89,6 +90,31 @@ class AudioPlayback @Inject constructor(
         // Logged out, or signed into another account: the queue belongs to a vault that is gone.
         scope.launch { telegram.state.collect { if (it == AuthState.LoggingOut || it == AuthState.Closed) stop() } }
         stopWhenIdleLocked(scope, content.keys.map { it == null }, playingFlow, IDLE_STOP_MILLIS) { stop() }
+        // Locked with music queued: the track playing may finish, nothing after it (Esdex, audit 1, M12).
+        scope.launch { content.keys.map { it == null }.distinctUntilChanged().collect { locked -> if (locked) keepOnlyTheCurrentTrack() } }
+    }
+
+    /**
+     * The vault locked while music was queued. The lock screen's and the headset's controls reach the
+     * player past the lock, so with the queue left whole anyone holding the locked phone could play the
+     * vault's other tracks (audit 1, M12). The track playing stays, to finish; the others leave the
+     * player, and their keys are wiped. Repeat and shuffle go, so it ends where it ends.
+     */
+    @MainThread
+    private fun keepOnlyTheCurrentTrack() {
+        val player = exo ?: return
+        if (player.mediaItemCount == 0) return
+        val current = player.currentMediaItemIndex
+        player.repeatMode = Player.REPEAT_MODE_OFF
+        player.shuffleModeEnabled = false
+        if (current + 1 < player.mediaItemCount) player.removeMediaItems(current + 1, player.mediaItemCount)
+        if (current > 0) player.removeMediaItems(0, current)
+        // The track left keeps its place in [held], which its address points at.
+        synchronized(readers) {
+            for (index in readers.keys - current) readers.remove(index)?.close()
+            held.forEachIndexed { index, file -> if (index != current) file.close() }
+        }
+        queueFlow.value = queueFlow.value.getOrNull(current)?.let(::listOf).orEmpty()
     }
 
     @OptIn(UnstableApi::class)
@@ -103,6 +129,11 @@ class AudioPlayback @Inject constructor(
             player.addListener(object : Player.Listener {
                 override fun onEvents(player: Player, events: Player.Events) {
                     playingFlow.value = player.playWhenReady && player.playbackState != Player.STATE_ENDED && player.playbackState != Player.STATE_IDLE
+                    // The last track played out with the vault locked: nothing more to play until it opens.
+                    if (player.playbackState == Player.STATE_ENDED && content.keys.value == null) {
+                        scope.launch { stop() }
+                        return
+                    }
                     if (events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) || events.contains(Player.EVENT_TIMELINE_CHANGED)) {
                         closeOthers(player)
                         followWaveform(player)

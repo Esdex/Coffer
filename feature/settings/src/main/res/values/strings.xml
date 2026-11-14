@@ -26,7 +26,7 @@
     <string name="settings_player_loop">Repeat</string>
     <string name="settings_player_music">Music</string>
     <string name="settings_player_background">Play in the background</string>
-    <string name="settings_player_background_info">Music goes on when you leave Coffer or the screen turns off, with its controls in a notification. It goes on after the vault locks too, until you stop it: the tracks queued keep their own keys, which are wiped when the music stops, or ten minutes after it pauses with the vault locked.</string>
+    <string name="settings_player_background_info">Music goes on when you leave Coffer or the screen turns off, with its controls in a notification. When the vault locks, the track playing finishes with a key of its own, wiped when the music stops or ten minutes after it pauses; the rest of the queue waits for the vault to open.</string>
     <string name="settings_player_show_playing">Show what is playing outside Coffer</string>
     <string name="settings_player_show_playing_info">Off, the notification, the lock screen and headset displays say only Coffer. On, they show the title, artist and cover from the file\'s tags.</string>
     <string name="settings_player_waveform">Waveform</string>
