@@ -65,19 +65,22 @@ class AudioService : MediaSessionService() {
     }
 
     /**
-     * Who may connect as a Media3 controller. [onGetSession] guards the service, but a platform controller,
-     * such as an app with notification access holds, can turn its session token into a Media3 controller,
-     * and that comes in here: through the default, it would get the player's real tags with each change
-     * and could drive the queue (audit 1, M13). Coffer itself and the system connect as before; other
-     * platform controllers stay on the platform session, which shows only "Coffer" unless asked for.
+     * Who may connect as a Media3 controller, and what it may see. [onGetSession] guards the service, but a
+     * platform controller, such as an app with notification access holds, can turn its session token into
+     * a Media3 controller, and that comes in here: through the default, it would get the player's real tags
+     * with each change and could drive the queue (audit 1, M13). It cannot be told from a real platform
+     * controller, as it names its own version (audit 2, N3), so whatever is not Coffer itself gets the
+     * player's controls and nothing about what plays: the platform session, which the lock screen and
+     * notification listeners read, shows only "Coffer" unless asked for.
      */
     private class Gatekeeper(private val ownPackage: String) : MediaSession.Callback {
-        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult =
-            if (mayConnect(controller.packageName, controller.uid, controller.controllerVersion, ownPackage)) {
-                super.onConnect(session, controller)
-            } else {
-                MediaSession.ConnectionResult.reject()
-            }
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult = when {
+            !mayConnect(controller.packageName, controller.uid, controller.controllerVersion, ownPackage) -> MediaSession.ConnectionResult.reject()
+            controller.packageName == ownPackage -> super.onConnect(session, controller)
+            else -> MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailablePlayerCommands(controlsOnly(MediaSession.ConnectionResult.DEFAULT_PLAYER_COMMANDS))
+                .build()
+        }
     }
 
     /**
@@ -98,6 +101,20 @@ class AudioService : MediaSessionService() {
          */
         internal fun mayConnect(packageName: String, uid: Int, controllerVersion: Int, ownPackage: String): Boolean =
             packageName == ownPackage || uid == SYSTEM_UID || controllerVersion == MediaSession.ControllerInfo.LEGACY_CONTROLLER_VERSION
+
+        /**
+         * [commands] without those that read what plays: its tags, the track and its length, the queue
+         * and the tracks inside the file. Media3 sends each controller only what its commands allow.
+         */
+        internal fun controlsOnly(commands: Player.Commands): Player.Commands =
+            commands.buildUpon().removeAll(*WHAT_PLAYS).build()
+
+        internal val WHAT_PLAYS = intArrayOf(
+            Player.COMMAND_GET_METADATA,
+            Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
+            Player.COMMAND_GET_TIMELINE,
+            Player.COMMAND_GET_TRACKS,
+        )
 
         private const val SYSTEM_UID = Process.SYSTEM_UID
     }
