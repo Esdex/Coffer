@@ -384,7 +384,11 @@ private fun CreateFlow(viewModel: VaultViewModel, busy: Boolean, errorText: Stri
                     NoScreenshots(keepAfter = viewModel.blockScreenshots)
                     ShowRecoveryKey(s.words, viewModel::recoveryKeyWrittenDown)
                 }
-                is CreateStep.Confirm -> ConfirmWords(s.quiz, viewModel, errorText)
+                is CreateStep.Confirm -> {
+                    // Three of the words typed in: kept off screenshots as where all 24 show (audit 1, AND-4).
+                    NoScreenshots(keepAfter = viewModel.blockScreenshots)
+                    ConfirmWords(s.quiz, viewModel, errorText)
+                }
                 CreateStep.DeviceUnlock -> NewVaultDeviceUnlock(viewModel, errorText)
                 CreateStep.RestoreWords -> {
                     NoScreenshots(keepAfter = viewModel.blockScreenshots)
