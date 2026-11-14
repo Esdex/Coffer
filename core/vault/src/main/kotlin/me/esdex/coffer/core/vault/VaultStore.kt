@@ -39,6 +39,15 @@ class VaultStore(private val dir: File) {
         write(headersFile, headers.joinToString("") { "${it.messageId.value} ${VaultHeaderCodec.encode(it.header)}\n" })
     }
 
+    /**
+     * The header the password opened last time, tried first next time, so newer headers someone else
+     * posted, even with the vault's master_id, do not slow down every unlock (audit 1, M3).
+     */
+    var openedHeader: MessageId?
+        @Synchronized get() = prefs().getProperty(OPENED_HEADER)?.toLongOrNull()?.let(::MessageId)
+
+        @Synchronized set(value) = updatePrefs { if (value == null) it.remove(OPENED_HEADER) else it.setProperty(OPENED_HEADER, value.value.toString()) }
+
     /** Auto-lock after this long in the background; null = off. SPEC §9: on, 5 minutes by default. */
     var autoLockMinutes: Int?
         @Synchronized get() {
@@ -111,6 +120,7 @@ class VaultStore(private val dir: File) {
     }
 
     private companion object {
+        const val OPENED_HEADER = "openedHeader"
         const val AUTO_LOCK = "autoLockMinutes"
         const val BIOMETRIC_OFFERED = "biometricOffered"
         const val SAVED_MESSAGES_NOTICE = "savedMessagesNotice"

@@ -15,6 +15,7 @@ import me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException
 import me.esdex.coffer.core.crypto.format.VaultHeader
 import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
 import me.esdex.coffer.core.crypto.sodium.LazySodiumAdapter
+import me.esdex.coffer.core.crypto.sodium.Sodium
 import me.esdex.coffer.core.storage.FakeCloud
 import me.esdex.coffer.core.storage.MessageContent
 import me.esdex.coffer.core.storage.MessageId
@@ -51,6 +52,16 @@ private fun rewrapped(vault: NewVault, password: String): VaultHeader {
 }
 
 private suspend fun StorageBackend.sendHeader(header: VaultHeader) = sendText(VaultHeaderCodec.encode(header))
+
+/** Counts Argon2 runs: each is the cost an unlock pays. */
+private class CountingSodium(private val inner: Sodium) : Sodium by inner {
+    var argonRuns = 0
+
+    override fun argon2id(outSize: Int, password: ByteArray, salt: ByteArray, opsLimit: Long, memLimitBytes: Long): ByteArray {
+        argonRuns++
+        return inner.argon2id(outSize, password, salt, opsLimit, memLimitBytes)
+    }
+}
 
 class VaultKeysTest {
 
@@ -124,6 +135,61 @@ class VaultKeysTest {
         val headers = VaultHeaders.find(storage)
         assertEquals(older.vault.masterId, VaultUnlock.withPassword(sodium, headers, "older vault password")?.masterId)
         assertEquals(newer.vault.masterId, VaultUnlock.withPassword(sodium, headers, "newer vault password")?.masterId)
+    }
+
+    @Test
+    fun aHeaderAskingForMoreWorkThanCofferWritesIsNotTried() = runTest {
+        // Audit 1, M3: the format allows 16 passes over 1 GiB, about 32 times the default.
+        assertTrue(VaultUnlock.affordable(Argon2Params.DEFAULT))
+        assertTrue(VaultUnlock.affordable(Argon2Params(16, 128L * 1024 * 1024)))
+        assertTrue(VaultUnlock.affordable(Argon2Params(8, 256L * 1024 * 1024)))
+        assertFalse(VaultUnlock.affordable(Argon2Params(16, 256L * 1024 * 1024)))
+        assertFalse(VaultUnlock.affordable(Argon2Params(1, 512L * 1024 * 1024)))
+        assertFalse(VaultUnlock.affordable(Argon2Params(16, 1024L * 1024 * 1024)))
+
+        val storage = FakeCloud().device()
+        val real = newVault("the right password")
+        storage.sendHeader(real.header)
+        storage.sendHeader(real.header.copy(argon = Argon2Params(16, 1024L * 1024 * 1024), createdAt = 9))
+        val counting = CountingSodium(sodium)
+        assertNotNull(VaultUnlock.withPassword(counting, VaultHeaders.find(storage), "the right password"))
+        assertEquals(1, counting.argonRuns)
+    }
+
+    @Test
+    fun theHeaderThatOpenedLastTimeIsTriedFirst() = runTest {
+        // Audit 1, M3: newer forged headers with the vault's own master_id, each an Argon2 run.
+        val storage = FakeCloud().device()
+        val real = newVault("the right password")
+        val realId = storage.sendHeader(real.header).id
+        repeat(5) { storage.sendHeader(real.header.copy(salt = PasswordKdf.newSalt(sodium), createdAt = 10L + it)) }
+        val headers = VaultHeaders.find(storage)
+
+        val first = CountingSodium(sodium)
+        val opened = VaultUnlock.withPasswordFrom(first, headers, "the right password")!!
+        assertEquals(realId, opened.second)
+        assertEquals(6, first.argonRuns)
+
+        val again = CountingSodium(sodium)
+        assertNotNull(VaultUnlock.withPasswordFrom(again, headers, "the right password", preferred = realId))
+        assertEquals(1, again.argonRuns)
+    }
+
+    @Test
+    fun aHeaderThatFailsToWorkOutOpensNothingAndTheNextIsTried() = runTest {
+        val storage = FakeCloud().device()
+        val real = newVault("the right password")
+        storage.sendHeader(real.header)
+        val broken = real.header.copy(salt = PasswordKdf.newSalt(sodium), createdAt = 9)
+        storage.sendHeader(broken)
+        // As lazysodium fails when the phone cannot give the memory.
+        val failing = object : Sodium by sodium {
+            override fun argon2id(outSize: Int, password: ByteArray, salt: ByteArray, opsLimit: Long, memLimitBytes: Long): ByteArray {
+                check(!salt.contentEquals(broken.salt.toByteArray())) { "argon2id failed" }
+                return sodium.argon2id(outSize, password, salt, opsLimit, memLimitBytes)
+            }
+        }
+        assertNotNull(VaultUnlock.withPassword(failing, VaultHeaders.find(storage), "the right password"))
     }
 
     @Test
@@ -337,6 +403,30 @@ class VaultManagerTest {
         fresh.locate(freshStorage)
         assertTrue(fresh.unlockWithPassword("the password of the real vault", freshStorage))
         assertEquals(knownId, (fresh.state.value as VaultManager.State.Unlocked).vault.masterId)
+    }
+
+    @Test
+    fun forgedHeadersWithTheVaultsMasterIdCostOneUnlockOnly() = runTest {
+        // Audit 1, M3: after one unlock, the header that opened is tried first.
+        val cloud = FakeCloud()
+        val storage = cloud.device()
+        val owner = manager()
+        owner.locate(storage)
+        owner.publish(storage, owner.prepareNew("the password of the real vault"))
+        owner.lockVault()
+        val header = storage.pinnedMessages().single().let { FoundHeader.from(it)!!.header }
+        // Pinned too, as anyone in the account can, so the device does see them.
+        repeat(3) { storage.pin(storage.sendHeader(header.copy(salt = PasswordKdf.newSalt(sodium), createdAt = 100L + it)).id) }
+
+        val counting = CountingSodium(sodium)
+        val device = VaultManager(counting, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        val deviceStorage = cloud.device()
+        device.locate(deviceStorage)
+        assertTrue(device.unlockWithPassword("the password of the real vault", deviceStorage))
+        device.lockVault()
+        val before = counting.argonRuns
+        assertTrue(device.unlockWithPassword("the password of the real vault", deviceStorage))
+        assertEquals(1, counting.argonRuns - before)
     }
 
     @Test

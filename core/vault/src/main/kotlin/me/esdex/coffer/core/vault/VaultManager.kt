@@ -243,9 +243,11 @@ class VaultManager(
     private suspend fun tryPassword(password: CharSequence): Boolean {
         val candidates = lock.withLock { headers }
         val started = System.nanoTime()
-        val vault = withContext(work) { VaultUnlock.withPassword(sodium, candidates, password) }
+        val opened = withContext(work) { VaultUnlock.withPasswordFrom(sodium, candidates, password, store.openedHeader) }
         lastKdfMillis = (System.nanoTime() - started) / 1_000_000
-        return vault != null && open(vault)
+        if (opened == null || !open(opened.first)) return false
+        store.openedHeader = opened.second
+        return true
     }
 
     /**
@@ -311,7 +313,7 @@ class VaultManager(
     suspend fun checkPassword(password: CharSequence): Boolean {
         val open = (stateFlow.value as? State.Unlocked)?.vault ?: return false
         val candidates = lock.withLock { headers }
-        val vault = withContext(work) { VaultUnlock.withPassword(sodium, candidates, password) } ?: return false
+        val vault = withContext(work) { VaultUnlock.withPasswordFrom(sodium, candidates, password, store.openedHeader)?.first } ?: return false
         return vault.use { it.masterId == open.masterId }
     }
 

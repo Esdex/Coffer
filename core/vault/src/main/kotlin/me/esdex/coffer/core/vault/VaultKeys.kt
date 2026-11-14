@@ -70,15 +70,47 @@ object VaultUnlock {
      * of another vault, which anyone in the Telegram account can post, must not hide the user's own
      * (audit 1, M2). Null if the password opens none of them.
      */
-    fun withPassword(sodium: Sodium, headers: List<FoundHeader>, password: CharSequence): UnlockedVault? {
-        val candidates = headers
+    fun withPassword(sodium: Sodium, headers: List<FoundHeader>, password: CharSequence): UnlockedVault? =
+        withPasswordFrom(sodium, headers, password)?.first
+
+    /**
+     * As [withPassword], also telling which header opened. [preferred], the header that opened last time,
+     * is tried first, so newer headers anyone in the Telegram account can post, even with the vault's
+     * master_id, cost nothing when the right password is typed (audit 1, M3).
+     */
+    fun withPasswordFrom(
+        sodium: Sodium,
+        headers: List<FoundHeader>,
+        password: CharSequence,
+        preferred: MessageId? = null,
+    ): Pair<UnlockedVault, MessageId>? {
+        val candidates = (headers.filter { it.messageId == preferred } + headers.filter { it.messageId != preferred })
             // The same salt, cost and wrapping twice would cost a second Argon2 run for nothing.
             .distinctBy { Triple(it.header.salt, it.header.argon, it.header.wrappedMaster) }
+            .filter { affordable(it.header.argon) }
         for (candidate in candidates) {
-            open(sodium, candidate.header, password)?.let { return it }
+            // A header that cannot be worked out, for example memory the phone cannot give, opens nothing.
+            val opened = try {
+                open(sodium, candidate.header, password)
+            } catch (_: IllegalStateException) {
+                null
+            }
+            if (opened != null) return opened to candidate.messageId
         }
         return null
     }
+
+    /**
+     * Whether a header's Argon2 cost is one this version would ever have written: up to four times the
+     * default's work, and no more memory than a phone can be expected to give. The format allows up to
+     * 16 passes over 1 GiB, about 32 times the default; a forged header asking that much would make every
+     * unlock take a minute, or fail for lack of memory (audit 1, M3). Such a header is not tried.
+     */
+    internal fun affordable(params: Argon2Params): Boolean =
+        params.memLimitBytes <= MAX_MEMORY && params.opsLimit * params.memLimitBytes <= MAX_WORK
+
+    private const val MAX_MEMORY = 256L * 1024 * 1024
+    private val MAX_WORK = 4 * Argon2Params.DEFAULT.opsLimit * Argon2Params.DEFAULT.memLimitBytes
 
     private fun open(sodium: Sodium, header: VaultHeader, password: CharSequence): UnlockedVault? {
         val master = PasswordKdf.deriveKek(sodium, password, header.salt, header.argon).use { kek ->
