@@ -366,6 +366,26 @@ class VaultManagerTest {
     }
 
     @Test
+    fun theHeadersAreKeptSealedOnThePhone() = runTest {
+        // Audit 1, L9: from a copy of the storage they would feed offline password guessing.
+        val sealer = object : me.esdex.coffer.core.storage.DeviceSealer {
+            override fun seal(plain: ByteArray, purpose: String) = plain.map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
+            override fun open(sealed: ByteArray, purpose: String) = seal(sealed, purpose)
+        }
+        val dir = temp.newFolder()
+        val storage = FakeCloud().device()
+        val manager = VaultManager(sodium, VaultStore(dir, sealer), { 42 }, EmptyCoroutineContext)
+        manager.locate(storage)
+        manager.publish(storage, manager.prepareNew("the password of the sealed vault"))
+        val file = java.io.File(dir, "headers.txt")
+        assertFalse(file.readBytes().toString(Charsets.ISO_8859_1).contains("coffer:"))
+        // Read back by the next start, which then opens with the password.
+        val again = VaultManager(sodium, VaultStore(dir, sealer), { 42 }, EmptyCoroutineContext)
+        assertTrue(again.state.value is VaultManager.State.Locked)
+        assertTrue(again.unlockWithPassword("the password of the sealed vault"))
+    }
+
+    @Test
     fun aChangeWhosePinFailsLeavesNoHeaderBehind() = runTest {
         // Audit 1, L15.
         val cloud = FakeCloud()

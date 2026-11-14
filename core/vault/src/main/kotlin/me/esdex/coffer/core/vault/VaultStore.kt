@@ -1,21 +1,24 @@
 package me.esdex.coffer.core.vault
 
+import java.io.File
+import java.util.Properties
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import me.esdex.coffer.core.crypto.format.Captions
 import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
+import me.esdex.coffer.core.storage.DeviceSealer
 import me.esdex.coffer.core.storage.MessageId
-import java.io.File
-import java.util.Properties
+import me.esdex.coffer.core.storage.SealedTextFile
 
 /**
  * What this device remembers about its vault between launches: the headers, so the unlock screen
  * comes up without a search and works offline, and a few preferences. Nothing secret: the headers are
  * the same text that sits in Saved Messages.
  */
-class VaultStore(private val dir: File) {
-    private val headersFile get() = File(dir, "headers.txt")
+class VaultStore(private val dir: File, private val sealer: DeviceSealer = DeviceSealer.NONE) {
+    // Sealed: from a copy of the phone's storage, the headers would feed offline password guessing (audit 1, L9).
+    private val headersFile get() = SealedTextFile(File(dir, "headers.txt"), sealer, "headers")
     private val prefsFile get() = File(dir, "vault.properties")
 
     private val version = MutableStateFlow(0)
@@ -25,8 +28,8 @@ class VaultStore(private val dir: File) {
 
     @Synchronized
     fun headers(): List<FoundHeader> {
-        if (!headersFile.exists()) return emptyList()
-        return headersFile.readLines().mapNotNull { line ->
+        val text = headersFile.read() ?: return emptyList()
+        return text.lines().mapNotNull { line ->
             val (id, caption) = line.split(' ', limit = 2).takeIf { it.size == 2 } ?: return@mapNotNull null
             val record = Captions.parse(caption) ?: return@mapNotNull null
             val header = VaultHeaderCodec.decode(record) ?: return@mapNotNull null
@@ -36,7 +39,8 @@ class VaultStore(private val dir: File) {
 
     @Synchronized
     fun saveHeaders(headers: List<FoundHeader>) {
-        write(headersFile, headers.joinToString("") { "${it.messageId.value} ${VaultHeaderCodec.encode(it.header)}\n" })
+        dir.mkdirs()
+        headersFile.write(headers.joinToString("") { "${it.messageId.value} ${VaultHeaderCodec.encode(it.header)}\n" })
     }
 
     /**

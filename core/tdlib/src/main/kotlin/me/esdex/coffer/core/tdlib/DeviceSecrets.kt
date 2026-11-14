@@ -14,6 +14,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import me.esdex.coffer.core.storage.DeviceSealer
 
 /**
  * Device-bound secrets TDLib needs before anyone unlocks the vault: its database key and, in the
@@ -21,7 +22,13 @@ import javax.crypto.spec.GCMParameterSpec
  * **not** require user authentication, so TDLib can start in the background (SPEC §8). The Master
  * Key gets its own Keystore key with authentication (SPEC §3.8), never this one.
  */
-class DeviceSecrets(private val dir: File) {
+class DeviceSecrets(private val dir: File) : DeviceSealer {
+
+    /** Small files Coffer keeps on the phone, sealed under the same Keystore key (audit 1, L9, L14). */
+    override fun seal(plain: ByteArray, purpose: String): ByteArray = wrap(plain, FILE_AD_PREFIX + purpose)
+
+    override fun open(sealed: ByteArray, purpose: String): ByteArray? =
+        if (sealed.size <= IV_BYTES) null else unwrap(sealed, FILE_AD_PREFIX + purpose)
 
     /** The key for TDLib's database, created on first use. Null if a stored one can no longer be unwrapped. */
     @Synchronized
@@ -153,6 +160,7 @@ class DeviceSecrets(private val dir: File) {
         const val DB_KEY_AD = "coffer/device/tdlib-db-key"
         const val INDEX_KEY_FILE = "index-db.key"
         const val INDEX_KEY_AD = "coffer/device/index-db-key"
+        const val FILE_AD_PREFIX = "coffer/device/file/"
         val KEYSTORE_LOCK = Any()
         const val UNWRAP_ATTEMPTS = 4
         const val UNWRAP_PAUSE_MILLIS = 200L
