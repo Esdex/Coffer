@@ -1,5 +1,7 @@
 package me.esdex.coffer.feature.browser.transfer
 
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -8,16 +10,23 @@ import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.Base64Url
 import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.index.IndexedFile
+import me.esdex.coffer.core.storage.DeviceSealer
 import me.esdex.coffer.core.storage.MessageId
-import java.io.File
-import java.util.UUID
+import me.esdex.coffer.core.storage.SealedTextFile
 
 /**
  * Files waiting to be brought onto the phone ("Cache on this phone"), in order. Kept in a file, so the
  * work goes on after a restart, locked or not: it needs no key. File ids only, which Telegram sees anyway
  * and the cache's ledger holds too.
  */
-class PrefetchQueue(private val file: File, private val newId: () -> String = { UUID.randomUUID().toString() }) {
+class PrefetchQueue(
+    file: File,
+    sealer: DeviceSealer = DeviceSealer.NONE,
+    private val newId: () -> String = { UUID.randomUUID().toString() },
+) {
+    // Sealed: which files the user keeps on the phone is not for a copy of its storage to show (audit 1, L14).
+    private val file = SealedTextFile(file, sealer, "cache-queue")
+
     data class Item(val id: String, val fileId: Id)
 
     private val state = MutableStateFlow(read())
@@ -43,17 +52,14 @@ class PrefetchQueue(private val file: File, private val newId: () -> String = { 
     fun clear() = save(emptyList())
 
     private fun save(items: List<Item>) {
-        file.parentFile?.mkdirs()
-        val temp = File(file.path + ".tmp")
-        temp.bufferedWriter().use { out -> for (item in items) out.write("${item.id} ${Base64Url.encode(item.fileId.toByteArray())}\n") }
-        check(temp.renameTo(file)) { "could not store ${file.name}" }
+        file.write(items.joinToString("") { "${it.id} ${Base64Url.encode(it.fileId.toByteArray())}\n" })
         state.value = items
     }
 
     // A line that does not read is dropped: the worst that comes of it is a file not cached.
     private fun read(): List<Item> {
-        if (!file.exists()) return emptyList()
-        return file.readLines().mapNotNull { line ->
+        val text = file.read() ?: return emptyList()
+        return text.lines().mapNotNull { line ->
             val fields = line.split(' ')
             if (fields.size != 2 || fields[0].isEmpty()) return@mapNotNull null
             val fileId = Base64Url.decode(fields[1])?.takeIf { it.size == 16 }?.let(Id::of) ?: return@mapNotNull null

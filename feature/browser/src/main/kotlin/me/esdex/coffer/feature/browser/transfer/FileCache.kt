@@ -2,6 +2,9 @@ package me.esdex.coffer.feature.browser.transfer
 
 import android.content.Context
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
@@ -14,15 +17,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.index.VaultIndex
+import me.esdex.coffer.core.storage.DeviceSealer
 import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.ui.theme.CachePrefs
 import me.esdex.coffer.core.ui.theme.CacheStore
-import java.io.File
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * The file cache for the whole app: the viewers and the player read through [leases], saving a copy
@@ -35,6 +36,7 @@ class FileCache @Inject constructor(
     store: CacheStore,
     private val telegram: Telegram,
     private val index: VaultIndex,
+    sealer: DeviceSealer,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -43,10 +45,10 @@ class FileCache @Inject constructor(
     /** Files open for reading in place; the cache never takes a piece from under one. */
     val leases = ReadLeases(scope)
 
-    val blobs = BlobCache(scope, File(context.noBackupFilesDir, "file-cache"), store.prefs::value, leases::isOpen)
+    val blobs = BlobCache(scope, File(context.noBackupFilesDir, "file-cache"), store.prefs::value, leases::isOpen, sealer = sealer)
 
     /** Files the user asked to have on the phone, waiting or being brought down (see [PrefetchQueue]). */
-    val queue = PrefetchQueue(File(context.noBackupFilesDir, "cache-queue"))
+    val queue = PrefetchQueue(File(context.noBackupFilesDir, "cache-queue"), sealer)
 
     init {
         // Logging out deletes TDLib's files and the next account has other message ids: the lists go too.

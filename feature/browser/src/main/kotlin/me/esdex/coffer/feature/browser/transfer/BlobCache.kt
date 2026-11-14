@@ -1,5 +1,6 @@
 package me.esdex.coffer.feature.browser.transfer
 
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,10 +10,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.Base64Url
+import me.esdex.coffer.core.storage.DeviceSealer
 import me.esdex.coffer.core.storage.MessageId
+import me.esdex.coffer.core.storage.SealedTextFile
 import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.ui.theme.CachePrefs
-import java.io.File
 
 /**
  * The file cache: the encrypted pieces of files already read stay on the phone, so opening them again
@@ -25,11 +27,15 @@ import java.io.File
  */
 class BlobCache(
     private val scope: CoroutineScope,
-    private val ledger: File,
+    ledger: File,
     private val prefs: () -> CachePrefs,
     private val inUse: (Id) -> Boolean,
     private val clock: () -> Long = System::currentTimeMillis,
+    sealer: DeviceSealer = DeviceSealer.NONE,
 ) {
+    // Sealed: what was opened, how big and when, is an access history a copy of the phone should not show (audit 1, L14).
+    private val ledger = SealedTextFile(ledger, sealer, "cache-ledger")
+
     private class Entry(val fileId: Id, val bytes: Long, val used: Long)
 
     private val lock = Mutex()
@@ -132,26 +138,21 @@ class BlobCache(
     // the worst that comes of it is a piece kept until the next clear.
     private fun read(): MutableMap<MessageId, Entry> {
         val all = HashMap<MessageId, Entry>()
-        if (!ledger.exists()) return all
-        ledger.forEachLine { line ->
+        val text = ledger.read() ?: return all
+        text.lineSequence().forEach { line ->
             val fields = line.split(' ')
-            if (fields.size != 4) return@forEachLine
-            val part = fields[0].toLongOrNull() ?: return@forEachLine
-            val fileId = Base64Url.decode(fields[1])?.takeIf { it.size == 16 }?.let(Id::of) ?: return@forEachLine
-            val bytes = fields[2].toLongOrNull() ?: return@forEachLine
-            val used = fields[3].toLongOrNull() ?: return@forEachLine
+            if (fields.size != 4) return@forEach
+            val part = fields[0].toLongOrNull() ?: return@forEach
+            val fileId = Base64Url.decode(fields[1])?.takeIf { it.size == 16 }?.let(Id::of) ?: return@forEach
+            val bytes = fields[2].toLongOrNull() ?: return@forEach
+            val used = fields[3].toLongOrNull() ?: return@forEach
             all[MessageId(part)] = Entry(fileId, bytes, used)
         }
         return all
     }
 
     private fun save(all: Map<MessageId, Entry>) {
-        ledger.parentFile?.mkdirs()
-        val temp = File(ledger.path + ".tmp")
-        temp.bufferedWriter().use { out ->
-            for ((part, e) in all) out.write("${part.value} ${Base64Url.encode(e.fileId.toByteArray())} ${e.bytes} ${e.used}\n")
-        }
-        check(temp.renameTo(ledger)) { "could not store ${ledger.name}" }
+        ledger.write(all.entries.joinToString("") { (part, e) -> "${part.value} ${Base64Url.encode(e.fileId.toByteArray())} ${e.bytes} ${e.used}\n" })
         heldFlow.value = all.mapValues { it.value.bytes }
     }
 }
