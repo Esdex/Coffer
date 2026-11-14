@@ -18,6 +18,10 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import java.io.File
+import java.io.FileNotFoundException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -41,11 +45,8 @@ import me.esdex.coffer.core.sync.SourceChangedException
 import me.esdex.coffer.core.sync.TransferStage
 import me.esdex.coffer.core.sync.UploadRunner
 import me.esdex.coffer.core.tdlib.Telegram
+import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.feature.browser.R
-import java.io.File
-import java.io.FileNotFoundException
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The transfer queue: every upload, download and file being cached, in one foreground job with one
@@ -67,6 +68,7 @@ class TransferWorker @AssistedInject constructor(
     private val index: VaultIndex,
     private val registry: TransferRegistry,
     private val cache: FileCache,
+    private val vault: VaultManager,
 ) : CoroutineWorker(context, params) {
 
     /** A transfer waiting in the queue; [ready] when it has what it needs to run now. */
@@ -262,7 +264,13 @@ class TransferWorker @AssistedInject constructor(
             openFile?.parentFile?.deleteRecursively()
             registry.fail(id, failure)
         } else if (openFile != null && open != null) {
-            registry.readyToOpen(openFile, open.mime)
+            if (vault.state.value is VaultManager.State.Unlocked) {
+                registry.readyToOpen(openFile, open.mime)
+                OpenFilesSweeper.schedule(applicationContext)
+            } else {
+                // Finished after the vault locked, which cleared the copies: this one is not to stay either (audit 1, M11).
+                openFile.parentFile?.deleteRecursively()
+            }
         }
         index.removeDownload(id)
         if (failure == null) registry.remove(download.fileId)
