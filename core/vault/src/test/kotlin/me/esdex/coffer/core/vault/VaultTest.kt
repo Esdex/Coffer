@@ -430,6 +430,40 @@ class VaultManagerTest {
     }
 
     @Test
+    fun theRecoveryKeyBringsBackAVaultWhoseHeaderIsGone() = runTest {
+        // Audit 1, M1: the one header deleted in the Telegram app, every file still there.
+        val cloud = FakeCloud()
+        val storage = cloud.device()
+        val owner = manager()
+        owner.locate(storage)
+        val created = owner.prepareNew("the password of the vault")
+        val words = created.recoveryWords
+        val masterId = created.vault.masterId
+        owner.publish(storage, created)
+        storage.delete(cloud.allMessages().filter { FoundHeader.from(it) != null }.map { it.id })
+
+        val device = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        val deviceStorage = cloud.device()
+        device.locate(deviceStorage)
+        assertEquals(VaultManager.State.NotFound, device.state.value)
+        assertTrue(device.unlockWithRecoveryKey(words, deviceStorage) is VaultUnlock.MnemonicResult.OtherVault)
+
+        // Even with a header of someone else's pinned in the way.
+        deviceStorage.pin(deviceStorage.sendHeader(newVault("someone else's password").header).id)
+        device.publish(deviceStorage, device.prepareRestore(words, "a new password after the loss"), restoring = true)
+        assertEquals(masterId, (device.state.value as VaultManager.State.Unlocked).vault.masterId)
+
+        // The same vault, now opened by the new password and still by the same recovery key, anywhere.
+        val other = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        val otherStorage = cloud.device()
+        other.locate(otherStorage)
+        assertTrue(other.unlockWithPassword("a new password after the loss", otherStorage))
+        assertEquals(masterId, (other.state.value as VaultManager.State.Unlocked).vault.masterId)
+        other.lockVault()
+        assertTrue(other.unlockWithRecoveryKey(words, otherStorage) is VaultUnlock.MnemonicResult.Unlocked)
+    }
+
+    @Test
     fun aForgedHeaderOfAnotherVaultDoesNotStopTheRecoveryKey() = runTest {
         val cloud = FakeCloud()
         val storage = cloud.device()

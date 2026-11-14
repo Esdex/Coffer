@@ -40,6 +40,12 @@ sealed interface CreateStep {
     data class Confirm(val quiz: RecoveryQuiz) : CreateStep
     data object DeviceUnlock : CreateStep
     data object Publishing : CreateStep
+
+    /** Bringing back a vault whose header is gone, with its recovery key (audit 1, M1): the words first. */
+    data object RestoreWords : CreateStep
+
+    /** Then a new password for it. The words stay in the view model, not in the step. */
+    data object RestorePassword : CreateStep
 }
 
 @HiltViewModel
@@ -188,6 +194,55 @@ class VaultViewModel @Inject constructor(
         val created = vault.prepareNew(password)
         pending = created
         createFlow.value = CreateStep.RecoveryKey(created.recoveryWords)
+    }
+
+    // Restoring
+
+    /** The recovery key typed in for a restore, kept only until the vault is back. */
+    private var restoreWords: List<String>? = null
+
+    fun startRestore() {
+        errorFlow.value = null
+        createFlow.value = CreateStep.RestoreWords
+    }
+
+    fun cancelRestore() {
+        restoreWords = null
+        errorFlow.value = null
+        createFlow.value = CreateStep.Password
+    }
+
+    fun restoreWordsEntered(text: String) {
+        val words = Bip39.split(text)
+        try {
+            // Only checked here; the key itself is made with the new password.
+            Bip39.toMasterKey(words).close()
+        } catch (e: InvalidMnemonicException) {
+            errorFlow.value = VaultError.BadRecoveryKey(e.reason)
+            return
+        }
+        restoreWords = words
+        errorFlow.value = null
+        createFlow.value = CreateStep.RestorePassword
+    }
+
+    fun restoreWithPassword(password: String, repeated: String) = perform {
+        val words = restoreWords ?: return@perform
+        if (password != repeated) {
+            errorFlow.value = VaultError.PasswordsDiffer
+            return@perform
+        }
+        createFlow.value = CreateStep.Publishing
+        val restored = vault.prepareRestore(words, password)
+        try {
+            vault.publish(telegram.storage(), restored, restoring = true)
+        } catch (e: StorageException) {
+            createFlow.value = CreateStep.RestorePassword
+            throw e
+        }
+        restoreWords = null
+        createFlow.value = CreateStep.Password
+        offerIfUseful()
     }
 
     fun recoveryKeyWrittenDown() {

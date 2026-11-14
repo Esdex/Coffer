@@ -254,12 +254,37 @@ private fun PasswordUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: 
 }
 
 @Composable
-private fun RecoveryKeyUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: String?, onBack: () -> Unit) {
+private fun RecoveryKeyUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: String?, onBack: () -> Unit) = RecoveryWordsEntry(
+    title = stringResource(R.string.vault_recovery_unlock_title),
+    explanation = stringResource(R.string.vault_recovery_unlock_explanation),
+    action = stringResource(R.string.vault_unlock),
+    busy = busy,
+    errorText = errorText,
+    onSubmit = viewModel::unlockWithRecoveryKey,
+    back = stringResource(R.string.vault_use_password),
+    onBack = {
+        viewModel.dismissError()
+        onBack()
+    },
+)
+
+/** The 24 words typed in, for unlocking and for bringing back a vault whose header is gone. */
+@Composable
+private fun RecoveryWordsEntry(
+    title: String,
+    explanation: String,
+    action: String,
+    busy: Boolean,
+    errorText: String?,
+    onSubmit: (String) -> Unit,
+    back: String,
+    onBack: () -> Unit,
+) {
     var text by remember { mutableStateOf("") }
     val words = Bip39.split(text)
     val unknown = words.filterNot(Bip39::isWord)
-    StepTitle(stringResource(R.string.vault_recovery_unlock_title))
-    StepBody(stringResource(R.string.vault_recovery_unlock_explanation))
+    StepTitle(title)
+    StepBody(explanation)
     OutlinedTextField(
         value = text,
         onValueChange = { text = it },
@@ -279,13 +304,27 @@ private fun RecoveryKeyUnlock(viewModel: VaultViewModel, busy: Boolean, errorTex
         modifier = Modifier.fillMaxWidth(),
     )
     StepError(errorText)
-    WideButton(stringResource(R.string.vault_unlock), words.size == Bip39.WORD_COUNT && unknown.isEmpty(), busy) {
-        viewModel.unlockWithRecoveryKey(text)
+    WideButton(action, words.size == Bip39.WORD_COUNT && unknown.isEmpty(), busy) { onSubmit(text) }
+    SecondaryAction(back, !busy, onBack)
+}
+
+/** A new password for a vault brought back by its recovery key (audit 1, M1). */
+@Composable
+private fun RestorePassword(viewModel: VaultViewModel, busy: Boolean, errorText: String?) {
+    var password by remember { mutableStateOf("") }
+    var repeated by remember { mutableStateOf("") }
+    val check = remember(password) { PasswordPolicy.check(password) }
+    ClosingPadlock(if (password.isEmpty()) 0 else check.score, check.acceptable && password.isNotEmpty())
+    StepTitle(stringResource(R.string.vault_restore_password_title))
+    StepBody(stringResource(R.string.vault_restore_password_explanation))
+    PasswordField(password, stringResource(R.string.vault_password), { password = it })
+    if (password.isNotEmpty()) StrengthMeter(check)
+    PasswordField(repeated, stringResource(R.string.vault_password_repeat), { repeated = it }, isError = errorText != null)
+    StepError(errorText)
+    WideButton(stringResource(R.string.vault_restore_action), check.acceptable && repeated.isNotEmpty(), busy) {
+        viewModel.restoreWithPassword(password, repeated)
     }
-    SecondaryAction(stringResource(R.string.vault_use_password), !busy) {
-        viewModel.dismissError()
-        onBack()
-    }
+    SecondaryAction(stringResource(R.string.vault_restore_back), !busy, viewModel::cancelRestore)
 }
 
 /**
@@ -347,6 +386,20 @@ private fun CreateFlow(viewModel: VaultViewModel, busy: Boolean, errorText: Stri
                 }
                 is CreateStep.Confirm -> ConfirmWords(s.quiz, viewModel, errorText)
                 CreateStep.DeviceUnlock -> NewVaultDeviceUnlock(viewModel, errorText)
+                CreateStep.RestoreWords -> {
+                    NoScreenshots(keepAfter = viewModel.blockScreenshots)
+                    RecoveryWordsEntry(
+                        title = stringResource(R.string.vault_restore_title),
+                        explanation = stringResource(R.string.vault_restore_explanation),
+                        action = stringResource(R.string.vault_create_continue),
+                        busy = busy,
+                        errorText = errorText,
+                        onSubmit = viewModel::restoreWordsEntered,
+                        back = stringResource(R.string.vault_restore_back),
+                        onBack = viewModel::cancelRestore,
+                    )
+                }
+                CreateStep.RestorePassword -> RestorePassword(viewModel, busy, errorText)
                 CreateStep.Publishing -> {
                     StepTitle(stringResource(R.string.vault_publishing_title))
                     Progress()
@@ -381,6 +434,8 @@ private fun NewPassword(viewModel: VaultViewModel, busy: Boolean, errorText: Str
     WideButton(stringResource(R.string.vault_create_continue), check.acceptable && repeated.isNotEmpty(), busy) {
         viewModel.createWithPassword(password, repeated)
     }
+    // A vault whose header was deleted in Telegram, files still there, comes back by its recovery key.
+    SecondaryAction(stringResource(R.string.vault_restore), !busy, viewModel::startRestore)
     // Quietly under the button: making a vault is the way on, another account the way out.
     var confirmLogOut by remember { mutableStateOf(false) }
     SecondaryAction(stringResource(R.string.vault_log_out), !busy) { confirmLogOut = true }

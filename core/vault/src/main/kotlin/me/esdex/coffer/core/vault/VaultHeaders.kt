@@ -45,8 +45,10 @@ object VaultHeaders {
      * Sends [vault]'s header and pins it. Refuses if a header appeared in the meantime, for example
      * created on another device while this one was showing the recovery key.
      */
-    suspend fun publish(storage: StorageBackend, vault: NewVault): FoundHeader {
-        if (storage.pinnedMessages().any { FoundHeader.from(it) != null }) throw VaultExistsException()
+    suspend fun publish(storage: StorageBackend, vault: NewVault, restoring: Boolean = false): FoundHeader {
+        // A restored vault is the user's own, by its recovery key: a header someone else pinned must not
+        // stand in its way (audit 1, M1, M2).
+        if (!restoring && storage.pinnedMessages().any { FoundHeader.from(it) != null }) throw VaultExistsException()
         val sent = storage.sendText(VaultHeaderCodec.encode(vault.header))
         storage.pin(sent.id)
         return FoundHeader(sent.id, vault.header)

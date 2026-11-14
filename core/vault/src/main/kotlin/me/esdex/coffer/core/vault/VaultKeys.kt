@@ -174,6 +174,29 @@ object VaultCreation {
     }
 
     /**
+     * A header for the vault whose recovery key is [words], under a new [password], for a vault whose
+     * header is gone from Saved Messages while its files are still there (audit 1, M1). The master key is
+     * the one the words hold, so everything it encrypted opens again. Throws
+     * [me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException] for words that are not a recovery key.
+     */
+    fun restore(
+        sodium: Sodium,
+        words: List<String>,
+        password: CharSequence,
+        createdAt: Long,
+        params: Argon2Params = Argon2Params.DEFAULT,
+    ): NewVault {
+        val vault = UnlockedVault.open(sodium, Bip39.toMasterKey(words))
+        val header = try {
+            rewrap(sodium, vault, password, createdAt, params)
+        } catch (e: Exception) {
+            vault.close()
+            throw e
+        }
+        return NewVault(vault, header)
+    }
+
+    /**
      * A header for the open [vault] under a new password (SPEC §3.1, §4.1): fresh salt, the same master
      * key and master_id. Files are not touched.
      */

@@ -291,10 +291,18 @@ class VaultManager(
     suspend fun prepareNew(password: CharSequence): NewVault =
         withContext(work) { VaultCreation.prepare(sodium, password, clock()) }
 
+    /**
+     * A header for the vault of the recovery key [words] under [password], when Saved Messages has none
+     * left (audit 1, M1); [publish] with `restoring` sends it. Throws
+     * [me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException] for words that are not a recovery key.
+     */
+    suspend fun prepareRestore(words: List<String>, password: CharSequence): NewVault =
+        withContext(work) { VaultCreation.restore(sodium, words, password, clock()) }
+
     /** Sends and pins the header, then opens the vault. Takes ownership of [vault]. */
-    suspend fun publish(storage: StorageBackend, vault: NewVault) {
+    suspend fun publish(storage: StorageBackend, vault: NewVault, restoring: Boolean = false) {
         val published = try {
-            VaultHeaders.publish(storage, vault)
+            VaultHeaders.publish(storage, vault, restoring)
         } catch (e: Exception) {
             vault.close()
             throw e

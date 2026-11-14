@@ -16,6 +16,14 @@ spaces. Coffer checks each word against the list and tells you which ones it doe
 
 Then set a new password in Settings, Vault, **Change password**.
 
+## If the vault itself was deleted
+
+Coffer keeps the vault's key in one pinned note in Saved Messages. If that note was deleted, for
+example by mistake in the Telegram app, Coffer finds no vault, even though your files are still there.
+On the screen that offers a new vault, tap **Restore a vault with its recovery key**, type the 24 words
+and choose a new password. The vault comes back with all its files, and the recovery key stays the
+same.
+
 ## See the words again
 
 Settings, Vault, **Show recovery key**. Coffer asks for the vault password first. Make sure nobody

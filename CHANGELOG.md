@@ -39,6 +39,7 @@
 - Change the vault password, and show the recovery key again; both ask for the current password first. A password change locks the vault on your other devices, and only the new password opens it there.
 - Delete the vault, in Settings, Vault: after the current password and the word DELETE typed out, every file of the vault and everything Coffer keeps for it goes from Saved Messages, for good and on every device, with its progress shown; your own messages and anything Coffer cannot open stay. Cut short, it can be run again. Afterwards Coffer stays signed in and offers a new vault, and other devices say the vault was deleted there.
 - Log out from the screen that creates a vault, to sign in with another account instead.
+- Restore a vault with its recovery key: if Coffer's pinned note that holds the vault was deleted in Telegram while the files are still there, the 24 words and a new password bring it back, files and all.
 - Settings, About links to the source code on GitHub and to its issues, for reporting a problem.
 - Support the project, first in Settings: GitHub Sponsors, Ko-fi and crypto wallet addresses that copy with a tap, under a gold star that fires confetti. In the GitHub and F-Droid builds only; the Google Play build has no such page.
 - Share to Coffer from any app: one file or several, into a folder you pick; Coffer returns to the app you shared from.
