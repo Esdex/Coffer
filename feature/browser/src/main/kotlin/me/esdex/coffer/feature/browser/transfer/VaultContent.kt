@@ -88,6 +88,17 @@ object OpenFiles {
 
     fun dir(context: Context) = File(context.cacheDir, "open")
 
+    /**
+     * A vault file's name as a name on disk, inside its copy's own folder. The name comes from whatever app
+     * shared the file in, or from a rename, so it may hold "/" or be "..": only its last part stays, with no
+     * control characters, and never "." or ".." (audit 1, L3).
+     */
+    fun safeName(name: String): String {
+        val last = name.substringAfterLast('/').substringAfterLast('\\')
+        val clean = last.filterNot { it.isISOControl() }.trim()
+        return clean.takeUnless { it.isEmpty() || it == "." || it == ".." } ?: "file"
+    }
+
     fun clear(context: Context) {
         dir(context).deleteRecursively()
     }

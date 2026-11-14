@@ -237,7 +237,7 @@ class TransferWorker @AssistedInject constructor(
         if (download.sealedTarget != null && target == null) return false
         val storage = telegram.readyStorage() ?: throw StorageException("Telegram is not ready")
         val open = entry.open
-        val openFile = open?.let { File(File(OpenFiles.dir(applicationContext), id), it.name) }
+        val openFile = open?.let { File(File(OpenFiles.dir(applicationContext), id), OpenFiles.safeName(it.name)) }
         val failure = try {
             val output = if (target != null) {
                 applicationContext.contentResolver.openOutputStream(target, "wt") ?: throw FileNotFoundException()
