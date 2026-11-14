@@ -25,8 +25,16 @@ object Bip39 {
     private val indexOf: Map<String, Int> by lazy { words.withIndex().associate { (i, w) -> w to i } }
 
     fun toMnemonic(master: SecretKey): List<String> = master.withBytes { entropy ->
-        val bits = BitString(entropy + checksumByte(entropy))
-        List(WORD_COUNT) { i -> words[bits.read(i * BITS_PER_WORD, BITS_PER_WORD)] }
+        // The key with its checksum, in an array of its own that is zeroed after: `entropy + checksum` left
+        // a copy of the master key for the garbage collector (audit 1, L11).
+        val packed = entropy.copyOf(ENTROPY_BYTES + 1)
+        try {
+            packed[ENTROPY_BYTES] = checksumByte(entropy)
+            val bits = BitString(packed)
+            List(WORD_COUNT) { i -> words[bits.read(i * BITS_PER_WORD, BITS_PER_WORD)] }
+        } finally {
+            packed.fill(0)
+        }
     }
 
     /** Splits user input into words: any whitespace, any case, NFKD as BIP39 prescribes. */
@@ -57,7 +65,11 @@ object Bip39 {
     }
 
     // 256 bits of entropy take the first 8 bits of SHA-256 as checksum.
-    private fun checksumByte(entropy: ByteArray): Byte = MessageDigest.getInstance("SHA-256").digest(entropy)[0]
+    // The digest is zeroed too: its first byte is the checksum, the rest is derived from the key.
+    private fun checksumByte(entropy: ByteArray): Byte {
+        val digest = MessageDigest.getInstance("SHA-256").digest(entropy)
+        return digest[0].also { digest.fill(0) }
+    }
 
     private fun loadWordlist(): List<String> {
         val bytes = Bip39::class.java.getResourceAsStream("english.txt")?.use { it.readBytes() }
