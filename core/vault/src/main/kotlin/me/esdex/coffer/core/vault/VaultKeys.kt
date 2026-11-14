@@ -65,14 +65,13 @@ class UnlockedVault private constructor(
 object VaultUnlock {
 
     /**
-     * Tries [password] on the headers that share the newest header's master_id, newest first, so a
-     * password change left half done (SPEC §4.1) does not lock the user out. [headers] newest first.
-     * Null if the password opens none of them.
+     * Tries [password] on [headers], newest first, so a password change left half done (SPEC §4.1) does
+     * not lock the user out. Every vault's headers are tried, not only the newest one's: a newer header
+     * of another vault, which anyone in the Telegram account can post, must not hide the user's own
+     * (audit 1, M2). Null if the password opens none of them.
      */
     fun withPassword(sodium: Sodium, headers: List<FoundHeader>, password: CharSequence): UnlockedVault? {
-        val newest = headers.firstOrNull() ?: return null
         val candidates = headers
-            .filter { it.header.masterId == newest.header.masterId }
             // The same salt, cost and wrapping twice would cost a second Argon2 run for nothing.
             .distinctBy { Triple(it.header.salt, it.header.argon, it.header.wrappedMaster) }
         for (candidate in candidates) {

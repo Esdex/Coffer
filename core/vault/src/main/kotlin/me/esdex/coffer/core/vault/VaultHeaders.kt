@@ -1,5 +1,6 @@
 package me.esdex.coffer.core.vault
 
+import me.esdex.coffer.core.crypto.Bytes
 import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
 import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
@@ -9,14 +10,23 @@ object VaultHeaders {
 
     /**
      * Headers newest first. Pinned messages first; a full pass over the history only if none of them is a
-     * header. Pinning is a hint for speed, not part of the format, so an unpinned header still counts.
+     * header, or none is of the [known] vault. Pinning is a hint for speed, not part of the format, so an
+     * unpinned header still counts, and anyone in the Telegram account can pin a header of their own
+     * over it (audit 1, M2).
      *
+     * @param known the master_id of the vault this device knows, if any.
      * @param onScanned messages looked at so far in the full pass, for progress.
      */
-    suspend fun find(storage: StorageBackend, onScanned: (Int) -> Unit = {}): List<FoundHeader> {
+    suspend fun find(storage: StorageBackend, known: Bytes? = null, onScanned: (Int) -> Unit = {}): List<FoundHeader> {
         val pinned = storage.pinnedMessages().mapNotNull(FoundHeader::from)
-        if (pinned.isNotEmpty()) return pinned.sortedByDescending { it.messageId }
+        if (pinned.isNotEmpty() && (known == null || pinned.any { it.header.masterId == known })) {
+            return pinned.sortedByDescending { it.messageId }
+        }
+        return findAll(storage, onScanned)
+    }
 
+    /** Every header in Saved Messages, newest first, by a full pass over the history. */
+    suspend fun findAll(storage: StorageBackend, onScanned: (Int) -> Unit = {}): List<FoundHeader> {
         val found = mutableListOf<FoundHeader>()
         var scanned = 0
         var before: MessageId? = null

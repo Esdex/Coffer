@@ -114,13 +114,28 @@ class VaultKeysTest {
     }
 
     @Test
-    fun onlyTheNewestVaultsHeadersAreTried() = runTest {
+    fun eachVaultsPasswordOpensItsOwnVault() = runTest {
+        // A newer header of another vault, forged or not, must not hide the older one (audit 1, M2).
         val storage = FakeCloud().device()
-        storage.sendHeader(newVault("older vault password").header)
-        storage.sendHeader(newVault("newer vault password").header)
+        val older = newVault("older vault password")
+        val newer = newVault("newer vault password")
+        storage.sendHeader(older.header)
+        storage.sendHeader(newer.header)
         val headers = VaultHeaders.find(storage)
-        assertNull(VaultUnlock.withPassword(sodium, headers, "older vault password"))
-        assertNotNull(VaultUnlock.withPassword(sodium, headers, "newer vault password"))
+        assertEquals(older.vault.masterId, VaultUnlock.withPassword(sodium, headers, "older vault password")?.masterId)
+        assertEquals(newer.vault.masterId, VaultUnlock.withPassword(sodium, headers, "newer vault password")?.masterId)
+    }
+
+    @Test
+    fun aPinnedHeaderOfAnotherVaultDoesNotHideTheKnownOne() = runTest {
+        val storage = FakeCloud().device()
+        val real = newVault("the real vault password")
+        val unpinned = storage.sendHeader(real.header)
+        val forged = storage.sendHeader(newVault("someone else's password").header)
+        storage.pin(forged.id)
+        // Knowing which vault it looks for, the search goes past a pinned header of another one.
+        val found = VaultHeaders.find(storage, known = real.vault.masterId)
+        assertTrue(found.any { it.messageId == unpinned.id })
     }
 
     @Test
@@ -296,6 +311,73 @@ class VaultManagerTest {
         // The old header is forgotten here too: not even offline does the old password open it any more.
         assertFalse(there.unlockWithPassword("old password on both devices"))
         assertTrue(there.unlockWithPassword("new password changed over here"))
+    }
+
+    @Test
+    fun aForgedHeaderOfAnotherVaultDoesNotLockTheUserOut() = runTest {
+        // Audit 1, M2: someone in the Telegram account pins a newer header of a vault of their own.
+        val cloud = FakeCloud()
+        val (here, _, storages) = twoDevices(cloud, "the password of the real vault")
+        val (hereStorage, thereStorage) = storages
+        here.lockVault()
+        val forged = thereStorage.sendHeader(newVault("the forger's own password").header)
+        thereStorage.pin(forged.id)
+
+        // The device that knows the vault keeps it, after a restart too.
+        here.locate(hereStorage)
+        val again = manager()
+        again.locate(hereStorage)
+        val knownId = (again.state.value as VaultManager.State.Locked).masterId
+        assertTrue(again.unlockWithPassword("the password of the real vault", hereStorage))
+        assertEquals(knownId, (again.state.value as VaultManager.State.Unlocked).vault.masterId)
+
+        // A new device, which finds the forged header pinned, still opens the real vault with its password.
+        val fresh = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        val freshStorage = cloud.device()
+        fresh.locate(freshStorage)
+        assertTrue(fresh.unlockWithPassword("the password of the real vault", freshStorage))
+        assertEquals(knownId, (fresh.state.value as VaultManager.State.Unlocked).vault.masterId)
+    }
+
+    @Test
+    fun aForgedHeaderOfAnotherVaultDoesNotStopTheRecoveryKey() = runTest {
+        val cloud = FakeCloud()
+        val storage = cloud.device()
+        val owner = manager()
+        owner.locate(storage)
+        val created = owner.prepareNew("the password of the real vault")
+        val words = created.recoveryWords
+        owner.publish(storage, created)
+        val forged = storage.sendHeader(newVault("the forger's own password").header)
+        storage.pin(forged.id)
+
+        val fresh = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        val freshStorage = cloud.device()
+        fresh.locate(freshStorage)
+        val result = fresh.unlockWithRecoveryKey(words, freshStorage)
+        assertTrue(result is VaultUnlock.MnemonicResult.Unlocked)
+    }
+
+    @Test
+    fun swappingThePinForAForgedHeaderIsNotADeletion() = runTest {
+        // Audit 1, M2: unpin the real header, pin a forged one, then delete the forged one. The real
+        // header is still there, so this device must not forget the vault as if deleted elsewhere.
+        val cloud = FakeCloud()
+        val (here, _, storages) = twoDevices(cloud, "the password of the real vault")
+        val (hereStorage, thereStorage) = storages
+        here.lockVault()
+        val realHeader = thereStorage.pinnedMessages().single()
+        thereStorage.unpin(realHeader.id)
+        val forged = thereStorage.sendHeader(newVault("the forger's own password").header)
+        thereStorage.pin(forged.id)
+        here.locate(hereStorage)
+        thereStorage.delete(listOf(forged.id))
+        here.headersChanged(hereStorage)
+        here.locate(hereStorage)
+
+        assertNull(here.deleted.value)
+        assertTrue(here.state.value is VaultManager.State.Locked)
+        assertTrue(here.unlockWithPassword("the password of the real vault", hereStorage))
     }
 
     /** Deletes every header of [here]'s vault from Saved Messages, as the deletion does last (SPEC §5.9). */

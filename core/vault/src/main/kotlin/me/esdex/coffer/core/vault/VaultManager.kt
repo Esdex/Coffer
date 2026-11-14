@@ -78,8 +78,9 @@ class VaultManager(
      */
     suspend fun locate(storage: StorageBackend) {
         val (firstTime, startedAt) = lock.withLock { (headers.isEmpty() && stateFlow.value !is State.Unlocked) to headerWrites }
+        val known = lock.withLock { knownMasterId() }
         if (firstTime) stateFlow.value = State.Searching(0)
-        val found = VaultHeaders.find(storage) { scanned -> if (firstTime) stateFlow.value = State.Searching(scanned) }
+        val found = VaultHeaders.find(storage, known) { scanned -> if (firstTime) stateFlow.value = State.Searching(scanned) }
         // A device that was off while the vault was deleted elsewhere finds out here, at its next start.
         val deletedElsewhere = deletedElsewhere(storage, found)
         lock.withLock {
@@ -105,10 +106,43 @@ class VaultManager(
                 if (headers.isEmpty()) stateFlow.value = State.NotFound
                 return
             }
-            remember(found)
+            // A vault this device knows stays the one it looks for: headers of another vault, which anyone
+            // in the Telegram account can post, do not take its place (audit 1, M2). A real deletion is
+            // told apart above, by Telegram confirming the known headers are gone.
+            val known = knownMasterId()
+            val mine = if (known == null) found else found.filter { it.header.masterId == known }
+            if (mine.isEmpty()) return
+            remember(mine)
             stateFlow.value = lockedOrUnknown()
         }
     }
+
+    private fun knownMasterId(): Bytes? = headers.firstOrNull()?.header?.masterId
+
+    /**
+     * After a password or recovery key opened nothing: every header in Saved Messages, past the pinned
+     * ones, in case another vault's header pinned over the user's own hid it (audit 1, M2). Once per run:
+     * a full pass is slow, and a mistyped password is not a reason to repeat it.
+     */
+    private suspend fun searchPastThePins(storage: StorageBackend): Boolean {
+        if (searchedPastThePins) return false
+        searchedPastThePins = true
+        val startedAt = lock.withLock { headerWrites }
+        val all = runCatching { VaultHeaders.findAll(storage) }.getOrNull() ?: return false
+        return lock.withLock {
+            if (headerWrites != startedAt || stateFlow.value is State.Unlocked) return@withLock false
+            val known = knownMasterId()
+            // The known vault's headers first, so the state and a fingerprint unlock still go by it.
+            val ordered = all.filter { it.header.masterId == known } + all.filter { it.header.masterId != known }
+            if (ordered.map { it.messageId }.toSet() == headers.map { it.messageId }.toSet()) return@withLock false
+            remember(ordered)
+            stateFlow.value = lockedOrUnknown()
+            true
+        }
+    }
+
+    @Volatile
+    private var searchedPastThePins = false
 
     private fun remember(found: List<FoundHeader>) {
         headers = found
@@ -124,7 +158,8 @@ class VaultManager(
      */
     suspend fun unlockWithPassword(password: CharSequence, storage: StorageBackend? = null): Boolean {
         if (storage != null) withTimeoutOrNull(HEADER_REFRESH_MILLIS) { runCatching { locate(storage) } }
-        return tryPassword(password)
+        if (tryPassword(password)) return true
+        return storage != null && searchPastThePins(storage) && tryPassword(password)
     }
 
     /**
@@ -136,7 +171,8 @@ class VaultManager(
     suspend fun headersChanged(storage: StorageBackend) {
         if (deleting) return
         val startedAt = lock.withLock { headerWrites }
-        val found = runCatching { VaultHeaders.find(storage) }.getOrNull() ?: return
+        val known = lock.withLock { knownMasterId() }
+        val found = runCatching { VaultHeaders.find(storage, known) }.getOrNull() ?: return
         val deletedElsewhere = deletedElsewhere(storage, found)
         lock.withLock {
             // This device wrote headers meanwhile (its own password change): what was read may predate it.
@@ -212,8 +248,17 @@ class VaultManager(
         return vault != null && open(vault)
     }
 
-    /** Throws [me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException] for words that are not a recovery key. */
-    suspend fun unlockWithRecoveryKey(words: List<String>): VaultUnlock.MnemonicResult {
+    /**
+     * Throws [me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException] for words that are not a recovery
+     * key. With [storage], a key of no vault known here looks past the pinned headers once.
+     */
+    suspend fun unlockWithRecoveryKey(words: List<String>, storage: StorageBackend? = null): VaultUnlock.MnemonicResult {
+        val result = tryRecoveryKey(words)
+        if (result != VaultUnlock.MnemonicResult.OtherVault || storage == null || !searchPastThePins(storage)) return result
+        return tryRecoveryKey(words)
+    }
+
+    private suspend fun tryRecoveryKey(words: List<String>): VaultUnlock.MnemonicResult {
         val candidates = lock.withLock { headers }
         val result = withContext(work) { VaultUnlock.withMnemonic(sodium, candidates, words) }
         if (result is VaultUnlock.MnemonicResult.Unlocked && !open(result.vault)) return VaultUnlock.MnemonicResult.OtherVault
@@ -228,11 +273,14 @@ class VaultManager(
 
     private suspend fun open(vault: UnlockedVault): Boolean = lock.withLock {
         val current = stateFlow.value
-        val expected = headers.firstOrNull()?.header?.masterId
-        if (current is State.Unlocked || vault.masterId != expected) {
+        // Any vault whose header is known here, not only the newest one's (audit 1, M2); from now on
+        // only its headers are kept.
+        val its = headers.filter { it.header.masterId == vault.masterId }
+        if (current is State.Unlocked || its.isEmpty()) {
             vault.close()
             return current is State.Unlocked && current.vault.masterId == vault.masterId
         }
+        if (its.size != headers.size) remember(its)
         stateFlow.value = State.Unlocked(vault)
         true
     }

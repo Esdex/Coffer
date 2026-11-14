@@ -128,7 +128,8 @@ class VaultViewModel @Inject constructor(
 
     fun unlockWithRecoveryKey(text: String) = perform {
         try {
-            if (vault.unlockWithRecoveryKey(Bip39.split(text)) == VaultUnlock.MnemonicResult.OtherVault) {
+            val storage = runCatching { telegram.storage() }.getOrNull()
+            if (vault.unlockWithRecoveryKey(Bip39.split(text), storage) == VaultUnlock.MnemonicResult.OtherVault) {
                 errorFlow.value = VaultError.OtherVaultsKey
             } else {
                 offerIfUseful()
