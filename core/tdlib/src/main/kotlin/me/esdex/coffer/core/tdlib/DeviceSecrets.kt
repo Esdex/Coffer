@@ -1,12 +1,15 @@
 package me.esdex.coffer.core.tdlib
 
 import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.File
 import java.security.KeyStore
 import java.security.SecureRandom
+import java.security.UnrecoverableKeyException
+import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -99,13 +102,22 @@ class DeviceSecrets(private val dir: File) {
         return cipher.iv + cipher.doFinal(plain)
     }
 
-    private fun unwrap(wrapped: ByteArray, ad: String): ByteArray? = runCatching {
-        val key = existingKeystoreKey() ?: return null
+    /**
+     * Null only when the secret is lost for good: no Keystore key, or one that does not open it. A null
+     * here wipes TDLib's data or the index, so a Keystore that fails for a moment (it does, busy or just
+     * after boot) is asked again first (audit 1, L8).
+     */
+    private fun unwrap(wrapped: ByteArray, ad: String): ByteArray? = retryTransient(
+        attempts = UNWRAP_ATTEMPTS,
+        pause = { Thread.sleep(UNWRAP_PAUSE_MILLIS shl it) },
+        lost = { it is AEADBadTagException || it is KeyPermanentlyInvalidatedException || it is UnrecoverableKeyException },
+    ) {
+        val key = existingKeystoreKey() ?: return@retryTransient null
         val cipher = Cipher.getInstance(TRANSFORMATION)
         cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, wrapped, 0, IV_BYTES))
         cipher.updateAAD(ad.toByteArray(Charsets.US_ASCII))
         cipher.doFinal(wrapped, IV_BYTES, wrapped.size - IV_BYTES)
-    }.getOrNull()
+    }
 
     private fun existingKeystoreKey(): SecretKey? {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
@@ -142,6 +154,25 @@ class DeviceSecrets(private val dir: File) {
         const val INDEX_KEY_FILE = "index-db.key"
         const val INDEX_KEY_AD = "coffer/device/index-db-key"
         val KEYSTORE_LOCK = Any()
+        const val UNWRAP_ATTEMPTS = 4
+        const val UNWRAP_PAUSE_MILLIS = 200L
         const val API_HASH_AD = "coffer/device/api-hash"
     }
+}
+
+/**
+ * Runs [block] up to [attempts] times while it throws something not [lost], pausing between ([pause] gets
+ * the attempt number). Null when it is lost, or still failing after the last attempt: then, as before,
+ * the caller takes the secret for gone.
+ */
+internal fun <T> retryTransient(attempts: Int, pause: (Int) -> Unit, lost: (Exception) -> Boolean, block: () -> T?): T? {
+    for (attempt in 0 until attempts) {
+        try {
+            return block()
+        } catch (e: Exception) {
+            if (lost(e) || attempt == attempts - 1) return null
+            pause(attempt)
+        }
+    }
+    return null
 }
