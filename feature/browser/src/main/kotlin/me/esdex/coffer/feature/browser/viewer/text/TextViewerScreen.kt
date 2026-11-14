@@ -90,9 +90,11 @@ fun TextViewerScreen(
             confirmButton = {
                 TextButton(onClick = {
                     pendingLink = null
+                    // Nothing to open it with, or Android refusing it: the link stays where it is.
                     try {
                         context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
                     } catch (_: ActivityNotFoundException) {
+                    } catch (_: RuntimeException) {
                     }
                 }) { Text(stringResource(R.string.viewer_link_open)) }
             },
@@ -159,7 +161,7 @@ fun TextViewerScreen(
                             MarkdownView(
                                 document.text,
                                 prefs.fontSizeSp,
-                                onLink = { pendingLink = it },
+                                onLink = { if (opensOutside(it)) pendingLink = it },
                                 modifier = Modifier.fillMaxSize().graphicsLayer { alpha = shownRendered },
                             )
                         }
@@ -209,3 +211,12 @@ private fun CodeText(document: TextDocument, prefs: TextPrefs, syntax: Syntax, m
         },
     )
 }
+
+/**
+ * Links a Markdown file in the vault may open outside Coffer: web pages and mail. A file:// link crashed
+ * the app (Android refuses to hand a path to another app), and other schemes can start whatever claims
+ * them (audit 1, L4).
+ */
+internal fun opensOutside(url: String): Boolean = url.substringBefore(':', "").lowercase() in OUTSIDE_SCHEMES
+
+private val OUTSIDE_SCHEMES = setOf("http", "https", "mailto")
