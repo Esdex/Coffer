@@ -53,11 +53,32 @@ android {
         }
     }
 
+    // The release key, as Arcanum keeps its own: outside git, its path and passwords in local.properties.
+    // Without them a release comes out unsigned, as F-Droid builds it and signs it itself.
+    val releaseKey = localProperties.getProperty("COFFER_KEYSTORE_PATH")?.trim()?.takeIf { it.isNotEmpty() }
+    signingConfigs {
+        if (releaseKey != null) {
+            create("release") {
+                storeFile = file(releaseKey)
+                storePassword = localProperties.getProperty("COFFER_KEYSTORE_PASSWORD")
+                keyAlias = localProperties.getProperty("COFFER_KEY_ALIAS")
+                keyPassword = localProperties.getProperty("COFFER_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        // An app of its own, beside the release on the same phone: development never touches the vault in
+        // daily use, which lives under the release's package and data (Esdex, 2026-11-14).
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             // R8 on: smaller, without the test helpers and full names a release had no use for (audit 1, Info).
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            if (releaseKey != null) signingConfig = signingConfigs.getByName("release")
         }
     }
     buildFeatures {

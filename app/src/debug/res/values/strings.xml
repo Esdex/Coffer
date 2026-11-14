@@ -1,0 +1,4 @@
+<resources>
+    <!-- The development build, beside Coffer itself on the same phone. -->
+    <string name="app_name">Coffer Dev</string>
+</resources>
