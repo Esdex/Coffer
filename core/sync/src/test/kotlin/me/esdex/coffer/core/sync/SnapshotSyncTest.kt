@@ -320,6 +320,78 @@ class SnapshotSyncTest {
         assertEquals(FileStatus.DAMAGED, there.index.file(fileId)!!.status)
     }
 
+    /** [message] sent again, as anyone in the Telegram account can: the same document and caption, a new id. */
+    private suspend fun Device.replay(message: MessageId): MessageId {
+        val original = cloud.allMessages().single { it.id == message }
+        val caption = (original.content as MessageContent.Blob).caption
+        val copy = temp.newFile("cfr_" + Random.nextLong().toULong().toString(16).padStart(12, '0').take(12) + ".bin").apply { writeBytes(storage.openBlob(message).use { it.readBytes() }) }
+        return storage.sendBlob(copy, caption).id
+    }
+
+    @Test
+    fun anOldSnapshotSentAgainDoesNotRollANewDeviceBack() = runBlocking {
+        // Audit 1, M5: the old snapshot comes back as the newest message.
+        val here = device()
+        var now = 1_762_531_200_000
+        val snapshotter = Snapshotter(here.storage, here.index, here.indexer, here.keys, temp.newFolder()) { now += 60_000; now }
+        here.upload("kept.txt", bytes("k"))
+        val hurt = here.upload("hurt.bin", bytes("h"))
+        here.indexer.catchUp()
+        assertTrue(snapshotter.snapshotIfNeeded())
+        val old = here.index.snapshots().single().messageId
+        // Damage only a snapshot carries: no full pass can see it.
+        val part = here.index.parts(hurt).getValue(0)
+        cloud.deleteFromOutside(listOf(part))
+        here.indexer.applyDeletion(setOf(part))
+        assertTrue(snapshotter.snapshotIfNeeded())
+        here.indexer.catchUp()
+        here.replay(old)
+
+        val there = device()
+        assertTrue(there.indexer.catchUp().snapshotUsed)
+        assertEquals(FileStatus.DAMAGED, there.index.file(hurt)!!.status)
+    }
+
+    @Test
+    fun oldSnapshotsSentAgainDoNotPushOutTheNewest() = runBlocking {
+        val here = device()
+        val real = mutableListOf<MessageId>()
+        repeat(3) {
+            here.upload("f$it.txt", bytes("$it"))
+            here.indexer.catchUp()
+            assertTrue(here.snapshotter.snapshotIfNeeded())
+            real += here.index.snapshots().maxOf { s -> s.messageId }
+        }
+        repeat(3) { here.replay(real.first()) }
+        here.indexer.catchUp()
+        here.upload("last.txt", bytes("l"))
+        here.indexer.catchUp()
+        assertTrue(here.snapshotter.snapshotIfNeeded())
+        val newest = here.index.snapshots().maxOf { s -> s.messageId }
+        // The three newest states stay, the copies of the oldest go.
+        assertEquals((real.drop(1) + newest).toSet(), indexBlobs().map { it.id }.toSet())
+    }
+
+    @Test
+    fun theIntegrityCheckKeepsTheNewestStatesNotTheNewestCopies() = runBlocking {
+        val here = device()
+        val real = mutableListOf<MessageId>()
+        repeat(3) {
+            here.upload("f$it.txt", bytes("$it"))
+            here.indexer.catchUp()
+            assertTrue(here.snapshotter.snapshotIfNeeded())
+            real += here.index.snapshots().maxOf { s -> s.messageId }
+        }
+        repeat(3) { here.replay(real.first()) }
+        here.indexer.catchUp()
+        here.maintenance.run()
+        // The two newest stay as they are; of the oldest state one copy is left, the original or a copy
+        // sent again, which hold the same.
+        val kept = indexBlobs().map { it.id }.toSet()
+        assertEquals(3, kept.size)
+        assertTrue(kept.containsAll(real.drop(1)))
+    }
+
     @Test
     fun onlyTheLastThreeAreKept() = runBlocking {
         val here = device()

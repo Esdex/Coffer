@@ -42,7 +42,7 @@ class Snapshotter(
     }
 
     private suspend fun prune() {
-        val old = index.snapshots().sortedByDescending { it.messageId }.drop(KEEP)
+        val old = index.snapshots().sortedWith(NEWEST_STATE_FIRST).drop(KEEP)
         if (old.isEmpty()) return
         storage.delete(old.map { it.messageId })
         for (snapshot in old) index.removeSnapshot(snapshot.messageId)
@@ -51,5 +51,12 @@ class Snapshotter(
     companion object {
         /** SPEC §4.4: the last 3 are kept. */
         const val KEEP = 3
+
+        /**
+         * The order snapshots are kept in: by the state they hold, then by message id. Not by message id
+         * alone: an old snapshot sent again has a new one, and must not push out the newest (audit 1, M5).
+         */
+        val NEWEST_STATE_FIRST: Comparator<KnownSnapshot> =
+            compareByDescending<KnownSnapshot> { it.lastApplied }.thenByDescending { it.messageId }
     }
 }

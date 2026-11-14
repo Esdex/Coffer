@@ -134,27 +134,47 @@ class Indexer(
     private suspend fun catchUpLocked(onProgress: (Int) -> Unit, useSnapshots: Boolean): CatchUpReport {
         val last = index.lastApplied()
         val newer = mutableListOf<StoredMessage>()
+        // Snapshots met on the way down, not loaded yet. The newest message is not always the newest
+        // state: anyone in the Telegram account can send an old snapshot again, under a new message id.
+        // Every message newer than a snapshot's own state is read anyway, so the search goes on down to
+        // that point, and the snapshot with the newest state found by then is loaded (audit 1, M5).
+        val found = mutableListOf<Pair<MessageId, IndexPayload>>()
         var fetched = 0
         var before: MessageId? = null
+
+        // The best of [found] that opens; one that does not is damaged and dropped.
+        suspend fun loadBest(): CatchUpReport? {
+            // The newest state, and of two with the same last message, the one made later: damage seen in
+            // between changes a snapshot without a message of its own. Its time is inside the encryption.
+            val best = found.sortedWith(compareByDescending<Pair<MessageId, IndexPayload>> { it.second.lastAppliedMessageId }.thenByDescending { it.second.createdAt })
+            for ((id, snapshot) in best) {
+                if (load(id, snapshot)) {
+                    val read = fetched
+                    return CatchUpReport(read + forward(MessageId(snapshot.lastAppliedMessageId)) { onProgress(read + it) }, true)
+                }
+            }
+            found.clear()
+            return null
+        }
+
         scan@ while (true) {
             val page = storage.historyBefore(before, StorageBackend.MAX_PAGE)
             if (page.isEmpty()) break
             fetched += page.size
             for (message in page) {
                 if (last != null && message.id <= last) break@scan
+                val newest = found.maxOfOrNull { it.second.lastAppliedMessageId }
+                if (newest != null && message.id.value <= newest) loadBest()?.let { return it }
                 newer += message
                 if (!useSnapshots) continue
                 val snapshot = snapshotOf(message) ?: continue
                 if (last != null && snapshot.lastAppliedMessageId <= last.value) continue
-                // A snapshot that does not open is damaged: keep looking for an older one.
-                if (load(message.id, snapshot)) {
-                    val read = fetched
-                    return CatchUpReport(read + forward(MessageId(snapshot.lastAppliedMessageId)) { onProgress(read + it) }, true)
-                }
+                found += message.id to snapshot
             }
             onProgress(fetched)
             before = page.last().id
         }
+        loadBest()?.let { return it }
         for (message in newer.asReversed()) applyLocked(message)
         return CatchUpReport(fetched, false)
     }
@@ -503,7 +523,8 @@ class Indexer(
         for (id in garbage) index.removePart(id)
 
         for (snapshot in snapshotsRead) index.putSnapshot(snapshot)
-        val oldSnapshots = index.snapshots().sortedByDescending { it.messageId }.drop(Snapshotter.KEEP).map { it.messageId }
+        // By the state they hold, not by message id: an old snapshot sent again must not push out the newest (audit 1, M5).
+        val oldSnapshots = index.snapshots().sortedWith(Snapshotter.NEWEST_STATE_FIRST).drop(Snapshotter.KEEP).map { it.messageId }
         for (id in oldSnapshots) index.removeSnapshot(id)
 
         if (damaged + repaired > 0) {
