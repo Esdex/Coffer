@@ -10,9 +10,13 @@ import me.esdex.coffer.core.sync.VaultTree
 sealed interface PhoneEntry {
     val name: String
 
-    data class File(override val name: String, val uri: String, val mime: String?) : PhoneEntry
+    data class File(override val name: String, val uri: String, val mime: String?) : PhoneEntry {
+        override fun toString(): String = "File(mime=$mime, name=***, uri=***)"
+    }
 
-    data class Folder(override val name: String, val children: List<PhoneEntry>) : PhoneEntry
+    data class Folder(override val name: String, val children: List<PhoneEntry>) : PhoneEntry {
+        override fun toString(): String = "Folder(name=***, children=${children.size})"
+    }
 }
 
 /**

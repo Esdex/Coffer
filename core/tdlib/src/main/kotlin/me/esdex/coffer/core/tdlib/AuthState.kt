@@ -12,7 +12,10 @@ sealed interface AuthState {
     data object WaitPhoneNumber : AuthState
 
     /** Show [link] as a QR code; it changes every few seconds while this state lasts. */
-    data class WaitQrConfirmation(val link: String) : AuthState
+    data class WaitQrConfirmation(val link: String) : AuthState {
+        // The link signs this device in: not for a log.
+        override fun toString(): String = "WaitQrConfirmation(link=***)"
+    }
 
     data class WaitCode(
         val phoneNumber: String,
@@ -22,13 +25,20 @@ sealed interface AuthState {
         /** Whether [delivery] can be switched by asking again, and after how many seconds. */
         val canResend: Boolean,
         val resendAfterSeconds: Int,
-    ) : AuthState
+    ) : AuthState {
+        // The phone number stays out of logs (CLAUDE.md, audit 1, Info DATA-12).
+        override fun toString(): String = "WaitCode(delivery=$delivery, length=$length)"
+    }
 
     data object WaitEmailAddress : AuthState
 
-    data class WaitEmailCode(val emailPattern: String, val length: Int) : AuthState
+    data class WaitEmailCode(val emailPattern: String, val length: Int) : AuthState {
+        override fun toString(): String = "WaitEmailCode(length=$length)"
+    }
 
-    data class WaitPassword(val hint: String, val hasRecoveryEmail: Boolean) : AuthState
+    data class WaitPassword(val hint: String, val hasRecoveryEmail: Boolean) : AuthState {
+        override fun toString(): String = "WaitPassword(hasRecoveryEmail=$hasRecoveryEmail)"
+    }
 
     /** The number has no Telegram account. Coffer does not create accounts. */
     data object RegistrationRequired : AuthState

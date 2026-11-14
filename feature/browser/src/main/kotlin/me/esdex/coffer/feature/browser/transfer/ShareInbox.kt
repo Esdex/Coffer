@@ -30,7 +30,9 @@ import javax.inject.Singleton
 class ShareInbox @Inject constructor(@ApplicationContext private val context: Context) {
 
     /** A copied file. The name and type stay in memory until the upload request seals them (SPEC §8). */
-    data class Item(val file: File, val name: String, val mime: String?, val size: Long)
+    data class Item(val file: File, val name: String, val mime: String?, val size: Long) {
+        override fun toString(): String = "Item(mime=$mime, size=$size, name=***)"
+    }
 
     sealed interface State {
         data object Empty : State

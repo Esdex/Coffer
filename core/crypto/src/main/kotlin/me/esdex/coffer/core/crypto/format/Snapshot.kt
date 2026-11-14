@@ -23,6 +23,9 @@ import java.util.zip.Inflater
 // The index snapshot, SPEC §4.4. Lists are sorted by id and ids are unique, so one state has one encoding.
 
 data class SnapshotFolder(val folderId: Id, val parentId: Id?, val name: String) {
+    // Names stay out of logs and crash reports, should one ever print this (audit 1, Info DATA-12).
+    override fun toString(): String = "SnapshotFolder(folderId=$folderId, name=***)"
+
     init {
         require(FileNames.isValid(name)) { "invalid name" }
     }

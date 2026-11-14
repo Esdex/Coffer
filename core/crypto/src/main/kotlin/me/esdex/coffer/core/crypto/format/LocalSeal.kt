@@ -129,10 +129,16 @@ class LocalSealer(private val sodium: Sodium, private val localKey: SecretKey) {
 }
 
 /** A file the user asked to upload: a content URI, its display name and type, and the folder to put it in. */
-data class LocalUpload(val source: String, val name: String, val mime: String?, val folderId: Id? = null)
+data class LocalUpload(val source: String, val name: String, val mime: String?, val folderId: Id? = null) {
+    // Names stay out of logs and crash reports, should one ever print this (audit 1, Info DATA-12).
+    override fun toString(): String = "LocalUpload(source=***, name=***, mime=$mime)"
+}
 
 /** A folder in the local index. [parentId] is null for the root, or may name a folder that is gone (an orphan). */
 data class LocalFolder(val name: String, val parentId: Id?) {
+    // Names stay out of logs and crash reports, should one ever print this (audit 1, Info DATA-12).
+    override fun toString(): String = "LocalFolder(parentId=$parentId, name=***)"
+
     init {
         require(FileNames.isValid(name)) { "invalid name" }
     }

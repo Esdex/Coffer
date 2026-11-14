@@ -36,7 +36,10 @@ sealed interface VaultError {
 /** Steps of creating a vault (SPEC §7, step 4). */
 sealed interface CreateStep {
     data object Password : CreateStep
-    data class RecoveryKey(val words: List<String>) : CreateStep
+    data class RecoveryKey(val words: List<String>) : CreateStep {
+        // The 24 words never in a log (audit 1, Info DATA-12).
+        override fun toString(): String = "RecoveryKey(${words.size} words)"
+    }
     data class Confirm(val quiz: RecoveryQuiz) : CreateStep
     data object DeviceUnlock : CreateStep
     data object Publishing : CreateStep

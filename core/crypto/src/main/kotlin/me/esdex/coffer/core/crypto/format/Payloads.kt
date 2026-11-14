@@ -45,6 +45,9 @@ data class FileMeta(
         require(contentHash.size == CofferFormat.CONTENT_HASH_BYTES) { "content hash size" }
         require(wrappedDek.size == CofferFormat.WRAPPED_KEY_BYTES) { "wrapped DEK size" }
     }
+
+    // Names stay out of logs and crash reports, should one ever print this (audit 1, Info DATA-12).
+    override fun toString(): String = "FileMeta(folderId=$folderId, mime=$mime, name=***)"
 }
 
 /**
@@ -76,11 +79,13 @@ sealed interface Op {
     val type: String
 
     data class FolderCreate(override val opId: Id, override val ts: Long, val folderId: Id, val parentId: Id?, val name: String) : Op {
+        override fun toString(): String = "FolderCreate(opId=$opId, name=***)"
         override val type get() = "folder.create"
         init { require(FileNames.isValid(name)) { "invalid name" } }
     }
 
     data class FolderRename(override val opId: Id, override val ts: Long, val folderId: Id, val name: String) : Op {
+        override fun toString(): String = "FolderRename(opId=$opId, name=***)"
         override val type get() = "folder.rename"
         init { require(FileNames.isValid(name)) { "invalid name" } }
     }
@@ -94,6 +99,7 @@ sealed interface Op {
     }
 
     data class FileRename(override val opId: Id, override val ts: Long, val fileId: Id, val name: String) : Op {
+        override fun toString(): String = "FileRename(opId=$opId, name=***)"
         override val type get() = "file.rename"
         init { require(FileNames.isValid(name)) { "invalid name" } }
     }
