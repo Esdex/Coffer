@@ -507,19 +507,22 @@ class Indexer(
             if (file.fileId in uploading) continue
             val gone = file.parts.values.filter { it <= readUpTo && it !in present }
             for (id in gone) index.removePart(id)
+            // Against the parts as they are now, with the gone ones out: a copy of a part that went stands in
+            // for it in this same check, not only in the next one (audit 1, L13).
+            val now = index.parts(file.fileId).toMutableMap()
             for (part in partsByFile[file.fileId].orEmpty()) {
-                if (part.index < file.partCount && file.parts[part.index] == null) {
+                if (part.index < file.partCount && now[part.index] == null) {
                     index.putPart(file.fileId, part.index, part.message.id)
+                    now[part.index] = part.message.id
                     repaired++
                 }
             }
-            val parts = index.parts(file.fileId)
-            val complete = (0 until file.partCount).all { it in parts }
+            val complete = (0 until file.partCount).all { it in now }
             val firstDate = partsByFile[file.fileId]?.firstOrNull { it.isFirst }?.message?.date
             val status = when {
-                gone.isNotEmpty() -> FileStatus.DAMAGED
-                // Every part is there after all: whatever marked it damaged was wrong.
+                // Every part is there after all, a copy standing in for any that went: whatever marked it damaged was wrong.
                 complete -> FileStatus.READY
+                gone.isNotEmpty() -> FileStatus.DAMAGED
                 file.status == FileStatus.DAMAGED -> FileStatus.DAMAGED
                 firstDate != null && firstDate < dayAgo -> FileStatus.DAMAGED
                 else -> FileStatus.INCOMPLETE

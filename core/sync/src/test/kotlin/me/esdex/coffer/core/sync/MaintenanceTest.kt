@@ -131,6 +131,25 @@ class MaintenanceTest {
     }
 
     @Test
+    fun aCopyOfAPartStandsInForItAtOnce() = runBlocking {
+        // Audit 1, L13: the part the index knew is deleted, a copy of it is still in Saved Messages.
+        val here = device()
+        val fileId = here.upload("kept.txt", bytes("k"))
+        here.indexer.catchUp()
+        val original = here.index.parts(fileId).getValue(0)
+        val caption = (cloud.allMessages().single { it.id == original }.content as MessageContent.Blob).caption
+        val copyFile = temp.newFile("cfr_ffffffffffff.bin").apply { writeBytes(here.storage.openBlob(original).use { it.readBytes() }) }
+        val copy = here.storage.sendBlob(copyFile, caption).id
+        here.indexer.catchUp()
+        cloud.deleteFromOutside(listOf(original))
+
+        val report = here.maintenance.run()
+        assertEquals(0, report.damaged)
+        assertEquals(FileStatus.READY, here.index.file(fileId)!!.status)
+        assertEquals(copy, here.index.parts(fileId).getValue(0))
+    }
+
+    @Test
     fun aPartThatArrivedWhileReadingIsNotTakenForMissing() = runBlocking {
         val here = device()
         here.upload("early.txt", bytes("e"))
