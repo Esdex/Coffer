@@ -28,6 +28,8 @@ class VaultManager(
     private val clock: () -> Long = System::currentTimeMillis,
     /** Argon2id and key derivation run here, off the main thread. */
     private val work: CoroutineContext = Dispatchers.Default,
+    /** What a new password must be: checked here as well as on screen (audit 1, CRYPTO-10). */
+    private val acceptPassword: (CharSequence) -> Boolean = { PasswordPolicy.check(it).acceptable },
 ) {
     sealed interface State {
         /** Not known yet whether Saved Messages holds a vault. */
@@ -306,16 +308,20 @@ class VaultManager(
     }
 
     /** A new vault under [password]; shown and confirmed before [publish]. */
-    suspend fun prepareNew(password: CharSequence): NewVault =
-        withContext(work) { VaultCreation.prepare(sodium, password, clock()) }
+    suspend fun prepareNew(password: CharSequence): NewVault {
+        require(acceptPassword(password)) { "the password is too weak" }
+        return withContext(work) { VaultCreation.prepare(sodium, password, clock()) }
+    }
 
     /**
      * A header for the vault of the recovery key [words] under [password], when Saved Messages has none
      * left (audit 1, M1); [publish] with `restoring` sends it. Throws
      * [me.esdex.coffer.core.crypto.bip39.InvalidMnemonicException] for words that are not a recovery key.
      */
-    suspend fun prepareRestore(words: List<String>, password: CharSequence): NewVault =
-        withContext(work) { VaultCreation.restore(sodium, words, password, clock()) }
+    suspend fun prepareRestore(words: List<String>, password: CharSequence): NewVault {
+        require(acceptPassword(password)) { "the password is too weak" }
+        return withContext(work) { VaultCreation.restore(sodium, words, password, clock()) }
+    }
 
     /** Sends and pins the header, then opens the vault. Takes ownership of [vault]. */
     suspend fun publish(storage: StorageBackend, vault: NewVault, restoring: Boolean = false) {
@@ -362,6 +368,7 @@ class VaultManager(
             return if (stateFlow.value is State.Unlocked) PasswordChange.WrongPassword else PasswordChange.Locked
         }
         val open = (stateFlow.value as? State.Unlocked)?.vault ?: return PasswordChange.Locked
+        require(acceptPassword(newPassword)) { "the password is too weak" }
         val header = withContext(work) { VaultCreation.rewrap(sodium, open, newPassword, clock()) }
         val sent = storage.sendText(VaultHeaderCodec.encode(header))
         storage.pin(sent.id)

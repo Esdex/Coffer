@@ -106,8 +106,10 @@ private fun StrengthMeter(check: PasswordPolicy.Check) {
         if (!check.longEnough) add(pluralStringResource(R.plurals.settings_strength_too_short, PasswordPolicy.MIN_LENGTH, PasswordPolicy.MIN_LENGTH))
         check.warning?.let(::add)
         check.suggestions.forEach { add("- $it") }
+        // Long enough and with nothing for zxcvbn to say, but still too easy to guess: say what helps.
+        if (check.longEnough && !check.hardEnough && check.warning == null && check.suggestions.isEmpty()) add(stringResource(R.string.settings_strength_add_words))
     }
-    SharedStrengthMeter(check.score, check.acceptable, stringResource(labels[check.score]), notes)
+    SharedStrengthMeter(check.meterScore, check.acceptable, stringResource(labels[check.meterScore]), notes)
 }
 
 @Composable

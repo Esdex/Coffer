@@ -847,8 +847,16 @@ class PasswordPolicyTest {
         assertFalse(PasswordPolicy.check("qwertyuiop").acceptable)
         // Strong but short.
         assertFalse(PasswordPolicy.check("Xq7#vB2!m").acceptable)
-        assertTrue(PasswordPolicy.check("Xq7#vB2!m").score >= PasswordPolicy.MIN_SCORE)
+        assertTrue(PasswordPolicy.check("Xq7#vB2!m").score >= 3)
         assertTrue(PasswordPolicy.check("plum orbit tundra 47 glass").acceptable)
+        // Audit 1, M8: three unrelated words will do; zxcvbn's top score alone does not.
+        assertTrue(PasswordPolicy.check("plum orbit tundra").acceptable)
+        val topScore = PasswordPolicy.check("MySecretPass2024")
+        assertEquals(4, topScore.score)
+        assertFalse(topScore.acceptable)
+        // The meter does not say "strong" over a password it refuses.
+        assertEquals(3, topScore.meterScore)
+        assertEquals(4, PasswordPolicy.check("plum orbit tundra").meterScore)
         // Long enough, but only "somewhat guessable" (score 2): refused. Scores checked in the test so the
         // fixtures cannot drift with a zxcvbn update.
         for (fair in listOf("correcthorse", "Summer2020!")) {
@@ -859,6 +867,25 @@ class PasswordPolicyTest {
         }
         assertFalse(PasswordPolicy.check("").acceptable)
     }
+
+    @Test
+    fun theVaultRefusesAWeakPasswordWhateverTheScreenDid() = runTest {
+        // Audit 1, CRYPTO-10: the policy is checked in the core too, not only on screen.
+        val manager = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        assertThrows(IllegalArgumentException::class.java) { kotlinx.coroutines.runBlocking { manager.prepareNew("Summer2020!") } }
+        assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking { manager.prepareRestore(Bip39.toMnemonic(MasterKeys.generate(sodium)), "Summer2020!") }
+        }
+        val storage = FakeCloud().device()
+        manager.locate(storage)
+        manager.publish(storage, manager.prepareNew("plum orbit tundra 47 glass"))
+        assertThrows(IllegalArgumentException::class.java) {
+            kotlinx.coroutines.runBlocking { manager.changePassword(storage, "plum orbit tundra 47 glass", "Summer2020!") }
+        }
+    }
+
+    @get:Rule
+    val temp = TemporaryFolder()
 
     @Test
     fun weakPasswordsGetAdvice() {

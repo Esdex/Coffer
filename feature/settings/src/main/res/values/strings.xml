@@ -211,6 +211,7 @@
     <string name="settings_strength_2">Fair</string>
     <string name="settings_strength_3">Good</string>
     <string name="settings_strength_4">Strong</string>
+    <string name="settings_strength_add_words">Add another word or two: unrelated words make a password hard to guess.</string>
     <plurals name="settings_strength_too_short">
         <item quantity="one">At least %1$d character.</item>
         <item quantity="other">At least %1$d characters.</item>

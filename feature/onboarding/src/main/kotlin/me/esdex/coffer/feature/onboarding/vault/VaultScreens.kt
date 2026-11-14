@@ -314,7 +314,7 @@ private fun RestorePassword(viewModel: VaultViewModel, busy: Boolean, errorText:
     var password by remember { mutableStateOf("") }
     var repeated by remember { mutableStateOf("") }
     val check = remember(password) { PasswordPolicy.check(password) }
-    ClosingPadlock(if (password.isEmpty()) 0 else check.score, check.acceptable && password.isNotEmpty())
+    ClosingPadlock(if (password.isEmpty()) 0 else check.meterScore, check.acceptable && password.isNotEmpty())
     StepTitle(stringResource(R.string.vault_restore_password_title))
     StepBody(stringResource(R.string.vault_restore_password_explanation))
     PasswordField(password, stringResource(R.string.vault_password), { password = it })
@@ -416,7 +416,7 @@ private fun NewPassword(viewModel: VaultViewModel, busy: Boolean, errorText: Str
     var repeated by remember { mutableStateOf("") }
     val check = remember(password) { PasswordPolicy.check(password) }
     val deleted by viewModel.deleted.collectAsStateWithLifecycle()
-    ClosingPadlock(if (password.isEmpty()) 0 else check.score, check.acceptable && password.isNotEmpty())
+    ClosingPadlock(if (password.isEmpty()) 0 else check.meterScore, check.acceptable && password.isNotEmpty())
     StepTitle(stringResource(R.string.vault_create_title))
     // Where the vault went, said first: a create screen out of nowhere would look like data loss.
     deleted?.let {
@@ -501,8 +501,10 @@ private fun StrengthMeter(check: PasswordPolicy.Check) {
         if (!check.longEnough) add(pluralStringResource(R.plurals.vault_strength_too_short, PasswordPolicy.MIN_LENGTH, PasswordPolicy.MIN_LENGTH))
         check.warning?.let(::add)
         check.suggestions.forEach { add("- $it") }
+        // Long enough and with nothing for zxcvbn to say, but still too easy to guess: say what helps.
+        if (check.longEnough && !check.hardEnough && check.warning == null && check.suggestions.isEmpty()) add(stringResource(R.string.vault_strength_add_words))
     }
-    SharedStrengthMeter(check.score, check.acceptable, stringResource(labels[check.score]), notes)
+    SharedStrengthMeter(check.meterScore, check.acceptable, stringResource(labels[check.meterScore]), notes)
 }
 
 @Composable

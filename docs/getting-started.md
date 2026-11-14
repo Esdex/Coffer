@@ -29,9 +29,10 @@ After signing in, Coffer looks through Saved Messages for a vault.
 
 If there is none, it offers to create one:
 
-1. **Choose a password.** At least 10 characters. Anyone who gets into your Telegram account could
-   try to guess it, so make it strong: a few unrelated words work well. The padlock over the field
-   shuts as the password gets stronger.
+1. **Choose a password.** At least 10 characters, and hard enough to guess that a thousand billion
+   tries would not find it. Anyone who gets into your Telegram account could try to guess it offline,
+   so make it strong: three or four unrelated words work well. The padlock over the field shuts once
+   the password will do.
 2. **Write down your recovery key.** 24 words that open the vault if you forget the password.
    Write them on paper, in order, and keep them somewhere safe. See
    [Your recovery key](recovery-key.md).
