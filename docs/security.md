@@ -39,9 +39,13 @@ Settings, Security, **Hide exact file sizes** turns the file padding off.
 
 ## What it does not protect against
 
-- **Someone in your Telegram account**: they cannot read the vault, but they can delete its messages,
-  and they can try to guess your password. A strong password is what stops them: a few unrelated
-  words work well. Turn on Telegram's two-step verification too.
+- **Someone in your Telegram account**: they cannot read the vault or forge a change, but they can
+  delete its messages, and they can try to guess your password. A strong password is what stops them:
+  a few unrelated words work well. Turn on Telegram's two-step verification too.
+- **Old changes sent again**: someone in your account can send a copy of an old change, such as a
+  rename. A phone that has applied the change once does not apply it again, and a file it has seen
+  deleted stays deleted. A phone that sets up the vault later may still take such a copy, if the
+  original change is no longer there for it to see first.
 - **A phone that is compromised while the vault is open**: malware with full control of the phone
   can see what you see.
 - **What any connection shows**: Telegram sees when you upload and download, roughly how much, and

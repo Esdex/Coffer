@@ -32,8 +32,8 @@ class MigrationTest {
             db.execSQL("INSERT INTO uploads VALUES ('u1', ?, NULL, '', NULL)", arrayOf(byteArrayOf(4, 5)))
             db.execSQL("INSERT INTO sync_state VALUES ('lastAppliedMessageId', 1048576)")
         }
-        // Validates the migrated schema against 5.json.
-        helper.runMigrationsAndValidate(name, 5, true).close()
+        // Validates the migrated schema against 6.json.
+        helper.runMigrationsAndValidate(name, 6, true).close()
 
         // Audit 1, M9: the plain database is turned into an encrypted one, its rows kept.
         val file = context.getDatabasePath(name)
@@ -51,13 +51,13 @@ class MigrationTest {
             assertEquals(1048576L, index.lastApplied()?.value)
             assertTrue(index.folders().isEmpty())
             assertTrue(index.snapshots().isEmpty())
-            // Version 5: operations applied are remembered, and forgotten with the content (audit 1, M4).
+            // Version 5: operations applied are remembered (audit 1, M4); version 6: with the message each
+            // came in, and past a new content, so a snapshot load or a rescan does not forget them (audit 2, N2).
             val op = me.esdex.coffer.core.crypto.Id.of(ByteArray(16) { 7 })
-            assertEquals(false, index.isOpApplied(op))
-            index.markOpApplied(op)
-            assertEquals(true, index.isOpApplied(op))
+            assertEquals(null, index.opAppliedFrom(op))
+            index.markOpApplied(op, me.esdex.coffer.core.storage.MessageId(2097152))
             index.replaceContent(IndexContent.EMPTY)
-            assertEquals(false, index.isOpApplied(op))
+            assertEquals(2097152L, index.opAppliedFrom(op)?.value)
         }
         // Encrypted on disk now: not a plain SQLite file, and not the rows' bytes in the clear.
         assertFalse(RoomVaultIndex.isPlain(file))

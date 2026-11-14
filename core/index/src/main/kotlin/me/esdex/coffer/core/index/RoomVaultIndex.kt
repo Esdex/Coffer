@@ -68,9 +68,12 @@ internal class UploadRow(
     val abandonOp: String?,
 )
 
-/** Operations already applied, so one sent again under a new message id is not applied twice (audit 1, M4). */
+/**
+ * Operations already applied, so one sent again under a new message id is not applied twice (audit 1, M4),
+ * with the message each came in first, so a rescan applies it again from there only (audit 2, N2).
+ */
 @Entity(tableName = "applied_ops")
-internal class AppliedOpRow(@PrimaryKey val opId: String)
+internal class AppliedOpRow(@PrimaryKey val opId: String, @ColumnInfo(defaultValue = "0") val messageId: Long)
 
 @Entity(tableName = "downloads")
 internal class DownloadRow(@PrimaryKey val downloadId: String, val fileId: String, val sealedTarget: ByteArray?)
@@ -135,9 +138,8 @@ internal interface IndexDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putUpload(row: UploadRow)
     @Query("DELETE FROM uploads WHERE uploadId = :uploadId") suspend fun deleteUpload(uploadId: String)
 
-    @Query("SELECT COUNT(*) FROM applied_ops WHERE opId = :opId") suspend fun appliedOpCount(opId: String): Int
+    @Query("SELECT messageId FROM applied_ops WHERE opId = :opId") suspend fun opAppliedFrom(opId: String): Long?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun markOpApplied(row: AppliedOpRow)
-    @Query("DELETE FROM applied_ops") suspend fun deleteAllAppliedOps()
     @Query("SELECT * FROM applied_ops") suspend fun appliedOps(): List<AppliedOpRow>
 
     @Query("SELECT * FROM downloads") fun observeDownloads(): Flow<List<DownloadRow>>
@@ -151,11 +153,11 @@ internal interface IndexDao {
         FileRow::class, PartRow::class, DeletedRow::class, FolderRow::class, DeletedFolderRow::class,
         SnapshotRow::class, SyncRow::class, UploadRow::class, DownloadRow::class, AppliedOpRow::class,
     ],
-    version = 5,
+    version = 6,
     // Only new tables and columns so far: the queue of transfers survives the update.
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
-        AutoMigration(from = 4, to = 5),
+        AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6),
     ],
 )
 internal abstract class IndexDatabase : RoomDatabase() {
@@ -257,8 +259,8 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
     override suspend fun maintainedAt(): Long? = dao.syncValue(MAINTAINED_AT)
     override suspend fun setMaintainedAt(millis: Long) = dao.putSync(SyncRow(MAINTAINED_AT, millis))
 
-    override suspend fun isOpApplied(opId: Id): Boolean = dao.appliedOpCount(opId.hex()) > 0
-    override suspend fun markOpApplied(opId: Id) = dao.markOpApplied(AppliedOpRow(opId.hex()))
+    override suspend fun opAppliedFrom(opId: Id): MessageId? = dao.opAppliedFrom(opId.hex())?.let(::MessageId)
+    override suspend fun markOpApplied(opId: Id, messageId: MessageId) = dao.markOpApplied(AppliedOpRow(opId.hex(), messageId.value))
 
     override suspend fun oldestRecord(): MessageId? = dao.syncValue(OLDEST_RECORD)?.let(::MessageId)
     override suspend fun setOldestRecord(messageId: MessageId) = dao.putSync(SyncRow(OLDEST_RECORD, messageId.value))
@@ -270,8 +272,6 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         dao.deleteAllFolders()
         dao.deleteAllDeletedFolders()
         dao.deleteAllSnapshots()
-        // Read again from the history, or past a snapshot, which holds no operations.
-        dao.deleteAllAppliedOps()
         dao.deleteSync(LAST_APPLIED)
         dao.deleteSync(CONTENT_VERSION)
         dao.insertFiles(content.files.map { FileRow(it.fileId.hex(), it.plainSize, it.partCount, it.sealedMeta, it.status.name, it.padded) })

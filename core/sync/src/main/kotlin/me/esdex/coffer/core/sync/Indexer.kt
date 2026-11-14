@@ -120,13 +120,13 @@ class Indexer(
 
     /** Forgets everything but the transfer queue and reads the whole history again, snapshots aside (SPEC §5.5). */
     suspend fun rescan(onProgress: (Int) -> Unit = {}): CatchUpReport = lock.withLock {
-        index.replaceContent(withOwnUploads(IndexContent.EMPTY))
+        index.replaceContent(withOwnUploads(keepingDeletions(IndexContent.EMPTY)))
         catchUpLocked(onProgress, useSnapshots = false)
     }
 
     /** Forgets everything but the transfer queue and catches up as a new device would, snapshots included. */
     suspend fun reload(onProgress: (Int) -> Unit = {}): CatchUpReport = lock.withLock {
-        index.replaceContent(withOwnUploads(IndexContent.EMPTY))
+        index.replaceContent(withOwnUploads(keepingDeletions(IndexContent.EMPTY)))
         catchUpLocked(onProgress, useSnapshots = true)
     }
 
@@ -226,7 +226,7 @@ class Indexer(
             }
         }
         if (state == null || state.lastAppliedMessageId != payload.lastAppliedMessageId) return false
-        index.replaceContent(withOwnUploads(contentOf(state, KnownSnapshot(messageId, MessageId(state.lastAppliedMessageId)))))
+        index.replaceContent(withOwnUploads(keepingDeletions(contentOf(state, KnownSnapshot(messageId, MessageId(state.lastAppliedMessageId))))))
         return true
     }
 
@@ -274,6 +274,21 @@ class Indexer(
         )
     }
 
+    /**
+     * [content] with every deletion this device has applied. A deletion is for good, and its operation may
+     * be gone from Saved Messages (compacted, or deleted by anyone in the account) while copies of the
+     * file's parts are posted again: a rescan or another device's snapshot must not bring it back (audit 2, N2).
+     */
+    private suspend fun keepingDeletions(content: IndexContent): IndexContent {
+        val deletedFiles = content.deletedFiles + index.deletedFiles()
+        val deletedFolders = content.deletedFolders + index.deletedFolders()
+        return IndexContent(
+            content.lastApplied, content.contentVersion,
+            content.files.filter { it.fileId !in deletedFiles }, content.orphanParts - deletedFiles,
+            content.folders.filter { it.folderId !in deletedFolders }, deletedFiles, deletedFolders, content.snapshots,
+        )
+    }
+
     /** Applies one message; anything already applied is skipped. */
     suspend fun apply(message: StoredMessage) = lock.withLock { applyLocked(message) }
 
@@ -282,7 +297,7 @@ class Indexer(
         if (last != null && message.id <= last) return
         val changed = when (val content = message.content) {
             is MessageContent.Blob -> applyBlob(message.id, content.caption)
-            is MessageContent.Text -> applyText(content.text)
+            is MessageContent.Text -> applyText(message.id, content.text)
             MessageContent.Other -> false
         }
         index.setLastApplied(message.id)
@@ -324,12 +339,14 @@ class Indexer(
     }
 
     /** True if the index (may have) changed. */
-    private suspend fun applyText(text: String): Boolean {
+    private suspend fun applyText(messageId: MessageId, text: String): Boolean {
         val record = Captions.parse(text)?.takeIf { it.kind == RecordKind.OP } ?: return false
         val op = keys.meta.decodeOp(record) ?: return false
-        // Sent again under a new message id, by anyone in the Telegram account: the op_id gives it away (audit 1, M4).
-        if (index.isOpApplied(op.opId)) return false
-        index.markOpApplied(op.opId)
+        // Sent again under a new message id, by anyone in the Telegram account: the op_id gives it away (audit 1,
+        // M4). The message it first came in is applied again by a rescan, and only that one (audit 2, N2).
+        val first = index.opAppliedFrom(op.opId)
+        if (first != null && first != UNCLAIMED && first != messageId) return false
+        if (first == null || first == UNCLAIMED) index.markOpApplied(op.opId, messageId)
         when (op) {
             is Op.FolderCreate -> {
                 // Delete wins over everything, and an id is created once.
@@ -571,6 +588,9 @@ class Indexer(
     private companion object {
         /** SPEC §5.7: an upload that has not finished in a day is not coming. */
         const val GARBAGE_AGE_SECONDS = 24 * 60 * 60L
+
+        /** An operation applied before its message was remembered with it (index schema 5). */
+        val UNCLAIMED = MessageId(0)
     }
 
     private suspend fun refreshStatus(fileId: Id) {

@@ -136,12 +136,14 @@ interface VaultIndex {
     suspend fun setMaintainedAt(millis: Long)
 
     /**
-     * Whether an operation with [opId] was applied already: one sent again under a new message id, as
-     * anyone in the Telegram account can, is not applied twice (audit 1, M4). Emptied by [replaceContent];
-     * past a loaded snapshot, which holds no operations, older ones sent again still count as new.
+     * The message an operation with [opId] was first applied from, or null: one sent again under a new
+     * message id, as anyone in the Telegram account can, is not applied twice (audit 1, M4). Kept by
+     * [replaceContent], so neither a loaded snapshot nor a rescan forgets it (audit 2, N2); a rescan
+     * applies an operation again only from the message it came in first. 0: remembered before the
+     * message was (schema 5), claimed by the next message that brings it.
      */
-    suspend fun isOpApplied(opId: Id): Boolean
-    suspend fun markOpApplied(opId: Id)
+    suspend fun opAppliedFrom(opId: Id): MessageId?
+    suspend fun markOpApplied(opId: Id, messageId: MessageId)
 
     /**
      * The oldest message of the vault the last complete pass over Saved Messages saw, so the next pass
@@ -150,7 +152,7 @@ interface VaultIndex {
     suspend fun oldestRecord(): MessageId?
     suspend fun setOldestRecord(messageId: MessageId)
 
-    /** Replaces everything except uploads, downloads, [maintainedAt] and [oldestRecord], atomically. */
+    /** Replaces everything except uploads, downloads, applied operations, [maintainedAt] and [oldestRecord], atomically. */
     suspend fun replaceContent(content: IndexContent)
 
     fun observeUploads(): Flow<List<PendingUpload>>

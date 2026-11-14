@@ -164,6 +164,68 @@ class OpLogTest {
     }
 
     @Test
+    fun anOperationSentAgainAfterASnapshotLoadIsNotApplied() = runBlocking {
+        // Audit 2, N2: loading a snapshot forgot which operations had been applied, so a copy counted as new.
+        val here = device()
+        val there = device()
+        val folder = here.ops.createFolder("Trip", null)
+        here.ops.renameFolder(folder, "Trip 2025")
+        val firstRename = lastMessage()
+        there.indexer.catchUp()
+        here.ops.renameFolder(folder, "Trip 2026")
+        here.indexer.catchUp()
+        assertTrue(here.snapshotter.snapshotIfNeeded())
+        assertTrue(there.indexer.catchUp().snapshotUsed)
+        here.replay(firstRename)
+
+        there.indexer.catchUp()
+        assertEquals(setOf("Trip 2026" to null), there.view().folders)
+    }
+
+    @Test
+    fun anOperationSentAgainIsNotAppliedByARescanOnceItsOriginalIsGone() = runBlocking {
+        // Audit 2, N2: a rescan forgot which operations had been applied; with the original deleted, as
+        // anyone in the account can, or compacted, the copy was the only one left and counted as new.
+        val here = device()
+        val folder = here.ops.createFolder("Trip", null)
+        here.ops.renameFolder(folder, "Trip 2025")
+        val firstRename = lastMessage()
+        here.ops.renameFolder(folder, "Trip 2026")
+        here.indexer.catchUp()
+        here.replay(firstRename)
+        here.indexer.catchUp()
+        here.storage.delete(listOf(firstRename))
+
+        // The rescan rebuilds from nothing: "Trip 2026" means it applied the later rename again, from its own message.
+        here.indexer.rescan()
+        assertEquals(setOf("Trip 2026" to null), here.view().folders)
+    }
+
+    @Test
+    fun aDeletedFileStaysDeletedThroughARescanWhenItsPartsArePostedAgain() = runBlocking {
+        // Audit 2, N2: with the delete gone from Saved Messages and copies of the parts posted again, a
+        // rescan brought the file back.
+        val here = device()
+        val fileId = here.upload("secret.txt", bytes("s"))
+        here.indexer.catchUp()
+        val parts = here.index.parts(fileId).values.map { id -> cloud.allMessages().single { it.id == id } }
+        val kept = parts.map { message ->
+            val copy = temp.newFile("cfr_" + kotlin.random.Random.nextLong().toULong().toString(16).padStart(12, '0').take(12) + ".bin")
+            copy.writeBytes(here.storage.openBlob(message.id).use { it.readBytes() })
+            copy to (message.content as MessageContent.Blob).caption
+        }
+        here.deleter.delete(here.keys, fileId, now = 1)
+        here.indexer.catchUp()
+        val deleteOp = lastMessage()
+        for ((copy, caption) in kept) here.storage.sendBlob(copy, caption)
+        here.storage.delete(listOf(deleteOp))
+
+        here.indexer.rescan()
+        assertEquals(View(emptySet(), emptySet()), here.view())
+        assertTrue(here.index.isDeleted(fileId))
+    }
+
+    @Test
     fun aFilesFirstPartSentAgainDoesNotBringBackItsOldName() = runBlocking {
         val here = device()
         val fileId = here.upload("draft.txt", bytes("d"))
