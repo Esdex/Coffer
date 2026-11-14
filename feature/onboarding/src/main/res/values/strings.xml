@@ -84,7 +84,7 @@
     <string name="vault_unlock">Unlock</string>
     <string name="vault_unlock_title">Unlock your vault</string>
     <string name="vault_unlock_explanation">Enter the vault password. It is not your Telegram password.</string>
-    <string name="vault_unlock_password_changed">The vault password was changed on another device, so the vault was locked here. Unlock it with the new password.</string>
+    <string name="vault_unlock_password_changed">The vault password was changed on another device, so the vault was locked here and fingerprint unlock was turned off. Unlock it with the new password.</string>
     <string name="vault_unlock_prompt">Unlock Coffer</string>
     <string name="vault_unlock_device">Unlock with fingerprint</string>
     <string name="vault_use_recovery_key">Use the recovery key instead</string>

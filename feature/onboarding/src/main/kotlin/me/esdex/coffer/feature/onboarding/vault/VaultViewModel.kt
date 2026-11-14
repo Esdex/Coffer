@@ -82,7 +82,17 @@ class VaultViewModel @Inject constructor(
     private var pending: NewVault? = null
 
     val deviceUnlockAvailable: Boolean get() = device.isAvailable()
-    val deviceUnlockEnabled: Boolean get() = device.isEnabled
+    val deviceUnlockEnabled: Boolean
+        get() {
+            // The password was changed on another device: the fingerprint goes until the new one is typed,
+            // and the offer to turn it on comes again after that (audit 1, M7).
+            if (store.deviceUnlockStale) {
+                device.disable()
+                store.biometricOffered = false
+                store.deviceUnlockStale = false
+            }
+            return device.isEnabled
+        }
 
     private val offerFlow = MutableStateFlow(false)
 

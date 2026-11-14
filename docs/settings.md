@@ -7,8 +7,8 @@ Open Settings from the menu on the files screen.
 - **Auto-lock**: lock while Coffer is in the background, after 1, 5, 15, 30 or 60 minutes (5 by
   default), or never. Locking wipes the keys from memory.
 - **Unlock with fingerprint**: fingerprint or face instead of the password. The phone's PIN does not
-  open the vault. Adding a new fingerprint or face turns it off until the next unlock with the
-  password.
+  open the vault. Adding a new fingerprint or face, or changing the password on another device, turns
+  it off until the next unlock with the password.
 - **Block screenshots**: no screenshots or screen recording, and the app looks blank in recent apps.
   Wherever the recovery key shows, screenshots are blocked anyway.
 - **Hide exact file sizes**: new uploads are padded inside the encryption, so Telegram cannot tell a

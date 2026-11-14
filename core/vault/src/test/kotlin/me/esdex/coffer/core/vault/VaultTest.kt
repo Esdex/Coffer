@@ -366,6 +366,75 @@ class VaultManagerTest {
     }
 
     @Test
+    fun aPasswordChangedElsewhereTurnsTheFingerprintHereOff() = runTest {
+        // Audit 1, M7: the master key stays the same, so the fingerprint would still open the vault.
+        val cloud = FakeCloud()
+        val hereStore = VaultStore(temp.newFolder())
+        val here = VaultManager(sodium, hereStore, { 42 }, EmptyCoroutineContext)
+        val hereStorage = cloud.device()
+        here.locate(hereStorage)
+        here.publish(hereStorage, here.prepareNew("old password on both devices"))
+        val thereStore = VaultStore(temp.newFolder())
+        val there = VaultManager(sodium, thereStore, { 42 }, EmptyCoroutineContext)
+        val thereStorage = cloud.device()
+        there.locate(thereStorage)
+        assertTrue(there.unlockWithPassword("old password on both devices", thereStorage))
+
+        here.changePassword(hereStorage, "old password on both devices", "new password changed over here")
+        // Not on the device that changed it: its user typed the new password there.
+        assertFalse(hereStore.deviceUnlockStale)
+        there.headersChanged(thereStorage)
+        assertTrue(thereStore.deviceUnlockStale)
+    }
+
+    @Test
+    fun aChangeElsewhereAfterOneHereIsNoticed() = runTest {
+        val cloud = FakeCloud()
+        val (here, there, storages) = twoDevices(cloud, "first password of the vault")
+        val (hereStorage, thereStorage) = storages
+        val thereStore = VaultStore(temp.newFolder())
+        val third = VaultManager(sodium, thereStore, { 42 }, EmptyCoroutineContext)
+        third.locate(thereStorage)
+        assertTrue(third.unlockWithPassword("first password of the vault", thereStorage))
+        // Changed on the third device itself, then on the first one.
+        assertEquals(VaultManager.PasswordChange.Changed, third.changePassword(thereStorage, "first password of the vault", "second password, set on the third"))
+        here.headersChanged(hereStorage)
+        assertTrue(here.unlockWithPassword("second password, set on the third", hereStorage))
+        here.changePassword(hereStorage, "second password, set on the third", "third password, set on the first")
+        third.headersChanged(thereStorage)
+        assertTrue(thereStore.deviceUnlockStale)
+    }
+
+    @Test
+    fun aDeviceThatWasLockedLearnsOfTheChangeAtItsNextSearch() = runTest {
+        val cloud = FakeCloud()
+        val (here, there, storages) = twoDevices(cloud, "old password on both devices")
+        val (hereStorage, thereStorage) = storages
+        there.lockVault()
+        here.changePassword(hereStorage, "old password on both devices", "new password changed over here")
+        there.locate(thereStorage)
+        val state = there.state.value
+        assertTrue(state is VaultManager.State.Locked && state.passwordChangedElsewhere)
+    }
+
+    @Test
+    fun aForgedHeaderPostedAndDeletedIsNotAPasswordChange() = runTest {
+        val cloud = FakeCloud()
+        val (_, there, storages) = twoDevices(cloud, "the password of the real vault")
+        val (hereStorage, thereStorage) = storages
+        there.lockVault()
+        // With the vault's own master_id and pinned, so the device does take it in, then deleted.
+        val header = hereStorage.pinnedMessages().single().let { FoundHeader.from(it)!!.header }
+        val forged = hereStorage.sendHeader(header.copy(salt = PasswordKdf.newSalt(sodium), createdAt = 77))
+        hereStorage.pin(forged.id)
+        there.locate(thereStorage)
+        hereStorage.delete(listOf(forged.id))
+        there.locate(thereStorage)
+        val state = there.state.value
+        assertTrue(state is VaultManager.State.Locked && !state.passwordChangedElsewhere)
+    }
+
+    @Test
     fun anOpenVaultLocksWhenItsHeaderIsReplacedElsewhere() = runTest {
         val cloud = FakeCloud()
         val (here, there, storages) = twoDevices(cloud, "old password on both devices")

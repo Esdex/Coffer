@@ -48,6 +48,15 @@ class VaultStore(private val dir: File) {
 
         @Synchronized set(value) = updatePrefs { if (value == null) it.remove(OPENED_HEADER) else it.setProperty(OPENED_HEADER, value.value.toString()) }
 
+    /**
+     * The password was changed on another device: the master key the fingerprint holds here still opens the
+     * vault, so fingerprint unlock is to be turned off until the new password is typed once (audit 1, M7).
+     */
+    var deviceUnlockStale: Boolean
+        @Synchronized get() = prefs().getProperty(DEVICE_UNLOCK_STALE) == "true"
+
+        @Synchronized set(value) = updatePrefs { if (value) it.setProperty(DEVICE_UNLOCK_STALE, "true") else it.remove(DEVICE_UNLOCK_STALE) }
+
     /** Auto-lock after this long in the background; null = off. SPEC §9: on, 5 minutes by default. */
     var autoLockMinutes: Int?
         @Synchronized get() {
@@ -121,6 +130,7 @@ class VaultStore(private val dir: File) {
 
     private companion object {
         const val OPENED_HEADER = "openedHeader"
+        const val DEVICE_UNLOCK_STALE = "deviceUnlockStale"
         const val AUTO_LOCK = "autoLockMinutes"
         const val BIOMETRIC_OFFERED = "biometricOffered"
         const val SAVED_MESSAGES_NOTICE = "savedMessagesNotice"

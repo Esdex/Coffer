@@ -24,7 +24,8 @@ Some things belong to one phone only:
 ## Password changes
 
 Changing the password on one phone locks the vault on the others. There, only the new password
-opens it. The recovery key stays the same.
+opens it, and fingerprint unlock is turned off until the new password is typed once. The recovery
+key stays the same.
 
 ## Deleting the vault
 

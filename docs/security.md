@@ -47,6 +47,10 @@ Settings, Security, **Hide exact file sizes** turns the file padding off.
 - **Losing your Telegram account**: the vault lives in it. Telegram deletes accounts that stay
   inactive for the period set in its privacy settings, and the vault would go with it. Coffer is not
   a backup of Telegram: keep copies of files you cannot lose somewhere else as well.
+- **Someone who knew the old password**: changing it does not change the key your files are
+  encrypted with. Whoever knew the old password and kept a copy of the vault from your Telegram
+  account can still open that copy, and the files added since. If you think that happened, create a
+  new vault and move your files into it.
 - **Losing both the password and the recovery key**: nobody can open the vault then.
 
 ## Reporting a vulnerability

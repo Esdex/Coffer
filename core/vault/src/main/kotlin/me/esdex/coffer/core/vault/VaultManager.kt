@@ -13,6 +13,7 @@ import me.esdex.coffer.core.crypto.SecretKey
 import me.esdex.coffer.core.crypto.bip39.Bip39
 import me.esdex.coffer.core.crypto.format.VaultHeaderCodec
 import me.esdex.coffer.core.crypto.sodium.Sodium
+import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.storage.StorageException
 import kotlin.coroutines.CoroutineContext
@@ -112,9 +113,25 @@ class VaultManager(
             val known = knownMasterId()
             val mine = if (known == null) found else found.filter { it.header.masterId == known }
             if (mine.isEmpty()) return
+            // Off while the password changed elsewhere: it says so on the unlock screen, and the fingerprint goes.
+            val changed = passwordChanged(headers.map { it.messageId }.toSet() - mine.map { it.messageId }.toSet())
             remember(mine)
-            stateFlow.value = lockedOrUnknown()
+            val saidSo = (stateFlow.value as? State.Locked)?.passwordChangedElsewhere == true
+            stateFlow.value = headers.first().let { State.Locked(it.header.masterId, passwordChangedElsewhere = changed || saidSo) }
         }
+    }
+
+    /**
+     * True if [gone], headers this device knew, means the password was changed on another device: the
+     * header the password last opened is among them (one someone else posted and deleted is not). The
+     * master key stays the same through a change, so the fingerprint here would still open the vault with
+     * the old password's key; it is marked for turning off (audit 1, M7).
+     */
+    private fun passwordChanged(gone: Set<MessageId>): Boolean {
+        val opened = store.openedHeader
+        if (gone.isEmpty() || (opened != null && opened !in gone)) return false
+        store.deviceUnlockStale = true
+        return true
     }
 
     private fun knownMasterId(): Bytes? = headers.firstOrNull()?.header?.masterId
@@ -185,6 +202,7 @@ class VaultManager(
             val same = found.filter { it.header.masterId == masterId }
             if (same.isEmpty()) return
             val gone = headers.map { it.messageId }.toSet() - same.map { it.messageId }.toSet()
+            passwordChanged(gone)
             remember(same)
             val current = stateFlow.value
             if (current is State.Unlocked && gone.isNotEmpty()) {
@@ -354,6 +372,8 @@ class VaultManager(
             .map { it.messageId }
             .distinct()
         lock.withLock { remember(listOf(published)) }
+        // The new password opens the new header: the one tried first from now on, here.
+        store.openedHeader = published.messageId
         if (old.isNotEmpty()) storage.delete(old)
         return PasswordChange.Changed
     }

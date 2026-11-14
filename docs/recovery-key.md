@@ -32,7 +32,12 @@ is looking at the screen.
 ## Changing the password
 
 Settings, Vault, **Change password**. The new password works on all your devices; the recovery key
-and your files stay the same. Your other devices lock, and open again only with the new password.
+and your files stay the same. Your other devices lock, open again only with the new password, and
+turn fingerprint unlock off until it is typed there once.
+
+A password change does not change the key your files are encrypted with. Someone who knew the old
+password and kept a copy of the vault from your Telegram account could still open it with the old
+one. If you think that happened, create a new vault and move your files into it.
 
 ## If both are lost
 
