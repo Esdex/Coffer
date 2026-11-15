@@ -27,14 +27,13 @@ tags, previous and next, shuffle and repeat.
 
 - Music plays on in the background, with its controls in a notification, on the lock screen and on
   headset buttons. When the vault locks, the track playing finishes and the rest of the queue is
-  dropped, so nobody can play your other tracks from a locked phone. Other apps see only "Coffer"
-  playing unless you turn on showing the track.
+  dropped, so nobody can play your other tracks from a locked phone.
 - Back folds the player into a card floating over the files.
 - A call, another app's sound or unplugged headphones pause it.
 - The progress bar is the song's waveform. The first time a song plays, Coffer downloads it whole to
   work the waveform out; after that it shows at once.
-- By default the notification and lock screen say only Coffer. Settings, Player, **Show what is
-  playing outside Coffer** shows the title and cover there.
+- By default the notification, the lock screen and other apps see only "Coffer" playing. Settings,
+  Player, **Show what is playing outside Coffer** shows the title and cover there.
 
 ## PDFs
 

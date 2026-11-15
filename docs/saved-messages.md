@@ -8,8 +8,8 @@ Coffer's messages too, and you can delete or edit them like any other. Please do
 Short text messages starting with `coffer:`, one of them pinned. They hold your vault's key,
 folders and names.
 
-**Editing or deleting them damages the vault.** The pinned one is the vault header: without it,
-neither the password nor the recovery key can open the vault.
+**Editing or deleting them damages the vault.** The pinned one is the vault header, which holds the
+vault's key: without it, Coffer cannot find the vault until it is put back (see below).
 
 ## The files: `cfr_*.bin`
 

@@ -22,6 +22,7 @@ names and folders are encrypted on your phone before anything is sent, and only 
 
 - [Telegram API keys](api-keys.md): built-in keys and your own
 - [Security](security.md): the encryption, and what Coffer does and does not protect against
+- [Security audits](https://github.com/Esdex/Coffer/tree/main/audits): the reports of the reviews
 - [Deleting the vault and logging out](delete-vault.md)
 - [FAQ and troubleshooting](faq.md)
 - [Privacy policy](privacy.md)

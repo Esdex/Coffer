@@ -25,6 +25,19 @@ Open the vault with the recovery key, then set a new password with it in Setting
 password: see [Your recovery key](recovery-key.md). Without the password and the recovery key, nobody
 can open the vault.
 
+## Coffer finds no vault, but my files are in Saved Messages
+
+The pinned note that holds the vault's key was deleted. A phone where the vault is set up puts it
+back by itself when Coffer runs there. With no such phone, tap **Restore a vault with its recovery
+key** on the screen that offers a new vault: see [Your recovery key](recovery-key.md). Do not create
+a new vault instead.
+
+## Coffer says the password was changed on another device
+
+Type the new password; fingerprint unlock comes back after that. If nobody changed it, someone else
+knows your vault password and can reach your Telegram account: change the password, and turn on
+two-step verification in Telegram.
+
 ## A file says Damaged
 
 A part of it is missing from Saved Messages, usually because it was deleted in the Telegram app.

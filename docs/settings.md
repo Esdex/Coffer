@@ -2,6 +2,11 @@
 
 Open Settings from the menu on the files screen.
 
+## Support the project
+
+In the builds from GitHub and F-Droid, the first item: ways to support Coffer's development, if you
+want to.
+
 ## Security
 
 - **Auto-lock**: lock while Coffer is in the background, after 1, 5, 15, 30 or 60 minutes (5 by
@@ -17,7 +22,8 @@ Open Settings from the menu on the files screen.
 
 ## Vault
 
-- **Change password**: asks for the current password first. See [Your recovery key](recovery-key.md).
+- **Change password**: asks for the current password first, or the recovery key if you forgot it.
+  See [Your recovery key](recovery-key.md).
 - **Show recovery key**: the 24 words, after the current password.
 - **Delete vault**: see [Deleting the vault and logging out](delete-vault.md).
 

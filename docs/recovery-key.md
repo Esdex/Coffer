@@ -22,9 +22,9 @@ key**, type the 24 words in place of the current password, and choose the new on
 Coffer keeps the vault's key in one pinned note in Saved Messages. If that note was deleted, for
 example by mistake in the Telegram app, a phone where the vault is set up puts it back by itself the
 next time Coffer runs there. With no such phone, Coffer finds no vault, even though your files are
-still there. On the screen that offers a new vault, tap **Restore a vault with its recovery key**, type the 24 words
-and choose a new password. The vault comes back with all its files, and the recovery key stays the
-same.
+still there. On the screen that offers a new vault, tap **Restore a vault with its recovery key**,
+type the 24 words and choose a new password. The vault comes back with all its files, and the
+recovery key stays the same.
 
 If Coffer asks for a password instead, because another vault's note is in Saved Messages, tap **Use
 the recovery key instead** and type the 24 words. Coffer says the key belongs to a different vault
