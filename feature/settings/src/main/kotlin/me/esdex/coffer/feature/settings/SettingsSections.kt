@@ -539,7 +539,18 @@ private object AboutLinks {
     // The documentation, on GitHub Pages from docs/ in the repository.
     val website: String? = "https://esdex.github.io/Coffer/"
     val privacyPolicy: String? = "https://esdex.github.io/Coffer/privacy.html"
-    val reportProblem: String? = "https://github.com/Esdex/Coffer/issues"
+}
+
+/**
+ * A new issue on GitHub, opened on the bug report form with what the app knows filled in: its version,
+ * and Android's with the phone's model. Nothing else, and all of it on screen to change before sending.
+ */
+internal fun bugReportUrl(version: String, android: String, manufacturer: String, model: String): String {
+    // "Google Pixel 8", not "Google Google Pixel 8": some models carry their maker's name already.
+    val device = if (model.startsWith(manufacturer, ignoreCase = true)) model else "$manufacturer $model"
+    fun encode(value: String) = java.net.URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+    return "https://github.com/Esdex/Coffer/issues/new?template=bug_report.yml" +
+        "&version=" + encode(version) + "&android=" + encode("Android $android, $device")
 }
 
 @Composable
@@ -635,7 +646,9 @@ internal fun AboutSection(
         SettingsGroup(stringResource(R.string.settings_about_connect)) {
             row { shape -> ExternalRow(shape, stringResource(R.string.settings_about_privacy), null) { open(AboutLinks.privacyPolicy) } }
             row { shape ->
-                ExternalRow(shape, stringResource(R.string.settings_about_report), stringResource(R.string.settings_about_report_desc)) { open(AboutLinks.reportProblem) }
+                ExternalRow(shape, stringResource(R.string.settings_about_report), stringResource(R.string.settings_about_report_desc)) {
+                    open(bugReportUrl(version, Build.VERSION.RELEASE, Build.MANUFACTURER, Build.MODEL))
+                }
             }
         }
     }
