@@ -107,9 +107,13 @@ val apiIdValid = apiId.toIntOrNull()?.let { it > 0 } == true
 val apiHashValid = apiHash.matches(Regex("[0-9a-fA-F]{32}"))
 
 // The public build's built-in keys: a developer key of their own, so the personal one stays personal.
-// Without them the public build asks every user for keys, as before.
-val publicApiId: String = localProperties.getProperty("COFFER_PUBLIC_API_ID").orEmpty().trim()
-val publicApiHash: String = localProperties.getProperty("COFFER_PUBLIC_API_HASH").orEmpty().trim()
+// In git (public-api-keys.properties) and read from nowhere else, so every build of a commit, F-Droid's
+// included, has the same keys and the same bytes. Without the file the public build asks every user for keys.
+val publicApiKeys = Properties().apply {
+    file("public-api-keys.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+}
+val publicApiId: String = publicApiKeys.getProperty("COFFER_PUBLIC_API_ID").orEmpty().trim()
+val publicApiHash: String = publicApiKeys.getProperty("COFFER_PUBLIC_API_HASH").orEmpty().trim()
 val publicKeysGiven = publicApiId.isNotEmpty() || publicApiHash.isNotEmpty()
 val publicApiKeysValid = publicApiId.toIntOrNull()?.let { it > 0 } == true && publicApiHash.matches(Regex("[0-9a-fA-F]{32}"))
 
@@ -121,7 +125,7 @@ val validatePublicApiKeys = tasks.register("validatePublicApiKeys") {
         if (given && !valid) {
             throw GradleException(
                 "COFFER_PUBLIC_API_ID must be a positive integer and COFFER_PUBLIC_API_HASH 32 hex characters " +
-                    "in local.properties (or leave both out to have users enter their own).",
+                    "in app/public-api-keys.properties (or leave both out to have users enter their own).",
             )
         }
     }

@@ -121,7 +121,7 @@ The APK comes out unsigned: sign it with your own key, or take a signed one from
 
 The `fdroid` flavor is the build for GitHub Releases and F-Droid. The `playstore` flavor leaves out the donation page, as Google Play's payments policy asks.
 
-**Telegram API keys.** The `public` flavor builds without keys: at sign-in each user enters their own `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org). To build keys in, put `COFFER_PUBLIC_API_ID` and `COFFER_PUBLIC_API_HASH` into `local.properties`. Keys never go into git.
+**Telegram API keys.** The `public` flavor builds with Coffer's own keys from `app/public-api-keys.properties`. They are in the repository on purpose: F-Droid builds Coffer from this source and publishes the APK signed with Coffer's key only if its build matches it byte for byte, and the keys are in every published APK anyway. Without that file, each user enters their own `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org) at sign-in. The `personal` flavor reads its keys from `COFFER_API_ID` and `COFFER_API_HASH` in `local.properties`, which stays out of git.
 
 ---
 

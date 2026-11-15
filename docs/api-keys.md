@@ -24,5 +24,6 @@ files.
 
 ## Builds from source
 
-A build without keys of its own asks every user for theirs. See "Build from source" in the
+A build from the source code has the same built-in keys, as they are part of it. A build without
+them asks every user for theirs. See "Build from source" in the
 [README](https://github.com/Esdex/Coffer#build-from-source).
