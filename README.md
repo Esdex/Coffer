@@ -141,6 +141,8 @@ Modules: `:core:crypto`, `:core:storage`, `:core:tdlib`, `:core:vault`, `:core:i
 
 ## Security
 
+The codebase has been reviewed using AI-assisted security analysis, in two full audits before the first release. Reports are published in [`/audits`](audits/).
+
 **Reporting a vulnerability:** Please use [GitHub Security Advisories](https://github.com/Esdex/Coffer/security/advisories/new) to report security issues privately. Do not open a public issue for vulnerabilities.
 
 ---
