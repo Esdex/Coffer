@@ -164,6 +164,30 @@ class OpLogTest {
     }
 
     @Test
+    fun aStorageErrorWhileCatchingUpIsWaitedOutNotThrown() = kotlinx.coroutines.test.runTest {
+        // Audit 2, L-h: an error from Telegram while catching up went uncaught and crashed the app.
+        val here = device()
+        here.ops.createFolder("Docs", null)
+        val there = device()
+        var failures = 2
+        val flaky = object : StorageBackend by there.storage {
+            override suspend fun historyBefore(before: MessageId?, limit: Int): List<StoredMessage> {
+                if (failures-- > 0) throw StorageException("connection lost")
+                return there.storage.historyBefore(before, limit)
+            }
+        }
+        val errors = mutableListOf<StorageException>()
+        val caughtUp = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val job = launch {
+            Indexer(flaky, there.index, there.keys).follow(onCaughtUp = { caughtUp.complete(Unit) }, onError = { errors += it })
+        }
+        caughtUp.await()
+        assertEquals(2, errors.size)
+        assertEquals(setOf("Docs" to null), there.view().folders)
+        job.cancel()
+    }
+
+    @Test
     fun anOperationSentAgainAfterASnapshotLoadIsNotApplied() = runBlocking {
         // Audit 2, N2: loading a snapshot forgot which operations had been applied, so a copy counted as new.
         val here = device()

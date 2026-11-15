@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -74,6 +75,33 @@ class Indexer(
      * on, and skipping it loses it; the whole history is read again instead (SPEC §5.5), and [onLate]
      * says so. Anything else no newer than the last applied is a repeat and is skipped.
      */
+    /**
+     * [run], started again after a storage error instead of ending with it: Telegram may fail a page of
+     * the history or ask to wait, and the network may drop. Uncaught, such an error crashed the app on
+     * every unlock (audit 2, L-h). Waits as Telegram asks, otherwise longer after each failure in a row.
+     */
+    suspend fun follow(
+        onCatchUpProgress: (Int) -> Unit = {},
+        onCaughtUp: () -> Unit = {},
+        onLate: (MessageId) -> Unit = {},
+        onError: (StorageException) -> Unit = {},
+    ) {
+        var pause = FIRST_RETRY_MILLIS
+        while (true) {
+            try {
+                run(onCatchUpProgress, { pause = FIRST_RETRY_MILLIS; onCaughtUp() }, onLate)
+                return
+            } catch (e: FloodWaitException) {
+                onError(e)
+                delay(e.seconds * 1000L)
+            } catch (e: StorageException) {
+                onError(e)
+                delay(pause)
+                pause = (pause * 2).coerceAtMost(MAX_RETRY_MILLIS)
+            }
+        }
+    }
+
     suspend fun run(
         onCatchUpProgress: (Int) -> Unit = {},
         onCaughtUp: () -> Unit = {},
@@ -588,6 +616,9 @@ class Indexer(
     private companion object {
         /** SPEC §5.7: an upload that has not finished in a day is not coming. */
         const val GARBAGE_AGE_SECONDS = 24 * 60 * 60L
+
+        const val FIRST_RETRY_MILLIS = 5_000L
+        const val MAX_RETRY_MILLIS = 5 * 60_000L
 
         /** An operation applied before its message was remembered with it (index schema 5). */
         val UNCLAIMED = MessageId(0)

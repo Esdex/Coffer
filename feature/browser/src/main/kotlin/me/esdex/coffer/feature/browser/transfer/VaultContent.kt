@@ -220,7 +220,7 @@ class VaultContent @Inject constructor(
             live = current
             launch {
                 catchUpFlow.value = 0
-                indexer.run(
+                indexer.follow(
                     onCatchUpProgress = { catchUpFlow.value = it },
                     onCaughtUp = {
                         catchUpFlow.value = null
@@ -229,6 +229,8 @@ class VaultContent @Inject constructor(
                     },
                     // A message id only: rare enough to want to know when it happens.
                     onLate = { Log.w(SYNC_TAG, "message ${it.value} came late; reading the history again") },
+                    // Its kind only: a message could carry more than the project's rule on logs allows.
+                    onError = { Log.w(SYNC_TAG, "catching up failed (${it.javaClass.simpleName}); trying again") },
                 )
             }
             // SPEC §4.4: a while after the last change, so a burst of changes makes one snapshot.
