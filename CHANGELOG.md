@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.0.0]
+## [1.0.0] - 2026-11-15
 
 ### Added
 - The app icon: a golden chest on navy, shaped for every launcher's mask, with a themed version for Android 13 and later that follows the wallpaper's colours.

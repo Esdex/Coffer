@@ -102,6 +102,13 @@ Coffer uses TDLib, Telegram's own client library, built from pinned sources. It 
 
 <!-- TODO: add the F-Droid and Google Play badges once published -->
 
+**Verify the APK.** Releases are signed with Coffer's own key. Before installing, you can check that the APK's signing certificate has this SHA-256 fingerprint, for example with [AppVerifier](https://github.com/soupslurpr/AppVerifier):
+
+```
+me.esdex.coffer
+25:86:4E:BB:45:B9:47:81:8F:85:1E:E5:36:45:F7:7D:9E:A4:27:AC:1C:EE:7C:C7:B2:89:B0:00:A1:77:0D:7F
+```
+
 ### Build from source
 
 ```bash
