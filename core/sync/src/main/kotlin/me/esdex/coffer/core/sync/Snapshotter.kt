@@ -6,6 +6,8 @@ import me.esdex.coffer.core.index.KnownSnapshot
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
+import me.esdex.coffer.core.storage.StorageException
+import me.esdex.coffer.core.storage.MessageContent
 import java.io.File
 
 /**
@@ -42,7 +44,21 @@ class Snapshotter(
     }
 
     private suspend fun prune() {
-        val old = index.snapshots().sortedWith(NEWEST_STATE_FIRST).drop(KEEP)
+        val known = index.snapshots()
+        // A copy of a snapshot carries its caption letter for letter; two snapshots never do, each sealed with
+        // a random nonce. Copies, as anyone in the account can post over documents of its size, go first, the
+        // first one sent staying: they must not take the places of other snapshots (audit 2, L-f).
+        val captions = known.associateWith { snapshot ->
+            try {
+                (storage.message(snapshot.messageId)?.content as? MessageContent.Blob)?.caption
+            } catch (_: StorageException) {
+                null
+            }
+        }
+        val copies = known.filter { captions[it] != null }.groupBy { captions[it] }.values
+            .flatMap { same -> same.sortedBy { it.messageId }.drop(1) }.toSet()
+        val kept = (known - copies).sortedWith(NEWEST_STATE_FIRST).take(KEEP).toSet()
+        val old = known.filter { it !in kept }
         if (old.isEmpty()) return
         storage.delete(old.map { it.messageId })
         for (snapshot in old) index.removeSnapshot(snapshot.messageId)

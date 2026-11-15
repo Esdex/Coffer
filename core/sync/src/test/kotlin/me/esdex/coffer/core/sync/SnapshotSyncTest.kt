@@ -371,6 +371,29 @@ class SnapshotSyncTest {
     }
 
     @Test
+    fun copiesOfTheNewestSnapshotOverJunkDoNotPushOutTheOthers() = runBlocking {
+        // Audit 2, L-f: its caption over three documents of its size took all three places, and Coffer
+        // deleted the genuine older snapshots itself.
+        val here = device()
+        val real = mutableListOf<MessageId>()
+        repeat(3) {
+            here.upload("f$it.txt", bytes("$it"))
+            here.indexer.catchUp()
+            assertTrue(here.snapshotter.snapshotIfNeeded())
+            real += here.index.snapshots().maxOf { s -> s.messageId }
+        }
+        val newest = indexBlobs().single { it.id == real.last() }.content as MessageContent.Blob
+        repeat(3) { cloud.postBlobOfSize(newest.caption, newest.size) }
+        here.indexer.catchUp()
+        here.upload("last.txt", bytes("l"))
+        here.indexer.catchUp()
+        assertTrue(here.snapshotter.snapshotIfNeeded())
+        val latest = here.index.snapshots().maxOf { s -> s.lastApplied }.let { state -> here.index.snapshots().single { it.lastApplied == state }.messageId }
+        // The three newest states, each by its first message; the copies go.
+        assertEquals(setOf(real[1], real[2], latest), indexBlobs().map { it.id }.toSet())
+    }
+
+    @Test
     fun oldSnapshotsSentAgainDoNotPushOutTheNewest() = runBlocking {
         val here = device()
         val real = mutableListOf<MessageId>()
