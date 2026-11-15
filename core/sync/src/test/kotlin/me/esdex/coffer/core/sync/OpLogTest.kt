@@ -22,6 +22,7 @@ import me.esdex.coffer.core.storage.StorageException
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -161,6 +162,27 @@ class OpLogTest {
         there.indexer.catchUp()
         here.indexer.catchUp()
         for (device in listOf(here, there)) assertEquals(setOf("Trip 2026" to null), device.view().folders)
+    }
+
+    @Test
+    fun aCatchUpAppliesAPageAtATimeAndKeepsWhatItApplied() = runBlocking {
+        // Audit 2, L-g: the whole history was held before anything was applied; enough of it ran out of
+        // memory at every unlock, and nothing a failed catch-up read was kept.
+        val here = device()
+        repeat(12) { here.ops.createFolder("F$it", null) }
+        val there = device()
+        var pages = 0
+        val failsLate = object : StorageBackend by there.storage {
+            override suspend fun historyAfter(after: MessageId, limit: Int): List<StoredMessage> {
+                if (++pages == 3) throw StorageException("connection lost")
+                return there.storage.historyAfter(after, limit)
+            }
+        }
+        assertThrows(StorageException::class.java) { runBlocking { Indexer(failsLate, there.index, there.keys).catchUp() } }
+        // FakeCloud's pages hold 5: the first two pages are in.
+        assertEquals(10, there.view().folders.size)
+        there.indexer.catchUp()
+        assertEquals(12, there.view().folders.size)
     }
 
     @Test

@@ -39,8 +39,8 @@ class Maintenance(
     suspend fun run(onProgress: (Int) -> Unit = {}): Report {
         // A fresh snapshot first, so compaction can reach the most recent operations.
         snapshotter.snapshotIfNeeded()
-        val history = readAll(onProgress)
-        checkComplete(history)
+        val (history, oldestRead, read) = readAll(onProgress)
+        checkComplete(oldestRead)
         val nowSeconds = clock() / 1000
         val reconciled = indexer.reconcile(history, nowSeconds)
         val gone = (reconciled.garbage + reconciled.oldSnapshots).toSet()
@@ -60,7 +60,7 @@ class Maintenance(
         history.filter { it.id !in removed && it.isRecord() }.minOfOrNull { it.id }?.let { index.setOldestRecord(it) }
         index.setMaintainedAt(clock())
         return Report(
-            messagesRead = history.size,
+            messagesRead = read,
             damaged = reconciled.damaged,
             repaired = reconciled.repaired,
             garbageDeleted = reconciled.garbage.size,
@@ -77,8 +77,7 @@ class Maintenance(
      * was cut short, and nothing is marked or deleted. The vault's headers count too: with nothing else
      * known below a cut, as on a first run, the first header still is (audit 2, L-d).
      */
-    private suspend fun checkComplete(history: List<StoredMessage>) {
-        val oldestRead = history.firstOrNull()?.id
+    private suspend fun checkComplete(oldestRead: MessageId?) {
         val known = index.allParts().values.flatMap { it.values } + index.snapshots().map { it.messageId } +
             listOfNotNull(index.oldestRecord()) + headers()
         for (id in known.filter { oldestRead == null || it < oldestRead }.distinct().sorted()) {
@@ -98,17 +97,24 @@ class Maintenance(
         return clock() - last >= WEEK_MILLIS
     }
 
-    private suspend fun readAll(onProgress: (Int) -> Unit): List<StoredMessage> {
+    /**
+     * Coffer's records in Saved Messages, oldest first, and the oldest message read. The user's own
+     * messages are not kept: anyone in the account can post a hundred thousand long ones, and holding them
+     * all ran out of memory at every unlock while the weekly run was due (audit 2, L-g).
+     */
+    private suspend fun readAll(onProgress: (Int) -> Unit): Triple<List<StoredMessage>, MessageId?, Int> {
         val newestFirst = mutableListOf<StoredMessage>()
         var before: MessageId? = null
+        var read = 0
         while (true) {
             val page = storage.historyBefore(before, StorageBackend.MAX_PAGE)
             if (page.isEmpty()) break
-            newestFirst += page
-            onProgress(newestFirst.size)
+            newestFirst += page.filter { it.isRecord() }
+            read += page.size
+            onProgress(read)
             before = page.last().id
         }
-        return newestFirst.asReversed()
+        return Triple(newestFirst.asReversed(), before, read)
     }
 
     // In slices: one request per hundred, so a large compaction does not set off FLOOD_WAIT at once.

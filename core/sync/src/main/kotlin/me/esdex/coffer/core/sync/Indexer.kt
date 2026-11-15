@@ -164,7 +164,11 @@ class Indexer(
 
     private suspend fun catchUpLocked(onProgress: (Int) -> Unit, useSnapshots: Boolean): CatchUpReport {
         val last = index.lastApplied()
-        val newer = mutableListOf<StoredMessage>()
+        // Nothing read is kept past its page: anyone in the account can post a hundred thousand long
+        // messages while a device is away, and holding them all ran out of memory at every unlock (audit 2,
+        // L-g). The way down only looks for snapshots; what is applied is read again, oldest first, a page
+        // at a time.
+        if (!useSnapshots) return CatchUpReport(forward(last ?: MessageId(0), onProgress), false)
         // Snapshots met on the way down, not loaded yet. The newest message is not always the newest
         // state: anyone in the Telegram account can send an old snapshot again, under a new message id.
         // Every message newer than a snapshot's own state is read anyway, so the search goes on down to
@@ -196,8 +200,6 @@ class Indexer(
                 if (last != null && message.id <= last) break@scan
                 val newest = found.maxOfOrNull { it.second.lastAppliedMessageId }
                 if (newest != null && message.id.value <= newest) loadBest()?.let { return it }
-                newer += message
-                if (!useSnapshots) continue
                 val snapshot = snapshotOf(message) ?: continue
                 if (last != null && snapshot.lastAppliedMessageId <= last.value) continue
                 // The caption says how big the document is; one of another size was swapped in, and would
@@ -209,8 +211,8 @@ class Indexer(
             before = page.last().id
         }
         loadBest()?.let { return it }
-        for (message in newer.asReversed()) applyLocked(message)
-        return CatchUpReport(fetched, false)
+        val read = fetched
+        return CatchUpReport(read + forward(last ?: MessageId(0)) { onProgress(read + it) }, false)
     }
 
     /** Applies everything after [after]; returns how many messages that was. */

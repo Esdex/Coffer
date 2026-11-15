@@ -143,8 +143,9 @@ class SnapshotSyncTest {
         there.indexer.catchUp()
         assertEquals(1, there.storage.blobsOpened)
         assertEquals(View(emptySet(), setOf(Triple("a.txt", null, FileStatus.READY), Triple("b.txt", null, FileStatus.READY))), there.view())
-        // Read in full: every message, not just those after the snapshot.
-        assertEquals(cloud.allMessages().size, there.storage.messagesRead)
+        // Read in full: every message, not just those after the snapshot. Twice: down looking for a snapshot,
+        // then up applying a page at a time, as nothing read is kept past its page (audit 2, L-g).
+        assertEquals(2 * cloud.allMessages().size, there.storage.messagesRead)
     }
 
     @Test

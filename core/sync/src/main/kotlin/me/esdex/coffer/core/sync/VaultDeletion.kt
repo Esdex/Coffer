@@ -77,6 +77,12 @@ class VaultDeletion(private val storage: StorageBackend, private val keys: Vault
         return Selection(content.sorted(), headers.sorted())
     }
 
+    private fun StoredMessage.mayBeRecord(): Boolean = when (val c = content) {
+        is MessageContent.Blob -> Captions.parse(c.caption) != null
+        is MessageContent.Text -> Captions.parse(c.text) != null
+        MessageContent.Other -> false
+    }
+
     private suspend fun readAfter(after: MessageId): List<StoredMessage> {
         val messages = mutableListOf<StoredMessage>()
         var from = after
@@ -132,11 +138,14 @@ class VaultDeletion(private val storage: StorageBackend, private val keys: Vault
     private suspend fun readAll(onRead: (Int) -> Unit): List<StoredMessage> {
         val messages = mutableListOf<StoredMessage>()
         var before: MessageId? = null
+        var read = 0
         while (true) {
             val page = storage.historyBefore(before, StorageBackend.MAX_PAGE)
             if (page.isEmpty()) break
-            messages += page
-            onRead(messages.size)
+            // Only what could be the vault's: the user's own messages, as many as anyone posts, are not kept (audit 2, L-g).
+            messages += page.filter { it.mayBeRecord() }
+            read += page.size
+            onRead(read)
             before = page.last().id
         }
         return messages
