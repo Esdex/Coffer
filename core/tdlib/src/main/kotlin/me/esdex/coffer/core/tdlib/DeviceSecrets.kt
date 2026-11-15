@@ -112,12 +112,13 @@ class DeviceSecrets(private val dir: File) : DeviceSealer {
     /**
      * Null only when the secret is lost for good: no Keystore key, or one that does not open it. A null
      * here wipes TDLib's data or the index, so a Keystore that fails for a moment (it does, busy or just
-     * after boot) is asked again first (audit 1, L8).
+     * after boot) is asked again first (audit 1, L8), and one that keeps failing throws rather than wipes
+     * (audit 2, L-l).
      */
     private fun unwrap(wrapped: ByteArray, ad: String): ByteArray? = retryTransient(
         attempts = UNWRAP_ATTEMPTS,
         pause = { Thread.sleep(UNWRAP_PAUSE_MILLIS shl it) },
-        lost = { it is AEADBadTagException || it is KeyPermanentlyInvalidatedException || it is UnrecoverableKeyException },
+        lost = ::isLostForGood,
     ) {
         val key = existingKeystoreKey() ?: return@retryTransient null
         val cipher = Cipher.getInstance(TRANSFORMATION)
@@ -169,16 +170,32 @@ class DeviceSecrets(private val dir: File) : DeviceSealer {
 }
 
 /**
+ * True if [e] means the Keystore key, or what it wrapped, is gone for good. keystore2 reports a key it
+ * cannot reach at the moment (the daemon restarting or busy, just after boot) as an
+ * [UnrecoverableKeyException] too, with the daemon's error as its cause; one invalidated for good comes
+ * without a cause. Counting every one as lost wiped Telegram's session and the index (audit 2, L-l).
+ */
+internal fun isLostForGood(e: Exception): Boolean = when (e) {
+    is AEADBadTagException, is KeyPermanentlyInvalidatedException -> true
+    is UnrecoverableKeyException -> e.cause == null
+    else -> false
+}
+
+/** The Keystore kept failing: nothing is wiped, and the caller fails until it answers again. */
+class KeystoreUnavailableException(cause: Exception) : Exception("the Keystore does not answer", cause)
+
+/**
  * Runs [block] up to [attempts] times while it throws something not [lost], pausing between ([pause] gets
- * the attempt number). Null when it is lost, or still failing after the last attempt: then, as before,
- * the caller takes the secret for gone.
+ * the attempt number). Null when it is lost; [KeystoreUnavailableException] when it still fails after the
+ * last attempt, as a secret that cannot be read now is not one that is gone.
  */
 internal fun <T> retryTransient(attempts: Int, pause: (Int) -> Unit, lost: (Exception) -> Boolean, block: () -> T?): T? {
     for (attempt in 0 until attempts) {
         try {
             return block()
         } catch (e: Exception) {
-            if (lost(e) || attempt == attempts - 1) return null
+            if (lost(e)) return null
+            if (attempt == attempts - 1) throw KeystoreUnavailableException(e)
             pause(attempt)
         }
     }
