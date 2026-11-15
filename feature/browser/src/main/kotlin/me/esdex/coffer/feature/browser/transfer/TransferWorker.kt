@@ -268,6 +268,13 @@ class TransferWorker @AssistedInject constructor(
                 TransferRegistry.Failure.MISSING_PART
             } catch (_: FileNotFoundException) {
                 TransferRegistry.Failure.TARGET_FAILED
+            } catch (_: SecurityException) {
+                // The place picked to save into is no longer ours to write, as after a restart without a lasting
+                // grant. Out of the worker, it stopped every transfer, again at each start, and WorkManager logged
+                // its message, which names the document (audit 2, L-n).
+                TransferRegistry.Failure.TARGET_FAILED
+            } catch (_: IllegalArgumentException) {
+                TransferRegistry.Failure.TARGET_FAILED
             } catch (_: AuthenticationException) {
                 TransferRegistry.Failure.CONTENT_MISMATCH
             }

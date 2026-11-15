@@ -434,6 +434,9 @@ class VaultContent @Inject constructor(
     /** Decrypts into [target] (a document the user picked), or for another app when [target] is null. */
     suspend fun download(fileId: Id, target: Uri?) {
         val keys = keysFlow.value ?: return
+        // A document picked to save into: kept writable past a restart, until no export is left (audit 2, L-n).
+        // One inside a picked folder is covered by the folder's grant, and this does nothing.
+        if (target != null) runCatching { context.contentResolver.takePersistableUriPermission(target, Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         val id = UUID.randomUUID().toString()
         index.putDownload(PendingDownload(id, fileId, target?.let { keys.local.sealTarget(id, it.toString()) }))
         pendingWork.trySend(Unit)
@@ -724,9 +727,10 @@ suspend fun releaseFolderGrants(context: Context, index: VaultIndex) {
     if (index.uploads().isNotEmpty() || index.downloads().any { it.sealedTarget != null }) return
     val resolver = context.contentResolver
     for (grant in resolver.persistedUriPermissions) {
-        if (DocumentsContract.isTreeUri(grant.uri)) {
-            runCatching { resolver.releasePersistableUriPermission(grant.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
-        }
+        // Folders, and single documents picked to save into: with nothing queued, none is needed any more.
+        val flags = (if (grant.isReadPermission) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+            (if (grant.isWritePermission) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
+        runCatching { resolver.releasePersistableUriPermission(grant.uri, flags) }
     }
 }
 
