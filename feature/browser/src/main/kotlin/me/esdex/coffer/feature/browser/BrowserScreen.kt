@@ -275,7 +275,7 @@ fun BrowserScreen(
     val listening by viewModel.listening.collectAsStateWithLifecycle()
     val playerExpanded by viewModel.playerExpanded.collectAsStateWithLifecycle()
     var savingFromViewer by remember { mutableStateOf<Id?>(null) }
-    val saveFromViewer = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+    val saveFromViewer = rememberLauncherForActivityResult(SaveAs()) { uri ->
         val fileId = savingFromViewer
         savingFromViewer = null
         if (uri != null && fileId != null) {
@@ -1172,7 +1172,7 @@ private fun FileRow(
 ) {
     val context = LocalContext.current
     var menu by remember { mutableStateOf(false) }
-    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(file.mime)) { uri ->
+    val export = rememberLauncherForActivityResult(SaveAs()) { uri ->
         if (uri != null) onExport(uri)
     }
     val ready = file.status == FileStatus.READY
