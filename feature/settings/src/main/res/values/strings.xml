@@ -99,7 +99,7 @@
     <string name="settings_phone_index">Coffer\'s index</string>
     <string name="settings_phone_index_info">The list of files and folders, so the vault opens without reading Saved Messages. Names are encrypted in it.</string>
     <string name="settings_phone_temporary">Temporary files</string>
-    <string name="settings_phone_temporary_info">Decrypted copies opened in other apps, removed 10 minutes after opening, and files on their way to Telegram.</string>
+    <string name="settings_phone_temporary_info">Decrypted copies opened in other apps, removed about 10 minutes after opening or when the vault locks, and files on their way to Telegram.</string>
     <string name="settings_card_maintenance">Saved Messages</string>
     <string name="settings_card_maintenance_desc">Integrity check, rescan</string>
     <string name="settings_card_account">Account</string>
@@ -181,7 +181,7 @@
     <string name="settings_hide_sizes">Hide exact file sizes</string>
     <string name="settings_hide_sizes_summary">New uploads are padded inside the encryption, so Telegram cannot tell a file by its exact size. Costs about 1 to 2 percent more traffic and space, a little more for very small files. Files already uploaded stay as they are.</string>
 
-    <string name="settings_auto_lock_info">How long Coffer stays open while you use other apps. Locking wipes the keys from memory; you unlock again with the password, the recovery key or the fingerprint.</string>
+    <string name="settings_auto_lock_info">How long Coffer stays open while you use other apps. Locking wipes the vault\'s keys from memory; you unlock again with the password, the recovery key or the fingerprint.</string>
     <string name="settings_theme">Theme</string>
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>

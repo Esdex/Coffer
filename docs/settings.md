@@ -5,7 +5,8 @@ Open Settings from the menu on the files screen.
 ## Security
 
 - **Auto-lock**: lock while Coffer is in the background, after 1, 5, 15, 30 or 60 minutes (5 by
-  default), or never. Locking wipes the keys from memory.
+  default), or never. Locking wipes the vault's keys from memory; a transfer under way and the track
+  still playing keep their own file's key until they end.
 - **Unlock with fingerprint**: fingerprint or face instead of the password. The phone's PIN does not
   open the vault. Adding a new fingerprint or face, or changing the password on another device, turns
   it off until the next unlock with the password.

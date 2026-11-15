@@ -24,7 +24,7 @@ Tap a file to open it in Coffer's viewers: see [Viewers](viewers.md). The menu o
 - **Cache on this phone**: keep it on the phone for opening with no network, see
   [Offline files and the cache](offline.md)
 - **Open in another app**, from a viewer's menu: Coffer hands over a decrypted copy and removes it
-  10 minutes after opening
+  about 10 minutes after opening, at the latest when the vault locks or Coffer next starts
 - **Delete**
 
 ## Several at once

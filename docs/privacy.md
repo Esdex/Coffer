@@ -26,7 +26,8 @@ Telegram receives what any Telegram app sends it:
   device, and your Telegram password if you use two-step verification
 - **Your files, encrypted**: each file is encrypted on your phone and stored in your Saved
   Messages as a document with a random name. Its contents, name, folder and type are
-  encrypted, and its size is padded, so Telegram cannot see what it is or its exact size
+  encrypted, and its size is padded, so Telegram cannot see what it is or, with the default
+  settings, its exact size
 - **Coffer's notes**: short encrypted text messages in your Saved Messages that hold the
   vault's key (itself encrypted under your password), folders and names
 - **What any connection shows**: your IP address, when you are online, and when and how much
@@ -44,12 +45,15 @@ https://telegram.org/privacy
 - **File cache and previews**: kept encrypted, deleted when you turn them off or clear them
 - **Files shared to Coffer** from another app: copied into Coffer at once, encrypted with a key kept
   in Android's Keystore, and deleted once uploaded or cancelled
-- **Decrypted copies** you open in another app: removed 10 minutes after opening
+- **Decrypted copies** you open in another app: removed about 10 minutes after opening, and at the
+  latest when the vault locks or Coffer next starts
 - **Biometric unlock**: the vault key is wrapped by a Keystore key that needs your fingerprint
   or face. Coffer never sees your biometric data
 - **Settings**: stored locally
 
-Coffer's data is excluded from Android backups. Your password and recovery key are never stored.
+Coffer's data is excluded from Android backups. Your password is never stored. The vault's key, which
+the recovery key spells out, is stored only locked: under your password in Saved Messages, and under
+a Keystore key that needs your fingerprint when fingerprint unlock is on.
 
 ## Permissions Explained
 

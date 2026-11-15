@@ -26,8 +26,9 @@ The tracks of a folder play one after another, with the cover, title, artist and
 tags, previous and next, shuffle and repeat.
 
 - Music plays on in the background, with its controls in a notification, on the lock screen and on
-  headset buttons. When the vault locks, the track playing finishes; the rest of the queue waits for
-  the vault to open, so nobody can play your other tracks from a locked phone.
+  headset buttons. When the vault locks, the track playing finishes and the rest of the queue is
+  dropped, so nobody can play your other tracks from a locked phone. Other apps see only "Coffer"
+  playing unless you turn on showing the track.
 - Back folds the player into a card floating over the files.
 - A call, another app's sound or unplugged headphones pause it.
 - The progress bar is the song's waveform. The first time a song plays, Coffer downloads it whole to

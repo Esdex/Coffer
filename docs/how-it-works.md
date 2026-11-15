@@ -24,8 +24,10 @@ Telegram stores the documents and notes, but cannot read them. It does not see:
 
 - what is in your files
 - their names, folders or types
-- their exact sizes: contents are padded inside the encryption, so a file cannot be recognised by
-  its size, and the notes are padded to one length per kind, so they do not show how long a name is
+- their exact sizes, with **Hide exact file sizes** on, as it is by default: contents are padded
+  inside the encryption, so a file cannot be recognised by its size, and the notes are padded to one
+  length per kind, so they do not show how long a name is. A file of a few bytes is padded by a few
+  bytes at most, and files sent with the setting off keep their size
 
 Telegram does see what any Telegram app shows it: that your account has these documents and
 notes, their approximate sizes, when they were sent, how many there are, and the IP address you

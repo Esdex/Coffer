@@ -4,7 +4,7 @@ Coffer keeps your files in the Saved Messages of your own Telegram account, encr
 
 - Files, their names and folders are encrypted on this phone, then sent to Saved Messages as documents
 - Coffer has no server of its own: it talks straight to Telegram with your account
-- The key to your files never leaves your phone; a 24-word recovery key opens the vault if you forget the password
+- The key to your files leaves your phone only locked under your password; a 24-word recovery key opens the vault if you forget the password
 - Sign in on another phone and your files are all there
 
 <b>Your files, right inside</b>
@@ -19,7 +19,7 @@ Coffer keeps your files in the Saved Messages of your own Telegram account, encr
 
 - XChaCha20-Poly1305 encryption with libsodium
 - Vault password stretched with Argon2id
-- File sizes and name lengths hidden from Telegram by padding
+- File sizes and name lengths hidden from Telegram by padding, on by default
 - Unlock with fingerprint or face, auto-lock after a few minutes in the background
 - Screenshots blocked wherever the recovery key shows
 - No analytics, no ads, no tracking

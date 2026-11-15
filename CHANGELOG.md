@@ -35,7 +35,7 @@
 - Rescan Saved Messages from the menu, to rebuild the list of files and folders from scratch.
 - Integrity check, weekly and from the menu: finds files with missing parts, brings back files the list missed, removes leftovers of unfinished uploads and deletions, and clears out old operations that are no longer needed.
 - Settings: auto-lock after 1 to 60 minutes or off, unlock with fingerprint on or off, block screenshots, weekly integrity check on or off. Integrity check, rescan and log out moved here; log out asks first.
-- Decrypted copies opened in another app are removed from the phone 10 minutes after opening.
+- Decrypted copies opened in another app are removed from the phone about 10 minutes after opening, and at the latest when the vault locks or Coffer next starts.
 - Change the vault password, and show the recovery key again; both ask for the current password first (a password change takes the recovery key instead). A password change locks the vault on your other devices, and only the new password opens it there.
 - Delete the vault, in Settings, Vault: after the current password and the word DELETE typed out, every file of the vault and everything Coffer keeps for it goes from Saved Messages, for good and on every device, with its progress shown; your own messages and anything Coffer cannot open stay. Cut short, it can be run again. Afterwards Coffer stays signed in and offers a new vault, and other devices say the vault was deleted there.
 - Log out from the screen that creates a vault, to sign in with another account instead.

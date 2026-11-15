@@ -5,7 +5,8 @@
 - **Cipher**: XChaCha20-Poly1305, from libsodium. Every file, file name, folder and change is
   encrypted and authenticated, so a changed byte is noticed, not read as something else.
 - **Password**: stretched with Argon2id at 128 MiB and 4 passes, about half a second on a recent
-  phone, so guessing it is slow.
+  phone, so guessing it is slow. A vault made with an earlier version takes this at its next password
+  change.
 - **Keys**: the vault's master key is random. The vault header keeps it locked with your password.
   Changing the password locks it anew; the files are not re-encrypted.
 - **Recovery key**: the master key itself, written as 24 BIP39 words.
@@ -13,7 +14,8 @@
 
 ## Hidden sizes
 
-New files are padded inside the encryption, so a file cannot be recognised by its exact size.
+New files are padded inside the encryption, so a file cannot be recognised by its exact size. A file
+of a few bytes is padded by a few bytes at most.
 Changes and names are padded to one length per kind, so they do not show how long a name is.
 Settings, Security, **Hide exact file sizes** turns the file padding off.
 
@@ -21,10 +23,12 @@ Settings, Security, **Hide exact file sizes** turns the file padding off.
 
 - Fingerprint unlock wraps the master key with a key in the phone's secure hardware that needs your
   fingerprint or face. The phone's PIN does not open the vault.
-- Locking wipes the keys from memory.
+- Locking wipes the vault's keys from memory. A transfer under way and the track still playing keep
+  the key of their own file until they end.
 - Coffer's index is an encrypted database (SQLCipher), with a key in Android's Keystore, so file
   sizes and the transfer queue are not readable from a copy of the phone's storage; names and folders
-  are encrypted once more inside it. Telegram's database is encrypted the same way. The file cache
+  are encrypted once more inside it. Telegram's database is encrypted the same way; Telegram's folder of
+  downloaded files is not, and holds your account's profile photo. The file cache
   and previews are encrypted.
 - Coffer's data is left out of Android backups.
 - Nothing secret goes into logs: no keys, passwords, recovery words, file names or decrypted
@@ -33,7 +37,8 @@ Settings, Security, **Hide exact file sizes** turns the file padding off.
 ## What Coffer protects against
 
 - **Telegram, and anyone who can read your Saved Messages**: they see encrypted documents and notes
-  of padded sizes. They cannot read your files, names or folders, or tell exact sizes.
+  of padded sizes. They cannot read your files, names or folders, or, with the default settings, tell
+  exact sizes.
 - **Someone who finds your phone locked**: the vault needs the password, the recovery key or your
   fingerprint.
 

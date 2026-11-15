@@ -41,7 +41,7 @@
 - 🔒 XChaCha20-Poly1305 with libsodium; the vault password is stretched with Argon2id (128 MiB, 4 passes)
 - 🗝️ A 24-word recovery key opens the vault if the password is forgotten
 - 📏 File sizes and name lengths hidden from Telegram: contents and captions are padded inside the encryption
-- 📱 The key to your files never leaves the phone
+- 📱 The key to your files leaves the phone only locked under your password
 
 **Storage**
 - 💬 Files live in the Saved Messages of your own Telegram account, as documents
@@ -70,7 +70,7 @@
 - 👆 Unlock with fingerprint or face; the phone's PIN does not open the vault
 - 🔏 Auto-lock after a few minutes in the background
 - 📵 Screenshots blocked wherever the recovery key shows, and anywhere else if you choose
-- ⏳ Decrypted copies opened in another app are removed after 10 minutes
+- ⏳ Decrypted copies opened in another app are removed after about 10 minutes, or when the vault locks
 - 🕵️ No analytics, no ads, no tracking
 
 **UI**
@@ -84,7 +84,7 @@
 
 Coffer turns your Saved Messages into encrypted storage. Each file is encrypted on the phone and sent as a document with a random name, like `cfr_1a2b3c4d5e6f.bin`. Next to them Coffer keeps short text notes starting with `coffer:`: the vault header, which holds the vault key encrypted under your password, and a log of changes to folders and names, all encrypted. Another device signed in to the same account reads the same messages and rebuilds the same vault.
 
-Telegram sees documents of padded sizes and notes of fixed lengths. It does not see names, folders, types or exact sizes.
+Telegram sees documents of padded sizes and notes of fixed lengths. It does not see names, folders, types or, with the default settings, exact sizes.
 
 Coffer uses TDLib, Telegram's own client library, built from pinned sources. It sends documents only, never media, waits out Telegram's flood limits honestly, and runs at most 3 transfers at a time.
 
