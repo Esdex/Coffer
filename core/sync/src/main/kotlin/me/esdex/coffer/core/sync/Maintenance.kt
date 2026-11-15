@@ -18,6 +18,12 @@ class Maintenance(
     private val indexer: Indexer,
     private val snapshotter: Snapshotter,
     private val keys: VaultKeys,
+    /**
+     * The messages of the vault's headers this device knows. The first header is usually the vault's first
+     * message, so it marks where the history begins even on a first run, before anything else does (audit
+     * 2, L-d).
+     */
+    private val headers: () -> List<MessageId> = { emptyList() },
     /** Unix millis. */
     private val clock: () -> Long,
 ) {
@@ -68,11 +74,13 @@ class Maintenance(
      * such answer for the start. A history cut short would make live files look damaged and let compaction
      * delete operations still in force (audit 1, M6). So every message the vault is known to have below
      * where the reading stopped must be gone by Telegram's own answer; one still there means the reading
-     * was cut short, and nothing is marked or deleted.
+     * was cut short, and nothing is marked or deleted. The vault's headers count too: with nothing else
+     * known below a cut, as on a first run, the first header still is (audit 2, L-d).
      */
     private suspend fun checkComplete(history: List<StoredMessage>) {
         val oldestRead = history.firstOrNull()?.id
-        val known = index.allParts().values.flatMap { it.values } + index.snapshots().map { it.messageId } + listOfNotNull(index.oldestRecord())
+        val known = index.allParts().values.flatMap { it.values } + index.snapshots().map { it.messageId } +
+            listOfNotNull(index.oldestRecord()) + headers()
         for (id in known.filter { oldestRead == null || it < oldestRead }.distinct().sorted()) {
             if (storage.message(id) != null) throw StorageException("the history of Saved Messages was read only in part")
         }

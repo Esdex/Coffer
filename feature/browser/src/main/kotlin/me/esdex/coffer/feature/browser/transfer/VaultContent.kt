@@ -223,7 +223,7 @@ class VaultContent @Inject constructor(
             val storage = telegram.readyStorage(Long.MAX_VALUE) ?: return@launch
             val indexer = Indexer(storage, index, keys)
             val snapshotter = Snapshotter(storage, index, indexer, keys, WorkFiles.snapshot(context), System::currentTimeMillis)
-            val current = Live(indexer, snapshotter, Maintenance(storage, index, indexer, snapshotter, keys, System::currentTimeMillis))
+            val current = Live(indexer, snapshotter, Maintenance(storage, index, indexer, snapshotter, keys, vault::headerIds, System::currentTimeMillis))
             live = current
             launch {
                 catchUpFlow.value = 0

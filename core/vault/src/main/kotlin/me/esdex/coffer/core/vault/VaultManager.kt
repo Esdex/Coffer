@@ -319,6 +319,9 @@ class VaultManager(
         stateFlow.value = State.NotFound
     }
 
+    /** The messages of the vault headers this device knows. */
+    fun headerIds(): List<MessageId> = headers.map { it.messageId }
+
     /** True if any of [ids] is a vault header this device knows: its delete means a password change. */
     fun knowsHeader(ids: Collection<me.esdex.coffer.core.storage.MessageId>): Boolean = headers.any { it.messageId in ids }
 

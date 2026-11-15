@@ -132,6 +132,27 @@ class MaintenanceTest {
     }
 
     @Test
+    fun aHistoryCutShortOnTheFirstRunIsNoticedByTheVaultsHeader() = runBlocking {
+        // Audit 2, L-d: on a first run nothing else is known below the cut, which passed as the start.
+        val here = device()
+        val header = here.storage.sendText("coffer:v1:vault:a header stand-in, only its message is checked")
+        val folder = Id.random(sodium)
+        val created = here.sendOp(Op.FolderCreate(Id.random(sodium), 1, folder, null, "Trip"))
+        here.sendOp(Op.FolderRename(Id.random(sodium), 2, folder, "Trip 2026"))
+        clock += days(40)
+        here.upload("later.txt", bytes("l"))
+        here.indexer.catchUp()
+        val shortSighted = object : StorageBackend by here.storage {
+            override suspend fun historyBefore(before: MessageId?, limit: Int) =
+                here.storage.historyBefore(before, limit).filter { it.id > created.id }
+        }
+        val maintenance = Maintenance(shortSighted, here.index, here.indexer, here.snapshotter, here.keys, headers = { listOf(header.id) }) { clock * 1000 }
+        val ops = cloud.allMessages().filter { Captions.parse((it.content as? MessageContent.Text)?.text)?.kind == RecordKind.OP }.map { it.id }
+        assertThrows(StorageException::class.java) { runBlocking { maintenance.run() } }
+        assertTrue(ops.all(::present))
+    }
+
+    @Test
     fun aCopyOfAPartStandsInForItAtOnce() = runBlocking {
         // Audit 1, L13: the part the index knew is deleted, a copy of it is still in Saved Messages.
         val here = device()
