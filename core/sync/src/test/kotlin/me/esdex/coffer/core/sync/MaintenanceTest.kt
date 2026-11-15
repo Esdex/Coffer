@@ -3,6 +3,7 @@ package me.esdex.coffer.core.sync
 import kotlin.random.Random
 import kotlinx.coroutines.runBlocking
 import me.esdex.coffer.core.crypto.Bytes
+import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.MasterKeys
 import me.esdex.coffer.core.crypto.format.BlobPayload
@@ -52,11 +53,11 @@ class MaintenanceTest {
     private fun indexBlobs() = cloud.allMessages().filter { Captions.parse((it.content as? MessageContent.Blob)?.caption)?.kind == RecordKind.INDEX }
 
     /** Sends one part's caption over a few dummy bytes, as another client might. */
-    private suspend fun Device.sendPart(fileId: Id, partIndex: Int, meta: FileMeta?): MessageId {
+    /** One part of a two-part file, as another device posts it: a document of the part's size, its bytes left out. */
+    private fun Device.sendPart(fileId: Id, partIndex: Int, meta: FileMeta?): MessageId {
         val size = 512L * 1024 * 1024 + 1
-        val file = temp.newFile("cfr_" + Random.nextLong().toULong().toString(16).padStart(12, '0').take(12) + ".bin")
-        file.writeBytes(ByteArray(8))
-        return storage.sendBlob(file, keys.meta.encodeBlob(BlobPayload(fileId, partIndex, 2, size, meta))).id
+        val caption = keys.meta.encodeBlob(BlobPayload(fileId, partIndex, 2, size, meta))
+        return cloud.postBlobOfSize(caption, ContentLayout.encryptedPartSize(size, partIndex)).id
     }
 
     private fun meta(name: String) = FileMeta(name, null, "application/octet-stream", 1, 1, Bytes.of(ByteArray(32)), Bytes.of(ByteArray(72)))

@@ -75,10 +75,7 @@ class SnapshotSyncTest {
         indexer.applyDeletion(setOf(part))
         val orphan = Id.random(sodium)
         val size = 512L * 1024 * 1024 + 1
-        storage.sendBlob(
-            temp.newFile("cfr_bbbbbbbbbbbb.bin").apply { writeBytes(ByteArray(8)) },
-            keys.meta.encodeBlob(BlobPayload(orphan, 1, 2, size, null)),
-        )
+        cloud.postBlobOfSize(keys.meta.encodeBlob(BlobPayload(orphan, 1, 2, size, null)), ContentLayout.encryptedPartSize(size, 1))
         indexer.catchUp()
         return Built(hurt, orphan)
     }

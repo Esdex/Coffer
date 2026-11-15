@@ -70,6 +70,13 @@ class FakeCloud(private val pageCap: Int = Int.MAX_VALUE) {
         }
     }
 
+    /**
+     * A document of [size] bytes under [caption], as another device would post it, without its bytes: for
+     * parts too large to make in a test, whose size is all the index looks at. Not to be downloaded.
+     */
+    fun postBlobOfSize(caption: String, size: Long): StoredMessage =
+        commit(MessageContent.Blob(caption, "cfr_" + (lastServerId + 1).toString(16).padStart(12, '0') + ".bin", size), ByteArray(0))
+
     internal fun commit(content: MessageContent, bytes: ByteArray?): StoredMessage = synchronized(lock) {
         // Real ids are server ids shifted left by 20 bits; gaps keep callers from assuming id + 1.
         val message = StoredMessage(MessageId(++lastServerId shl 20), content, isPinned = false, date = now())

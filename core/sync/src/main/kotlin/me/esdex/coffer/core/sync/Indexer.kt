@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.withLock
 import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.Padme
+import me.esdex.coffer.core.crypto.format.BlobPayload
 import me.esdex.coffer.core.crypto.format.Captions
 import me.esdex.coffer.core.crypto.format.FileMeta
 import me.esdex.coffer.core.crypto.format.IndexPayload
@@ -226,6 +227,14 @@ class Indexer(
         }
     }
 
+    /**
+     * A part's document is as long as its caption says the part is. A genuine caption over another
+     * document, posted again by anyone in the account after the part was deleted, is no part: taken for
+     * one it turned a damaged file READY and had the whole document downloaded (audit 2, L-c).
+     */
+    private fun BlobPayload.fits(blob: MessageContent.Blob): Boolean =
+        blob.size == ContentLayout.encryptedPartSize(contentSize, partIndex)
+
     private fun sizeFits(message: StoredMessage, snapshot: IndexPayload): Boolean {
         val size = (message.content as? MessageContent.Blob)?.size ?: return false
         val expected = runCatching { ContentLayout.encryptedPartSize(Padme.contentSize(snapshot.plainSize, snapshot.padded), 0) }.getOrNull()
@@ -324,7 +333,7 @@ class Indexer(
         val last = index.lastApplied()
         if (last != null && message.id <= last) return
         val changed = when (val content = message.content) {
-            is MessageContent.Blob -> applyBlob(message.id, content.caption)
+            is MessageContent.Blob -> applyBlob(message.id, content)
             is MessageContent.Text -> applyText(message.id, content.text)
             MessageContent.Other -> false
         }
@@ -336,8 +345,8 @@ class Indexer(
     }
 
     /** True if the index changed. */
-    private suspend fun applyBlob(messageId: MessageId, caption: String): Boolean {
-        val record = Captions.parse(caption) ?: return false
+    private suspend fun applyBlob(messageId: MessageId, blob: MessageContent.Blob): Boolean {
+        val record = Captions.parse(blob.caption) ?: return false
         if (record.kind == RecordKind.INDEX) {
             // Only remembered, for keeping the last few (SPEC §4.4); a snapshot is loaded only when catching up.
             val payload = keys.meta.decodeIndex(record) ?: return false
@@ -346,7 +355,7 @@ class Indexer(
         }
         if (record.kind != RecordKind.BLOB) return false
         // Captions of another vault, or damaged ones, do not open and are ignored like foreign content.
-        val payload = keys.meta.decodeBlob(record) ?: return false
+        val payload = keys.meta.decodeBlob(record)?.takeIf { it.fits(blob) } ?: return false
         val fileId = payload.fileId
         if (index.isDeleted(fileId)) return false
         // A part sent again under a new message id is the same part: the first one stays. Its part 0 would
@@ -544,7 +553,7 @@ class Indexer(
         val known = index.files().mapTo(HashSet()) { it.fileId }
         for ((fileId, parts) in partsByFile) {
             if (fileId in known || fileId in deletedFiles || parts.none { it.isFirst }) continue
-            for (part in parts.sortedBy { it.message.id }) applyBlob(part.message.id, part.caption)
+            for (part in parts.sortedBy { it.message.id }) applyBlob(part.message.id, part.message.content as MessageContent.Blob)
             repaired++
         }
 

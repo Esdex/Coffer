@@ -188,6 +188,27 @@ class OpLogTest {
     }
 
     @Test
+    fun aGenuineCaptionOverAnotherDocumentIsNoPart() = runBlocking {
+        // Audit 2, L-c: the part deleted, its caption posted again over junk; taken for the part, it made
+        // the file READY and had the junk downloaded whole.
+        val here = device()
+        val fileId = here.upload("photo.jpg", bytes("the real content of the photo"))
+        here.indexer.catchUp()
+        val part = cloud.allMessages().single { it.id == here.index.parts(fileId).getValue(0) }
+        here.storage.delete(listOf(part.id))
+        val junk = temp.newFile("cfr_" + kotlin.random.Random.nextLong().toULong().toString(16).padStart(12, '0').take(12) + ".bin")
+        junk.writeBytes(ByteArray(5_000))
+        here.storage.sendBlob(junk, (part.content as MessageContent.Blob).caption)
+
+        val there = device()
+        there.indexer.catchUp()
+        assertTrue(there.index.parts(fileId).isEmpty())
+        // Nor does the integrity check take it as the part.
+        there.maintenance.run()
+        assertTrue(there.index.parts(fileId).isEmpty())
+    }
+
+    @Test
     fun anOperationSentAgainAfterASnapshotLoadIsNotApplied() = runBlocking {
         // Audit 2, N2: loading a snapshot forgot which operations had been applied, so a copy counted as new.
         val here = device()
