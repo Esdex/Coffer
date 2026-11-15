@@ -85,6 +85,14 @@ android {
         buildConfig = true
     }
 
+    // F-Droid builds Coffer itself and ships the published APK only if its own build matches it byte for
+    // byte. The dependency list AGP would sign into the APK is encrypted to Google and F-Droid refuses
+    // extra signing blocks, so it stays out, as in Arcanum.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     // The whole :core:crypto test suite runs again on a device, against lazysodium-android: the same
     // oracle vectors, now through the native library the app ships.
     sourceSets.getByName("androidTest") {
