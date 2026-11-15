@@ -236,42 +236,56 @@ class TransferWorker @AssistedInject constructor(
         val entry = registry.get(download.fileId) ?: return false
         val target = entry.target?.let(Uri::parse)
         if (download.sealedTarget != null && target == null) return false
-        val storage = telegram.readyStorage() ?: throw StorageException("Telegram is not ready")
         val open = entry.open
-        val openFile = open?.let { File(File(OpenFiles.dir(applicationContext), id), OpenFiles.safeName(it.name)) }
-        val failure = try {
-            val output = if (target != null) {
-                applicationContext.contentResolver.openOutputStream(target, "wt") ?: throw FileNotFoundException()
-            } else {
-                checkNotNull(openFile).also { it.parentFile?.mkdirs() }.outputStream()
-            }
-            output.use {
-                DownloadRunner(sodium, storage, index) { part -> cache.keep(download.fileId, part, storage) }
-                    .run(download.fileId, entry.keys, it) { done, total -> report(id, done, total, TransferStage.MOVING) }
-            }
-            null
-        } catch (_: ContentMismatchException) {
-            TransferRegistry.Failure.CONTENT_MISMATCH
-        } catch (_: MissingPartException) {
-            TransferRegistry.Failure.MISSING_PART
-        } catch (_: FileNotFoundException) {
-            TransferRegistry.Failure.TARGET_FAILED
-        } catch (_: AuthenticationException) {
-            TransferRegistry.Failure.CONTENT_MISMATCH
+        if (open != null && vault.state.value !is VaultManager.State.Unlocked) {
+            // Queued before the vault locked: its copy would be for nobody, and written decrypted onto a
+            // locked phone (audit 2, L-m).
+            index.removeDownload(id)
+            registry.remove(download.fileId)
+            return true
         }
-        if (failure != null) {
-            // A file that did not verify must not be left looking like the real thing.
-            if (target != null) runCatching { DocumentsContract.deleteDocument(applicationContext.contentResolver, target) }
-            openFile?.parentFile?.deleteRecursively()
-            registry.fail(id, failure)
-        } else if (openFile != null && open != null) {
-            if (vault.state.value is VaultManager.State.Unlocked) {
-                registry.readyToOpen(openFile, open.mime)
-                OpenFilesSweeper.schedule(applicationContext)
-            } else {
-                // Finished after the vault locked, which cleared the copies: this one is not to stay either (audit 1, M11).
-                openFile.parentFile?.deleteRecursively()
+        val storage = telegram.readyStorage() ?: throw StorageException("Telegram is not ready")
+        val openFile = open?.let { File(File(OpenFiles.dir(applicationContext), id), OpenFiles.safeName(it.name)) }
+        // Whatever ends this download but a hand-over to the other app, cancelling included, takes the copy.
+        var handedOver = false
+        val failure = try {
+            val outcome = try {
+                val output = if (target != null) {
+                    applicationContext.contentResolver.openOutputStream(target, "wt") ?: throw FileNotFoundException()
+                } else {
+                    // Before the first byte: a process killed halfway still has its copy swept.
+                    OpenFilesSweeper.schedule(applicationContext)
+                    checkNotNull(openFile).also { it.parentFile?.mkdirs() }.outputStream()
+                }
+                output.use {
+                    DownloadRunner(sodium, storage, index) { part -> cache.keep(download.fileId, part, storage) }
+                        .run(download.fileId, entry.keys, it) { done, total -> report(id, done, total, TransferStage.MOVING) }
+                }
+                null
+            } catch (_: ContentMismatchException) {
+                TransferRegistry.Failure.CONTENT_MISMATCH
+            } catch (_: MissingPartException) {
+                TransferRegistry.Failure.MISSING_PART
+            } catch (_: FileNotFoundException) {
+                TransferRegistry.Failure.TARGET_FAILED
+            } catch (_: AuthenticationException) {
+                TransferRegistry.Failure.CONTENT_MISMATCH
             }
+            if (outcome != null) {
+                // A file that did not verify must not be left looking like the real thing.
+                if (target != null) runCatching { DocumentsContract.deleteDocument(applicationContext.contentResolver, target) }
+                registry.fail(id, outcome)
+            } else if (openFile != null && open != null) {
+                // Finished after the vault locked, which cleared the copies: this one is not to stay either (audit 1, M11).
+                if (vault.state.value is VaultManager.State.Unlocked) {
+                    registry.readyToOpen(openFile, open.mime)
+                    OpenFilesSweeper.schedule(applicationContext)
+                    handedOver = true
+                }
+            }
+            outcome
+        } finally {
+            if (!handedOver) openFile?.parentFile?.deleteRecursively()
         }
         index.removeDownload(id)
         if (failure == null) registry.remove(download.fileId)
