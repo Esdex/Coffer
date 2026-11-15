@@ -60,6 +60,11 @@ class ShareInboxTest {
         assertFalse(ShareInbox.accepts("content", "me.esdex.coffer.personal.files", "me.esdex.coffer.personal"))
         assertFalse(ShareInbox.accepts("content", own, own))
         assertFalse(ShareInbox.accepts(null, "x", own))
+        // With a user in front or a port behind, it is still Coffer's own (audit 2, L-j).
+        assertFalse(ShareInbox.accepts("content", "0@me.esdex.coffer.files", own))
+        assertFalse(ShareInbox.accepts("content", "10@me.esdex.coffer.files:1", own))
+        assertFalse(ShareInbox.accepts("content", "@", own))
+        assertTrue(ShareInbox.accepts("content", "0@com.android.providers.media.documents", own))
         // A name that only begins like Coffer's is someone else's.
         assertTrue(ShareInbox.accepts("content", "me.esdex.coffeeshop.files", own))
     }

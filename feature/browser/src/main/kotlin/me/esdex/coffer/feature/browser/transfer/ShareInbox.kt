@@ -164,9 +164,16 @@ class ShareInbox @Inject constructor(
     internal class NoRoomException : IOException("not enough room left to copy into")
 
     companion object {
-        /** Only content:// from another app, never a path or Coffer's own provider (audit 1, M10). */
-        internal fun accepts(scheme: String?, authority: String?, ownPackage: String): Boolean =
-            scheme == "content" && authority != null && !authority.startsWith("$ownPackage.") && authority != ownPackage
+        /**
+         * Only content:// from another app, never a path or Coffer's own provider (audit 1, M10). The
+         * provider is what is left of the authority without a user ("0@", which Android reads as a user
+         * id) or a port: those would hide Coffer's own behind another name (audit 2, L-j).
+         */
+        internal fun accepts(scheme: String?, authority: String?, ownPackage: String): Boolean {
+            if (scheme != "content" || authority == null) return false
+            val provider = authority.substringAfterLast('@').substringBefore(':')
+            return provider.isNotEmpty() && !provider.startsWith("$ownPackage.") && provider != ownPackage
+        }
 
         /**
          * Copies [from] into [to], stopping with [NoRoomException] as soon as [freeSpace] falls under the
