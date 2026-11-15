@@ -70,6 +70,24 @@ class ShareInboxTest {
     }
 
     @Test
+    fun aCopyCancelledWhileItsStreamStalledStopsAtTheNextRead() {
+        // Audit 2, L-k: the read blocked past the cancel, and the copy then went on to the end.
+        var cancelled = false
+        val stalling = object : InputStream() {
+            override fun read(): Int = 0
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                cancelled = true // the user cancels while this read is blocked
+                return len
+            }
+        }
+        val out = ByteArrayOutputStream()
+        assertThrows(kotlinx.coroutines.CancellationException::class.java) {
+            ShareInbox.copyWhileThereIsRoom(stalling, out, freeSpace = { Long.MAX_VALUE }, keepGoing = { !cancelled }) {}
+        }
+        assertEquals(0, out.size())
+    }
+
+    @Test
     fun anEndlessStreamStopsBeforeThePhoneIsFull() {
         // Larger than the room there is; endless would hang the test instead of failing it.
         var left = 1024L * 1024 * 1024

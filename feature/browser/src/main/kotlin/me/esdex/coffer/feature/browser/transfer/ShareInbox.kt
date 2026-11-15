@@ -62,6 +62,13 @@ class ShareInbox @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var job: Job? = null
+
+    // Which receive the state is about: a copy cancelled while its sender's stream stalled must not come back
+    // with its file once the stream ends, over what came after (audit 2, L-k).
+    private val generation = java.util.concurrent.atomic.AtomicInteger()
+
+    @Volatile
+    private var reading: InputStream? = null
     private val stateFlow = MutableStateFlow<State>(State.Empty)
     val state: StateFlow<State> = stateFlow.asStateFlow()
 
@@ -78,6 +85,10 @@ class ShareInbox @Inject constructor(
             stateFlow.value = State.Failed(Reason.UNREADABLE)
             return
         }
+        val mine = generation.incrementAndGet()
+        fun publish(state: State) {
+            if (generation.get() == mine) stateFlow.value = state
+        }
         stateFlow.value = State.Copying(0, null)
         job = scope.launch {
             val items = mutableListOf<Item>()
@@ -87,7 +98,7 @@ class ShareInbox @Inject constructor(
                 val dir = dir(context).apply { mkdirs() }
                 // Created first: File.usableSpace reports 0 for a path that does not exist.
                 if (total != null && dir.usableSpace < total + SPACE_MARGIN) {
-                    stateFlow.value = State.Failed(Reason.NO_SPACE)
+                    publish(State.Failed(Reason.NO_SPACE))
                     return@launch
                 }
                 var done = 0L
@@ -95,24 +106,26 @@ class ShareInbox @Inject constructor(
                     val file = File(dir, UUID.randomUUID().toString())
                     items += Item(file, queryName(uri) ?: uri.lastPathSegment ?: "file", context.contentResolver.getType(uri) ?: typeHint, 0)
                     val input = context.contentResolver.openInputStream(uri) ?: throw IOException("cannot open")
+                    reading = input
                     var size = 0L
                     input.use { from ->
                         sealedCopy(file).use { to ->
-                            copyWhileThereIsRoom(from, to, freeSpace = { dir.usableSpace }) { n ->
+                            copyWhileThereIsRoom(from, to, freeSpace = { dir.usableSpace }, keepGoing = { generation.get() == mine }) { n ->
                                 done += n
                                 size += n
-                                stateFlow.value = State.Copying(done, total)
+                                publish(State.Copying(done, total))
                             }
                         }
                     }
                     items[items.lastIndex] = items.last().copy(size = size)
                 }
-                stateFlow.value = State.Ready(items)
+                if (generation.get() != mine) throw CancellationException("discarded")
+                publish(State.Ready(items))
             } catch (e: Exception) {
                 // Half-made copies go in every case, cancelled included.
                 items.forEach { it.file.delete() }
                 if (e is CancellationException) throw e
-                stateFlow.value = State.Failed(if (e.isNoSpace()) Reason.NO_SPACE else Reason.UNREADABLE)
+                publish(State.Failed(if (e.isNoSpace()) Reason.NO_SPACE else Reason.UNREADABLE))
             }
         }
     }
@@ -126,8 +139,12 @@ class ShareInbox @Inject constructor(
 
     /** Cancel: the copies go. */
     fun discard() {
+        generation.incrementAndGet()
         job?.cancel()
         job = null
+        // A read blocked on a stalled stream ignores the cancel; closing the stream breaks it.
+        reading?.let { runCatching { it.close() } }
+        reading = null
         (stateFlow.value as? State.Ready)?.items?.forEach { it.file.delete() }
         stateFlow.value = State.Empty
     }
@@ -180,12 +197,20 @@ class ShareInbox @Inject constructor(
          * margin: another app's stream may give no size and never end, and must not fill the phone (audit 1,
          * M10). Checked every few megabytes.
          */
-        internal fun copyWhileThereIsRoom(from: java.io.InputStream, to: java.io.OutputStream, freeSpace: () -> Long, onCopied: (Int) -> Unit) {
+        internal fun copyWhileThereIsRoom(
+            from: java.io.InputStream,
+            to: java.io.OutputStream,
+            freeSpace: () -> Long,
+            keepGoing: () -> Boolean = { true },
+            onCopied: (Int) -> Unit,
+        ) {
             val buffer = ByteArray(1 shl 16)
             var sinceCheck = 0L
             while (true) {
                 val n = from.read(buffer)
                 if (n < 0) break
+                // Cancelled while blocked in the read: what came in goes nowhere.
+                if (!keepGoing()) throw CancellationException("discarded")
                 sinceCheck += n
                 if (sinceCheck >= CHECK_EVERY) {
                     sinceCheck = 0
