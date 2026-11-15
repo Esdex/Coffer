@@ -103,11 +103,18 @@ object OpenFiles {
         dir(context).deleteRecursively()
     }
 
-    /** Deletes every copy in [dir] written more than [maxAgeMillis] before [now]. Each download has its own folder. */
-    fun sweep(dir: File, now: Long, maxAgeMillis: Long = LIFETIME_MILLIS) {
+    /**
+     * Deletes every copy in [dir] last written more than [maxAgeMillis] before [now]. Each download has its
+     * own folder, aged by the newest write inside it: the folder's own time is when the download began, and
+     * a long one would lose its copy halfway (audit 2, DATA2-10). True if any copy is left.
+     */
+    fun sweep(dir: File, now: Long, maxAgeMillis: Long = LIFETIME_MILLIS): Boolean {
+        var left = false
         for (copy in dir.listFiles().orEmpty()) {
-            if (now - copy.lastModified() >= maxAgeMillis) copy.deleteRecursively()
+            val written = copy.walk().maxOf { it.lastModified() }
+            if (now - written >= maxAgeMillis) copy.deleteRecursively() else left = true
         }
+        return left
     }
 }
 

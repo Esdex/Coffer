@@ -16,8 +16,8 @@ import java.util.concurrent.TimeUnit
 class OpenFilesSweeper(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        OpenFiles.sweep(OpenFiles.dir(applicationContext), System.currentTimeMillis())
-        // A copy made since is younger than its time: the next one schedules its own sweep.
+        // A copy younger than its time, or still being written, gets a sweep of its own later.
+        if (OpenFiles.sweep(OpenFiles.dir(applicationContext), System.currentTimeMillis())) schedule(applicationContext)
         return Result.success()
     }
 
