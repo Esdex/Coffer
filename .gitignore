@@ -21,3 +21,7 @@ local.properties
 
 # Working notes of the security audits: they cite the private SPEC and pre-fix line numbers
 audits/raw/
+
+# Signing keys live outside the repository; never add one by mistake
+*.jks
+*.keystore
