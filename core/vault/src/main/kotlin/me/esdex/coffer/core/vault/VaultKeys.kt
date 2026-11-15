@@ -83,22 +83,30 @@ object VaultUnlock {
         headers: List<FoundHeader>,
         password: CharSequence,
         preferred: MessageId? = null,
+        tried: MutableSet<KdfInput> = HashSet(),
     ): Pair<UnlockedVault, MessageId>? {
         val candidates = (headers.filter { it.messageId == preferred } + headers.filter { it.messageId != preferred })
-            // The same salt, cost and wrapping twice would cost a second Argon2 run for nothing.
-            .distinctBy { Triple(it.header.salt, it.header.argon, it.header.wrappedMaster) }
             .filter { affordable(it.header.argon) }
-        for (candidate in candidates) {
+        // One Argon2 run per salt and cost, whatever number of headers share them: a copy of the real header,
+        // posted again by anyone in the account, costs nothing more (audit 2, L-a). [tried] carries this over
+        // to a second pass with the same password, which then works out only what is new.
+        for ((input, group) in candidates.groupBy { KdfInput(it.header.salt, it.header.argon) }) {
+            if (!tried.add(input)) continue
             // A header that cannot be worked out, for example memory the phone cannot give, opens nothing.
-            val opened = try {
-                open(sodium, candidate.header, password)
+            val kek = try {
+                PasswordKdf.deriveKek(sodium, password, input.salt, input.argon)
             } catch (_: IllegalStateException) {
-                null
+                continue
             }
-            if (opened != null) return opened to candidate.messageId
+            kek.use {
+                for (candidate in group) open(sodium, kek, candidate.header)?.let { return it to candidate.messageId }
+            }
         }
         return null
     }
+
+    /** What an Argon2 run depends on besides the password. */
+    data class KdfInput(val salt: Bytes, val argon: Argon2Params)
 
     /**
      * Whether a header's Argon2 cost is one this version would ever have written: up to four times the
@@ -112,13 +120,11 @@ object VaultUnlock {
     private const val MAX_MEMORY = 256L * 1024 * 1024
     private val MAX_WORK = 4 * Argon2Params.DEFAULT.opsLimit * Argon2Params.DEFAULT.memLimitBytes
 
-    private fun open(sodium: Sodium, header: VaultHeader, password: CharSequence): UnlockedVault? {
-        val master = PasswordKdf.deriveKek(sodium, password, header.salt, header.argon).use { kek ->
-            try {
-                MasterKeys.unwrap(sodium, kek, header.wrappedMaster)
-            } catch (_: AuthenticationException) {
-                return null
-            }
+    private fun open(sodium: Sodium, kek: SecretKey, header: VaultHeader): UnlockedVault? {
+        val master = try {
+            MasterKeys.unwrap(sodium, kek, header.wrappedMaster)
+        } catch (_: AuthenticationException) {
+            return null
         }
         // A header whose master_id does not belong to its own wrapped key is broken or forged.
         if (MasterKeys.masterId(sodium, master) != header.masterId) {

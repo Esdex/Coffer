@@ -176,6 +176,33 @@ class VaultKeysTest {
     }
 
     @Test
+    fun copiesOfOneHeaderCostOneArgonRunAndASecondPassOnlyWhatIsNew() = runTest {
+        // Audit 2, L-a: the real header posted again, as anyone in the account can, cost a run per copy.
+        val storage = FakeCloud().device()
+        val real = newVault("the right password")
+        repeat(4) { storage.sendHeader(real.header) }
+        storage.sendHeader(real.header.copy(salt = PasswordKdf.newSalt(sodium), createdAt = 10))
+        val headers = VaultHeaders.find(storage)
+        assertEquals(5, headers.size)
+
+        val counting = CountingSodium(sodium)
+        val tried = HashSet<VaultUnlock.KdfInput>()
+        assertNull(VaultUnlock.withPasswordFrom(counting, headers, "a wrong password", tried = tried))
+        assertEquals(2, counting.argonRuns)
+        // The same password again, as after the search past the pins: nothing new, nothing worked out.
+        assertNull(VaultUnlock.withPasswordFrom(counting, headers, "a wrong password", tried = tried))
+        assertEquals(2, counting.argonRuns)
+        assertNotNull(VaultUnlock.withPasswordFrom(counting, headers, "the right password"))
+
+        // The real salt and cost over a wrapping that opens nothing, posted last so it comes first: the
+        // one run for that salt still tries the real wrapping too.
+        storage.sendHeader(real.header.copy(wrappedMaster = Bytes.of(sodium.randomBytes(real.header.wrappedMaster.size)), createdAt = 20))
+        val withJunk = CountingSodium(sodium)
+        assertNotNull(VaultUnlock.withPasswordFrom(withJunk, VaultHeaders.find(storage), "the right password"))
+        assertEquals(1, withJunk.argonRuns)
+    }
+
+    @Test
     fun aHeaderThatFailsToWorkOutOpensNothingAndTheNextIsTried() = runTest {
         val storage = FakeCloud().device()
         val real = newVault("the right password")
@@ -578,6 +605,24 @@ class VaultManagerTest {
         device.lockVault()
         val before = counting.argonRuns
         assertTrue(device.unlockWithPassword("the password of the real vault", deviceStorage))
+        assertEquals(1, counting.argonRuns - before)
+    }
+
+    @Test
+    fun theDeviceThatMadeTheVaultTriesItsOwnHeaderFirst() = runTest {
+        // Audit 2, L-a: publishing did not note which header the password opens, so forged ones came first.
+        val storage = FakeCloud().device()
+        val store = VaultStore(temp.newFolder())
+        val counting = CountingSodium(sodium)
+        val manager = VaultManager(counting, store, { 42 }, EmptyCoroutineContext)
+        manager.locate(storage)
+        manager.publish(storage, manager.prepareNew("the password of the real vault"))
+        val header = storage.pinnedMessages().single().let { FoundHeader.from(it)!!.header }
+        repeat(3) { storage.pin(storage.sendHeader(header.copy(salt = PasswordKdf.newSalt(sodium), createdAt = 100L + it)).id) }
+        manager.lockVault()
+
+        val before = counting.argonRuns
+        assertTrue(manager.unlockWithPassword("the password of the real vault", storage))
         assertEquals(1, counting.argonRuns - before)
     }
 

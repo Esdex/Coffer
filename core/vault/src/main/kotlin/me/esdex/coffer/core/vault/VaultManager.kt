@@ -179,8 +179,10 @@ class VaultManager(
      */
     suspend fun unlockWithPassword(password: CharSequence, storage: StorageBackend? = null): Boolean {
         if (storage != null) withTimeoutOrNull(HEADER_REFRESH_MILLIS) { runCatching { locate(storage) } }
-        if (tryPassword(password)) return true
-        return storage != null && searchPastThePins(storage) && tryPassword(password)
+        // A wrong password works out every header once, not again for those the search past the pins finds twice.
+        val tried = HashSet<VaultUnlock.KdfInput>()
+        if (tryPassword(password, tried)) return true
+        return storage != null && searchPastThePins(storage) && tryPassword(password, tried)
     }
 
     /**
@@ -262,10 +264,10 @@ class VaultManager(
     /** True if any of [ids] is a vault header this device knows: its delete means a password change. */
     fun knowsHeader(ids: Collection<me.esdex.coffer.core.storage.MessageId>): Boolean = headers.any { it.messageId in ids }
 
-    private suspend fun tryPassword(password: CharSequence): Boolean {
+    private suspend fun tryPassword(password: CharSequence, tried: MutableSet<VaultUnlock.KdfInput>): Boolean {
         val candidates = lock.withLock { headers }
         val started = System.nanoTime()
-        val opened = withContext(work) { VaultUnlock.withPasswordFrom(sodium, candidates, password, store.openedHeader) }
+        val opened = withContext(work) { VaultUnlock.withPasswordFrom(sodium, candidates, password, store.openedHeader, tried) }
         lastKdfMillis = (System.nanoTime() - started) / 1_000_000
         if (opened == null || !open(opened.first)) return false
         store.openedHeader = opened.second
@@ -338,6 +340,8 @@ class VaultManager(
             deletedFlow.value = null
             stateFlow.value = State.Unlocked(vault.vault)
         }
+        // The header its password opens, tried first from now on, before any posted later (audit 2, L-a).
+        store.openedHeader = published.messageId
     }
 
     /**
