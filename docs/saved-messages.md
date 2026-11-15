@@ -29,5 +29,6 @@ other devices; a move or rename is recorded so every device agrees.
   Saved Messages, marks files with missing parts and cleans up leftovers.
 - A file marked Damaged cannot be restored by Coffer. Delete it in Coffer and add it again if you
   still have it.
-- If the pinned note itself was deleted, Coffer finds no vault. Your recovery key brings it back: see
-  [Your recovery key](recovery-key.md).
+- If the pinned note itself was deleted, a phone where the vault is set up puts it back by itself the
+  next time Coffer runs there. With no such phone, Coffer finds no vault, and your recovery key brings
+  it back: see [Your recovery key](recovery-key.md).

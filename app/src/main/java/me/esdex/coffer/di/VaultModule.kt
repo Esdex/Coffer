@@ -12,6 +12,7 @@ import me.esdex.coffer.core.crypto.sodium.Sodium
 import me.esdex.coffer.core.index.RoomVaultIndex
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.DeviceSealer
+import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.tdlib.DeviceSecrets
 import me.esdex.coffer.core.ui.theme.AppearanceStore
 import me.esdex.coffer.core.ui.theme.CacheStore
@@ -40,7 +41,25 @@ object VaultModule {
 
     @Provides
     @Singleton
-    fun vaultManager(sodium: Sodium, store: VaultStore) = VaultManager(sodium, store)
+    fun vaultManager(sodium: Sodium, store: VaultStore, index: VaultIndex) = VaultManager(
+        sodium,
+        store,
+        // A few of the files' parts and snapshots this device knows, asked for by message id: any still
+        // there means the vault is (audit 2, L-b). No answer counts as there, as wiping is the worse mistake.
+        contentRemains = { storage ->
+            val ids = index.allParts().values.asSequence().flatMap { it.values }.take(CONTENT_PROBES).toList() +
+                index.snapshots().map { it.messageId }
+            ids.any { id ->
+                try {
+                    storage.message(id) != null
+                } catch (_: StorageException) {
+                    true
+                }
+            }
+        },
+    )
+
+    private const val CONTENT_PROBES = 8
 
     @Provides
     @Singleton

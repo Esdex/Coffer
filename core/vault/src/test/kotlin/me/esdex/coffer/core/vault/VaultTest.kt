@@ -545,6 +545,51 @@ class VaultManagerTest {
     }
 
     @Test
+    fun theHeaderPostedAgainWithTheOriginalDeletedIsNotAPasswordChange() = runTest {
+        // Audit 2, L-b: the same text under a new message id, then the original deleted, locked every
+        // device as changed elsewhere and turned fingerprint unlock off.
+        val cloud = FakeCloud()
+        val store = VaultStore(temp.newFolder())
+        val (_, _, storages) = twoDevices(cloud, "the password of the real vault")
+        val (hereStorage, thereStorage) = storages
+        val there = VaultManager(sodium, store, { 42 }, EmptyCoroutineContext)
+        there.locate(thereStorage)
+        assertTrue(there.unlockWithPassword("the password of the real vault", thereStorage))
+        val original = hereStorage.pinnedMessages().single()
+        val copy = hereStorage.sendText((original.content as MessageContent.Text).text)
+        hereStorage.pin(copy.id)
+        hereStorage.delete(listOf(original.id))
+
+        there.headersChanged(thereStorage)
+        assertTrue(there.state.value is VaultManager.State.Unlocked)
+        assertFalse(store.deviceUnlockStale)
+        assertEquals(copy.id, store.openedHeader)
+    }
+
+    @Test
+    fun aHeaderDeletedWithTheFilesStillThereIsPostedAgainNotTakenForADeletion() = runTest {
+        // Audit 2, L-b: every device wiped itself as if the vault had been deleted, its files all still there.
+        val cloud = FakeCloud()
+        val (_, _, storages) = twoDevices(cloud, "the password of the real vault")
+        val (hereStorage, thereStorage) = storages
+        val there = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext, contentRemains = { true })
+        there.locate(thereStorage)
+        assertTrue(there.unlockWithPassword("the password of the real vault", thereStorage))
+        val header = FoundHeader.from(hereStorage.pinnedMessages().single())!!.header
+        deleteHeaders(cloud, hereStorage)
+
+        there.headersChanged(thereStorage)
+        assertNull(there.deleted.value)
+        assertTrue(there.state.value is VaultManager.State.Unlocked)
+        // The same header, pinned again, and a new device finds and opens the vault with it.
+        assertEquals(listOf(header), thereStorage.pinnedMessages().mapNotNull(FoundHeader::from).map { it.header })
+        val fresh = VaultManager(sodium, VaultStore(temp.newFolder()), { 42 }, EmptyCoroutineContext)
+        val freshStorage = cloud.device()
+        fresh.locate(freshStorage)
+        assertTrue(fresh.unlockWithPassword("the password of the real vault", freshStorage))
+    }
+
+    @Test
     fun anOpenVaultLocksWhenItsHeaderIsReplacedElsewhere() = runTest {
         val cloud = FakeCloud()
         val (here, there, storages) = twoDevices(cloud, "old password on both devices")
