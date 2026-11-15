@@ -536,9 +536,9 @@ private fun Avatar(account: TelegramAccount?) {
  */
 private object AboutLinks {
     val sourceCode: String? = "https://github.com/Esdex/Coffer"
-    // Waiting for GitHub Pages, which opens with the repository.
-    val website: String? = null
-    val privacyPolicy: String? = null
+    // The documentation, on GitHub Pages from docs/ in the repository.
+    val website: String? = "https://esdex.github.io/Coffer/"
+    val privacyPolicy: String? = "https://esdex.github.io/Coffer/privacy.html"
     val reportProblem: String? = "https://github.com/Esdex/Coffer/issues"
 }
 

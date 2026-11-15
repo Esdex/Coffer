@@ -41,7 +41,7 @@
 - Log out from the screen that creates a vault, to sign in with another account instead.
 - Restore a vault with its recovery key: if Coffer's pinned note that holds the vault was deleted in Telegram while the files are still there, the 24 words and a new password bring it back, files and all. It is offered on the screen for a new vault, and on the unlock screen when the recovery key belongs to none of the vaults found.
 - A forgotten password: open the vault with the recovery key, then set a new password in Settings, Vault, Change password, with the 24 words in place of the current password.
-- Settings, About links to the source code on GitHub and to its issues, for reporting a problem.
+- Settings, About links to the source code on GitHub and to its issues, for reporting a problem, and to the documentation and the privacy policy on the website.
 - Support the project, first in Settings: GitHub Sponsors, Ko-fi and crypto wallet addresses that copy with a tap, under a gold star that fires confetti. In the GitHub and F-Droid builds only; the Google Play build has no such page.
 - Share to Coffer from any app: one file or several, into a folder you pick; Coffer returns to the app you shared from.
 - A new look, shared with Arcanum: grouped settings, large collapsing titles, file type icons, a path bar, search in the top bar, one + button for files and folders, sliding transitions, animated progress and results, and a paged welcome.

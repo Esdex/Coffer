@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://esdex.github.io/Coffer/">Documentation</a> | <a href="https://esdex.github.io/Coffer/privacy.html">Privacy policy</a>
+</p>
+
+<p align="center">
   <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue?style=for-the-badge" alt="License"></a>
   <img src="https://img.shields.io/badge/platform-Android-green?style=for-the-badge" alt="Platform">
   <img src="https://img.shields.io/badge/min%20SDK-30%20(Android%2011)-brightgreen?style=for-the-badge" alt="Min SDK">
