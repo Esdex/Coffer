@@ -170,8 +170,36 @@ fun NoScreenshots(keepAfter: Boolean) {
     val activity = LocalContext.current.activity() ?: return
     val keep = rememberUpdatedState(keepAfter)
     DisposableEffect(activity) {
+        val holds = SecureHolds.of(activity)
+        holds.acquire()
         activity.window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
-        onDispose { if (!keep.value) activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+        onDispose { if (holds.release(keep.value)) activity.window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
+    }
+}
+
+/**
+ * The screens holding FLAG_SECURE in one window. Two overlap while one slides out and the next in, and
+ * the one leaving goes last: had it cleared the flag, the words on the screen coming in would be left
+ * unprotected (audit 2, L-i). So the flag goes only with the last of them.
+ */
+internal class SecureHolds {
+    private var count = 0
+
+    fun acquire() {
+        count++
+    }
+
+    /** True if the flag may go now: no other screen holds it and the setting does not keep it. */
+    fun release(keepAfter: Boolean): Boolean {
+        count--
+        return count == 0 && !keepAfter
+    }
+
+    companion object {
+        // Main thread only, as composition is; weak, so a finished activity takes its count with it.
+        private val byActivity = java.util.WeakHashMap<Activity, SecureHolds>()
+
+        fun of(activity: Activity): SecureHolds = byActivity.getOrPut(activity) { SecureHolds() }
     }
 }
 
