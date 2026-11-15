@@ -1,16 +1,53 @@
 package me.esdex.coffer.feature.browser.transfer
 
+import com.goterl.lazysodium.LazySodiumJava
+import com.goterl.lazysodium.SodiumJava
+import me.esdex.coffer.core.crypto.sodium.LazySodiumAdapter
+import me.esdex.coffer.core.storage.DeviceSealer
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
 
-/** What another app may hand Coffer through the share sheet (audit 1, M10). */
+/** What another app may hand Coffer through the share sheet (audit 1, M10), and how it waits on the phone. */
 class ShareInboxTest {
     private val own = "me.esdex.coffer"
+    private val sodium = LazySodiumAdapter(LazySodiumJava(SodiumJava()))
+
+    /** Stands in for the Keystore: a seal that changes the bytes and remembers its purpose. */
+    private val sealer = object : DeviceSealer {
+        override fun seal(plain: ByteArray, purpose: String) = purpose.toByteArray() + plain.map { (it.toInt() xor 0x5A).toByte() }
+        override fun open(sealed: ByteArray, purpose: String): ByteArray? {
+            val tag = purpose.toByteArray()
+            if (sealed.size < tag.size || !sealed.copyOf(tag.size).contentEquals(tag)) return null
+            return sealed.copyOfRange(tag.size, sealed.size).map { (it.toInt() xor 0x5A).toByte() }.toByteArray()
+        }
+    }
+
+    @Test
+    fun aCopyIsEncryptedOnThePhoneAndReadsBackWhole() {
+        // Audit 2, N4: the copy waits on the phone, before sign-in or unlock, for as long as it takes.
+        val plain = "a shared document, waiting to be uploaded. ".repeat(50_000).toByteArray()
+        val out = ByteArrayOutputStream()
+        ShareInbox.sealing(out, sodium, sealer).use { it.write(plain) }
+        val copy = out.toByteArray()
+        assertFalse(String(copy, Charsets.ISO_8859_1).contains("a shared document"))
+        assertArrayEquals(plain, ShareInbox.opening(ByteArrayInputStream(copy), sodium, sealer).use { it.readBytes() })
+        // Another phone's Keystore, or a copy cut short, does not give it back.
+        val elsewhere = object : DeviceSealer by sealer {
+            override fun open(sealed: ByteArray, purpose: String): ByteArray? = null
+        }
+        assertThrows(IOException::class.java) { ShareInbox.opening(ByteArrayInputStream(copy), sodium, elsewhere) }
+        assertThrows(IOException::class.java) {
+            ShareInbox.opening(ByteArrayInputStream(copy.copyOf(copy.size - 1)), sodium, sealer).use { it.readBytes() }
+        }
+    }
 
     @Test
     fun onlyAnotherAppsContentIsTaken() {

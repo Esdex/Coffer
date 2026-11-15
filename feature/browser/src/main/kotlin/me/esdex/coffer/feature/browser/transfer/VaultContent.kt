@@ -259,7 +259,7 @@ class VaultContent @Inject constructor(
             val request = keys.local.openUpload(upload.uploadId, upload.sealedRequest) ?: continue
             val fileId = upload.fileId ?: try {
                 val prepared = UploadPreparer(keys, index, store.hideSizes, System::currentTimeMillis)
-                    .prepare(upload, request, ContentUriSource(context, request.source))
+                    .prepare(upload, request, inbox.source(request.source))
                 registry.put(prepared.upload.fileId!!, TransferRegistry.Entry(prepared.keys, source = request.source, displayName = request.name))
                 prepared.upload.fileId!!
             } catch (_: IOException) {

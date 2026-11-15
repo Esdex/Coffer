@@ -42,6 +42,8 @@ https://telegram.org/privacy
 - **Coffer's index** of your files and folders: the whole database is encrypted with a key kept in
   Android's Keystore, and names and folders are encrypted once more inside it
 - **File cache and previews**: kept encrypted, deleted when you turn them off or clear them
+- **Files shared to Coffer** from another app: copied into Coffer at once, encrypted with a key kept
+  in Android's Keystore, and deleted once uploaded or cancelled
 - **Decrypted copies** you open in another app: removed 10 minutes after opening
 - **Biometric unlock**: the vault key is wrapped by a Keystore key that needs your fingerprint
   or face. Coffer never sees your biometric data

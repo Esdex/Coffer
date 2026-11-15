@@ -69,6 +69,7 @@ class TransferWorker @AssistedInject constructor(
     private val registry: TransferRegistry,
     private val cache: FileCache,
     private val vault: VaultManager,
+    private val inbox: ShareInbox,
 ) : CoroutineWorker(context, params) {
 
     /** A transfer waiting in the queue; [ready] when it has what it needs to run now. */
@@ -210,7 +211,7 @@ class TransferWorker @AssistedInject constructor(
         val storage = telegram.readyStorage() ?: throw StorageException("Telegram is not ready")
         val runner = UploadRunner(sodium, storage, index, WorkFiles.upload(applicationContext))
         try {
-            runner.run(upload, entry.keys, ContentUriSource(applicationContext, source)) { done, total, stage -> report(id, done, total, stage) }
+            runner.run(upload, entry.keys, inbox.source(source)) { done, total, stage -> report(id, done, total, stage) }
             registry.remove(fileId)
             // A file shared into Coffer was copied for this upload (SPEC §6, step 1); done with it.
             ShareInbox.deleteCopy(applicationContext, source)

@@ -15,8 +15,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import me.esdex.coffer.core.crypto.LocalStream
+import me.esdex.coffer.core.crypto.SecretKey
+import me.esdex.coffer.core.crypto.sodium.Sodium
+import me.esdex.coffer.core.storage.DeviceSealer
+import me.esdex.coffer.core.sync.UploadSource
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -25,9 +34,17 @@ import javax.inject.Singleton
  * Files shared to Coffer from another app (SPEC §6, step 1). The permission to read them lasts only as
  * long as the receiving screen, so each one is copied into the app's own storage at once; the copy is
  * what gets uploaded, and it is deleted after the upload, on cancel, or when found orphaned.
+ *
+ * The copy is made before the vault is open, maybe before sign-in, and may wait on the phone until the
+ * next unlock: it is encrypted as it is written, under a key of its own sealed by the phone's Keystore,
+ * so it is not readable from a copy of the phone's storage (audit 2, N4).
  */
 @Singleton
-class ShareInbox @Inject constructor(@ApplicationContext private val context: Context) {
+class ShareInbox @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val sodium: Sodium,
+    private val sealer: DeviceSealer,
+) {
 
     /** A copied file. The name and type stay in memory until the upload request seals them (SPEC §8). */
     data class Item(val file: File, val name: String, val mime: String?, val size: Long) {
@@ -78,15 +95,17 @@ class ShareInbox @Inject constructor(@ApplicationContext private val context: Co
                     val file = File(dir, UUID.randomUUID().toString())
                     items += Item(file, queryName(uri) ?: uri.lastPathSegment ?: "file", context.contentResolver.getType(uri) ?: typeHint, 0)
                     val input = context.contentResolver.openInputStream(uri) ?: throw IOException("cannot open")
+                    var size = 0L
                     input.use { from ->
-                        file.outputStream().use { to ->
+                        sealedCopy(file).use { to ->
                             copyWhileThereIsRoom(from, to, freeSpace = { dir.usableSpace }) { n ->
                                 done += n
+                                size += n
                                 stateFlow.value = State.Copying(done, total)
                             }
                         }
                     }
-                    items[items.lastIndex] = items.last().copy(size = file.length())
+                    items[items.lastIndex] = items.last().copy(size = size)
                 }
                 stateFlow.value = State.Ready(items)
             } catch (e: Exception) {
@@ -112,6 +131,19 @@ class ShareInbox @Inject constructor(@ApplicationContext private val context: Co
         (stateFlow.value as? State.Ready)?.items?.forEach { it.file.delete() }
         stateFlow.value = State.Empty
     }
+
+    /** Where an upload reads [uri] from: one of these copies, decrypted as it is read, or the picked file itself. */
+    fun source(uri: String): UploadSource = if (isCopy(context, uri)) {
+        object : UploadSource {
+            override fun open(): InputStream = openCopy(File(checkNotNull(uri.toUri().path)))
+        }
+    } else {
+        ContentUriSource(context, uri)
+    }
+
+    private fun sealedCopy(file: File): OutputStream = sealing(file.outputStream(), sodium, sealer)
+
+    private fun openCopy(file: File): InputStream = opening(file.inputStream(), sodium, sealer)
 
     /** Files the inbox still holds, so a sweep for orphans leaves them alone. */
     fun held(): Set<File> = (stateFlow.value as? State.Ready)?.items?.mapTo(HashSet()) { it.file }.orEmpty()
@@ -158,6 +190,60 @@ class ShareInbox @Inject constructor(@ApplicationContext private val context: Co
         }
 
         private const val CHECK_EVERY = 8L * 1024 * 1024
+
+        /** A new copy into [out]: its key, sealed by the Keystore, first, then the content encrypted under it. */
+        internal fun sealing(out: OutputStream, sodium: Sodium, sealer: DeviceSealer): OutputStream {
+            val key = LocalStream.newKey(sodium)
+            try {
+                val sealedKey = key.withBytes { sealer.seal(it.copyOf(), KEY_PURPOSE) }
+                val header = DataOutputStream(out)
+                header.writeInt(sealedKey.size)
+                header.write(sealedKey)
+                val sealing = LocalStream.sealing(sodium, key, out)
+                return object : OutputStream() {
+                    override fun write(b: Int) = sealing.write(b)
+                    override fun write(b: ByteArray, off: Int, len: Int) = sealing.write(b, off, len)
+                    override fun close() = try {
+                        sealing.close()
+                    } finally {
+                        key.close()
+                    }
+                }
+            } catch (e: Exception) {
+                key.close()
+                out.close()
+                throw e
+            }
+        }
+
+        /** A copy written by [sealing], decrypted as it is read. */
+        internal fun opening(input: InputStream, sodium: Sodium, sealer: DeviceSealer): InputStream {
+            try {
+                val header = DataInputStream(input)
+                val length = header.readInt()
+                if (length !in 1..MAX_SEALED_KEY) throw IOException("not a copy")
+                val sealedKey = ByteArray(length).also(header::readFully)
+                val key = SecretKey.adopt(sealer.open(sealedKey, KEY_PURPOSE) ?: throw IOException("the copy's key does not open"))
+                val opening = LocalStream.opening(sodium, key, input)
+                return object : InputStream() {
+                    override fun read(): Int = opening.read()
+                    override fun read(b: ByteArray, off: Int, len: Int): Int = opening.read(b, off, len)
+                    override fun close() = try {
+                        opening.close()
+                    } finally {
+                        key.close()
+                    }
+                }
+            } catch (e: Exception) {
+                input.close()
+                throw e
+            }
+        }
+
+        private const val KEY_PURPOSE = "share"
+
+        // A 32-byte key sealed with AES-GCM: its IV and tag, with room to spare.
+        private const val MAX_SEALED_KEY = 256
 
         // Room for the encrypted part the upload writes next to the copy, and for TDLib (SPEC §6, step 4).
         private const val SPACE_MARGIN = 64L * 1024 * 1024
