@@ -9,6 +9,11 @@
 # Output:  core/tdlib/dist/{libs/<abi>/libtdjni.so, java/, STAMP}
 #          build/tdlib-work/tdlib-debug-<version>.zip (unstripped libraries for crash symbolication)
 #
+# Reproducible: the same inputs give byte-identical libraries wherever the repository, the work
+# directory and the SDK are (F-Droid builds Coffer itself and compares it with the published APK).
+# The build machine's paths are mapped away, the linker writes no build ID, and OpenSSL's build
+# date is the TDLib commit's.
+#
 # Usage:   scripts/build-tdlib.sh [--check]
 #            --check  only verify the toolchain, build nothing
 #
@@ -56,6 +61,19 @@ if [[ -n "${JAVA_HOME:-}" ]]; then
 fi
 
 NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+
+# What TDLib's compiler and linker get on top of the official script's flags, so nothing of this
+# machine ends up in the library: source paths under the work directory and the SDK become fixed
+# names (TDLib logs __FILE__), and no build ID (lld's differs between machines for the same code).
+# Passed as -D options: the NDK's toolchain file ignores CFLAGS and LDFLAGS from the environment.
+reproducible_flags() {
+  # As the official script sees them: resolved, without a trailing slash, or the prefixes would not match.
+  local work sdk
+  work=$(cd "$WORK" && pwd -P)
+  sdk=$(cd "$ANDROID_SDK_ROOT" && pwd -P)
+  export COFFER_TD_CFLAGS="-ffile-prefix-map=$work=/coffer-tdlib -ffile-prefix-map=$sdk=/sdk"
+  export COFFER_TD_LDFLAGS="-Wl,--build-id=none"
+}
 NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
 # The official instructions require exactly this CMake from the SDK.
 CMAKE_DIR="$ANDROID_SDK_ROOT/cmake/3.22.1"
@@ -141,6 +159,10 @@ build_openssl() {
     cd "$src"
     export ANDROID_NDK_ROOT="$NDK_ROOT" ANDROID_NDK_HOME="$NDK_ROOT"
     export PATH="$NDK_BIN:$PATH"
+    # OpenSSL writes its build date into the library unless given one. It also writes its compiler
+    # flags in, so it gets no path-mapping flags of its own: it compiles its files by relative paths.
+    SOURCE_DATE_EPOCH=$(git -C "$WORK/td" log -1 --format=%ct)
+    export SOURCE_DATE_EPOCH
     clang --version >/dev/null 2>&1 || die "failed to run clang from the NDK"
     local abi target ldflags
     for abi in $ABIS ; do
@@ -169,11 +191,17 @@ build_tdlib() {
   sed -i "s|platforms/android-34/android.jar|platforms/$JAVADOC_PLATFORM/android.jar|" "$android/build-tdlib.sh"
   grep -q "platforms/$JAVADOC_PLATFORM/android.jar" "$android/build-tdlib.sh" ||
     die "could not patch the javadoc platform in build-tdlib.sh; did the official script change?"
+  # And the flags that make the library reproducible (see reproducible_flags).
+  sed -i 's|-DTD_ENABLE_PCH:BOOL=ON|& -DCMAKE_C_FLAGS="$COFFER_TD_CFLAGS" -DCMAKE_CXX_FLAGS="$COFFER_TD_CFLAGS" -DCMAKE_SHARED_LINKER_FLAGS="$COFFER_TD_LDFLAGS"|' "$android/build-tdlib.sh"
+  grep -q 'DCMAKE_SHARED_LINKER_FLAGS="$COFFER_TD_LDFLAGS"' "$android/build-tdlib.sh" ||
+    die "could not add the reproducible-build flags to build-tdlib.sh; did the official script change?"
 
   echo "Building TDLib $TDLIB_VERSION for: $ABIS (API $API)..."
   (
     cd "$android"
     export PATH="$CMAKE_DIR/bin:$PATH"
+    # Read by CMake when each build directory is first configured.
+    reproducible_flags
     ./build-tdlib.sh "$ANDROID_SDK_ROOT" "$NDK_VERSION" "$OPENSSL_DIR" c++_static Java "$API" "$ABIS"
   )
 }
