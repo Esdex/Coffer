@@ -51,7 +51,11 @@ class VaultDeletionTest {
         var failAt: Int? = null
         var floodsLeft = 0
 
+        /** Runs before each delete request, with its number and ids: for what another device sends meanwhile. */
+        var beforeDelete: suspend (Int, Collection<MessageId>) -> Unit = { _, _ -> }
+
         override suspend fun delete(ids: Collection<MessageId>) {
+            beforeDelete(requests.size, ids)
             if (floodsLeft > 0) {
                 floodsLeft--
                 throw FloodWaitException(0)
@@ -105,6 +109,34 @@ class VaultDeletionTest {
         assertEquals(keep, remaining())
         // The other vault's header, part and operation, and three messages of the user's own.
         assertEquals(6, keep.size)
+    }
+
+    @Test
+    fun whatAnotherDeviceSendsMeanwhileGoesToo() = runBlocking {
+        // Audit 2, L-e: a device still open on the vault sent a snapshot and an operation during the run,
+        // after the one read; they outlived the deletion, the whole file list among them.
+        val keep = scene()
+        val there = device(ours)
+        there.indexer.catchUp()
+        val headers = cloud.allMessages().filter { (it.content as? MessageContent.Text)?.text == header(ourId) }.map { it.id }.toSet()
+        val storage = Recording(cloud.device())
+        var late = emptySet<MessageId>()
+        storage.beforeDelete = { request, ids ->
+            if (request == 0) {
+                val before = remaining()
+                there.sendOp(Op.FolderCreate(Id.random(sodium), 9, Id.random(sodium), null, "Late"))
+                there.upload("late.bin", BytesSource(ByteArray(7)))
+                late = remaining() - before
+            }
+            // Right as the headers go, as a device a little behind would send.
+            if (ids.any { it in headers }) there.sendOp(Op.FolderCreate(Id.random(sodium), 10, Id.random(sodium), null, "Later"))
+        }
+        VaultDeletion(storage, keysOf(ours), ourId).run()
+        assertEquals(keep, remaining())
+        // And before the headers, so a run cut short still leaves a vault that opens.
+        val order = storage.requests.flatten()
+        assertEquals(2, late.size)
+        assertTrue(late.all { order.indexOf(it) < order.indexOf(headers.first()) })
     }
 
     @Test

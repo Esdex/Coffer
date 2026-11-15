@@ -36,15 +36,57 @@ class VaultDeletion(private val storage: StorageBackend, private val keys: Vault
         onDeleted: (done: Int, total: Int) -> Unit = { _, _ -> },
         onWait: (seconds: Int) -> Unit = {},
     ): Selection {
-        val selection = select(readAll(onRead))
+        val all = readAll(onRead)
+        var newest = all.maxOfOrNull { it.id }
+        val first = select(all)
+        val content = first.content.toMutableList()
+        val headers = first.headers.toMutableList()
         var done = 0
-        onDeleted(0, selection.total)
-        for (slice in selection.content.chunked(SLICE) + selection.headers.chunked(SLICE)) {
-            waitingOutFloods(onWait) { storage.delete(slice) }
-            done += slice.size
-            onDeleted(done, selection.total)
+        suspend fun deleteAll(ids: List<MessageId>) {
+            for (slice in ids.chunked(SLICE)) {
+                waitingOutFloods(onWait) { storage.delete(slice) }
+                done += slice.size
+                onDeleted(done, content.size + headers.size)
+            }
         }
-        return selection
+
+        /** What came in after the newest message read, the vault's part of it: sent meanwhile. */
+        suspend fun late(): Selection {
+            val after = newest?.let { readAfter(it) }.orEmpty()
+            newest = after.maxOfOrNull { it.id } ?: newest
+            return select(after)
+        }
+
+        onDeleted(0, first.total)
+        deleteAll(first.content)
+        // Devices still open on the vault go on sending while it goes: a snapshot of the whole file list,
+        // an upload. Left behind, they would outlive the deletion (audit 2, L-e). Read on until a pass finds
+        // nothing more of it, then the headers, and once more after them.
+        for (pass in 0 until LATE_PASSES) {
+            val more = late()
+            if (more.total == 0) break
+            content += more.content
+            headers += more.headers
+            deleteAll(more.content)
+        }
+        deleteAll(headers)
+        val last = late()
+        content += last.content
+        headers += last.headers
+        deleteAll(last.content + last.headers)
+        return Selection(content.sorted(), headers.sorted())
+    }
+
+    private suspend fun readAfter(after: MessageId): List<StoredMessage> {
+        val messages = mutableListOf<StoredMessage>()
+        var from = after
+        while (true) {
+            val page = storage.historyAfter(from, StorageBackend.MAX_PAGE)
+            if (page.isEmpty()) break
+            messages += page
+            from = page.last().id
+        }
+        return messages
     }
 
     /** The vault's messages among [messages]: what its keys open, and its own headers. */
@@ -103,5 +145,8 @@ class VaultDeletion(private val storage: StorageBackend, private val keys: Vault
     private companion object {
         /** One request per hundred messages, as compaction deletes (SPEC §5.6). */
         const val SLICE = 100
+
+        /** Passes for what came in meanwhile; each takes as long as a few deletes, so devices rarely need more. */
+        const val LATE_PASSES = 5
     }
 }
