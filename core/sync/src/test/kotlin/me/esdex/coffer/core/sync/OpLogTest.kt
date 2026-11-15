@@ -179,8 +179,8 @@ class OpLogTest {
             }
         }
         assertThrows(StorageException::class.java) { runBlocking { Indexer(failsLate, there.index, there.keys).catchUp() } }
-        // FakeCloud's pages hold 5: the first two pages are in.
-        assertEquals(10, there.view().folders.size)
+        // FakeCloud's pages hold 5: the oldest, found on the way down, and the two pages after it are in.
+        assertEquals(11, there.view().folders.size)
         there.indexer.catchUp()
         assertEquals(12, there.view().folders.size)
     }

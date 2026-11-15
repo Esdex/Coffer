@@ -162,6 +162,8 @@ class FakeStorageBackend internal constructor(private val cloud: FakeCloud) : St
 
     override suspend fun historyAfter(after: MessageId, limit: Int): List<StoredMessage> {
         require(limit in 1..StorageBackend.MAX_PAGE) { "limit must be in 1..${StorageBackend.MAX_PAGE}" }
+        // As TDLib's backend: a message id, though it need not exist any more.
+        require(after.value > 0) { "after must be a message id" }
         cloud.checkFailure()
         return cloud.historyAfter(after, limit)
     }

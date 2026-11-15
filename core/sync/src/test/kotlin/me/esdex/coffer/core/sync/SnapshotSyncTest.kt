@@ -121,7 +121,8 @@ class SnapshotSyncTest {
         val reloaded = there.indexer.reload()
         assertTrue(reloaded.snapshotUsed)
         assertEquals(expectedView, there.view())
-        assertEquals(Indexer.CatchUpReport(cloud.allMessages().size, snapshotUsed = false), device().indexer.rescan())
+        // Down to the oldest message, then up from it: every message but the oldest is read twice (audit 2, L-g).
+        assertEquals(Indexer.CatchUpReport(2 * cloud.allMessages().size - 1, snapshotUsed = false), device().indexer.rescan())
     }
 
     @Test
@@ -143,9 +144,10 @@ class SnapshotSyncTest {
         there.indexer.catchUp()
         assertEquals(1, there.storage.blobsOpened)
         assertEquals(View(emptySet(), setOf(Triple("a.txt", null, FileStatus.READY), Triple("b.txt", null, FileStatus.READY))), there.view())
-        // Read in full: every message, not just those after the snapshot. Twice: down looking for a snapshot,
-        // then up applying a page at a time, as nothing read is kept past its page (audit 2, L-g).
-        assertEquals(2 * cloud.allMessages().size, there.storage.messagesRead)
+        // Read in full: every message, not just those after the snapshot. Twice but the oldest: down looking
+        // for a snapshot, then up from the oldest a page at a time, as nothing read is kept past its page
+        // (audit 2, L-g).
+        assertEquals(2 * cloud.allMessages().size - 1, there.storage.messagesRead)
     }
 
     @Test
