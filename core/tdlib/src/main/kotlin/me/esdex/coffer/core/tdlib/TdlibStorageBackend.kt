@@ -102,7 +102,9 @@ class TdlibStorageBackend internal constructor(
                     result.message.toStored()
                 }
                 is TdApi.UpdateMessageSendFailed -> {
-                    Log.w(TAG, "send $kind ${pending.id} failed with ${result.error.code} after ${elapsed()} ms")
+                    // How long Telegram asked to wait, too: that is what decides the pace operations are sent at.
+                    val wait = floodWaitSeconds(result.error.code, result.error.message)?.let { ", asked to wait $it s" }.orEmpty()
+                    Log.w(TAG, "send $kind ${pending.id} failed with ${result.error.code} after ${elapsed()} ms$wait")
                     throw result.error.toException()
                 }
                 else -> error("unexpected send result")
