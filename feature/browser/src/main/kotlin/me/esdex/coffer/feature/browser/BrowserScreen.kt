@@ -67,6 +67,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.CreateNewFolder
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DownloadForOffline
+import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.DriveFolderUpload
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.FileOpen
@@ -149,6 +150,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.index.FileStatus
+import me.esdex.coffer.core.sync.OpKind
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.sync.canTake
 import me.esdex.coffer.core.tdlib.Connection
@@ -1537,6 +1539,11 @@ private fun TransferCard(
     onRetry: (TransferItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val operation = item.operation
+    if (operation != null) {
+        OperationCard(item, operation, shape, offline, modifier)
+        return
+    }
     Row(
         modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
             .padding(start = 16.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
@@ -1556,6 +1563,47 @@ private fun TransferCard(
         }
         if (item.failure != null) IconButton(onClick = { onRetry(item) }) { Icon(Icons.Outlined.Refresh, stringResource(R.string.browser_retry)) }
         IconButton(onClick = { onCancel(item) }) { Icon(Icons.Outlined.Close, stringResource(R.string.browser_cancel)) }
+    }
+}
+
+/**
+ * One action's operations on their way to Telegram: what they do, how many have gone, and Telegram's
+ * pause when it asks for one. Not cancelled: cut short, a folder brought in would lose its files.
+ */
+@Composable
+private fun OperationCard(item: TransferItem, operation: OperationBatch, shape: Shape, offline: Boolean, modifier: Modifier = Modifier) {
+    val (icon, title) = when (operation.kind) {
+        OpKind.CREATE_FOLDERS -> Icons.Outlined.CreateNewFolder to pluralStringResource(R.plurals.browser_op_create_folders, operation.total, operation.total)
+        OpKind.RENAME -> Icons.Outlined.DriveFileRenameOutline to stringResource(R.string.browser_op_rename)
+        OpKind.MOVE -> Icons.AutoMirrored.Outlined.DriveFileMove to pluralStringResource(R.plurals.browser_op_move, operation.total, operation.total)
+    }
+    Row(
+        modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box {
+            TypeTile(icon to MaterialTheme.colorScheme.primary)
+            KindBadge(TransferKind.OPS, Modifier.align(Alignment.BottomEnd).offset(x = 3.dp, y = 3.dp))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(6.dp))
+            val running = item.progress != null
+            if (running) {
+                TransferBar(if (operation.total > 0) operation.sent.toFloat() / operation.total else null)
+                Spacer(Modifier.height(6.dp))
+            }
+            val wait = item.wait
+            val line = when {
+                offline -> stringResource(R.string.browser_transfer_wait_network)
+                wait != null -> waitLabel(wait)
+                running || operation.total > 1 -> stringResource(R.string.browser_op_sent, operation.sent, operation.total)
+                else -> stringResource(R.string.browser_transfer_waiting)
+            }
+            Text(line, style = MaterialTheme.typography.bodySmall.tabular(), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
 }
 
@@ -1580,7 +1628,7 @@ private fun TransferTile(item: TransferItem, previews: Previews) {
 private fun KindBadge(kind: TransferKind, modifier: Modifier = Modifier) {
     val primary = MaterialTheme.colorScheme.primary
     val (icon, label, color) = when (kind) {
-        TransferKind.UPLOAD -> Triple(Icons.Outlined.ArrowUpward, R.string.browser_cd_upload, primary)
+        TransferKind.UPLOAD, TransferKind.OPS -> Triple(Icons.Outlined.ArrowUpward, R.string.browser_cd_upload, primary)
         TransferKind.DOWNLOAD -> Triple(Icons.Outlined.ArrowDownward, R.string.browser_cd_download, primary)
         TransferKind.CACHE -> Triple(Icons.Outlined.ArrowDownward, R.string.browser_cd_caching, CachedGreen)
     }

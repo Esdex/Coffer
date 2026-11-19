@@ -75,6 +75,16 @@ internal class UploadRow(
 @Entity(tableName = "applied_ops")
 internal class AppliedOpRow(@PrimaryKey val opId: String, @ColumnInfo(defaultValue = "0") val messageId: Long)
 
+/** Operations waiting to go to Telegram, in the order they were made (see [PendingOp]). */
+@Entity(tableName = "pending_ops")
+internal class PendingOpRow(
+    @PrimaryKey(autoGenerate = true) val seq: Long = 0,
+    val batch: String,
+    val batchSize: Int,
+    val kind: String,
+    val caption: String,
+)
+
 @Entity(tableName = "downloads")
 internal class DownloadRow(@PrimaryKey val downloadId: String, val fileId: String, val sealedTarget: ByteArray?)
 
@@ -133,6 +143,11 @@ internal interface IndexDao {
     @Query("SELECT * FROM sync_state") suspend fun syncRows(): List<SyncRow>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putSync(row: SyncRow)
 
+    @Query("SELECT * FROM pending_ops ORDER BY seq") fun observeOps(): Flow<List<PendingOpRow>>
+    @Query("SELECT * FROM pending_ops ORDER BY seq") suspend fun ops(): List<PendingOpRow>
+    @Insert suspend fun insertOps(rows: List<PendingOpRow>)
+    @Query("DELETE FROM pending_ops WHERE seq = :seq") suspend fun deleteOp(seq: Long)
+
     @Query("SELECT * FROM uploads") fun observeUploads(): Flow<List<UploadRow>>
     @Query("SELECT * FROM uploads") suspend fun uploads(): List<UploadRow>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putUpload(row: UploadRow)
@@ -152,12 +167,14 @@ internal interface IndexDao {
     entities = [
         FileRow::class, PartRow::class, DeletedRow::class, FolderRow::class, DeletedFolderRow::class,
         SnapshotRow::class, SyncRow::class, UploadRow::class, DownloadRow::class, AppliedOpRow::class,
+        PendingOpRow::class,
     ],
-    version = 6,
+    version = 7,
     // Only new tables and columns so far: the queue of transfers survives the update.
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6),
+        AutoMigration(from = 6, to = 7),
     ],
 )
 internal abstract class IndexDatabase : RoomDatabase() {
@@ -286,6 +303,14 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         Unit
     }
 
+    private fun PendingOpRow.pending() = PendingOp(seq, batch, batchSize, kind, caption)
+
+    override fun observeOps(): Flow<List<PendingOp>> = dao.observeOps().map { rows -> rows.map { it.pending() } }
+    override suspend fun ops(): List<PendingOp> = dao.ops().map { it.pending() }
+    override suspend fun putOps(batch: String, kind: String, captions: List<String>) =
+        dao.insertOps(captions.map { PendingOpRow(batch = batch, batchSize = captions.size, kind = kind, caption = it) })
+    override suspend fun removeOp(seq: Long) = dao.deleteOp(seq)
+
     override fun observeUploads(): Flow<List<PendingUpload>> = dao.observeUploads().map { rows -> rows.map { it.pending() } }
     override suspend fun uploads(): List<PendingUpload> = dao.uploads().map { it.pending() }
     override suspend fun putUpload(upload: PendingUpload) = dao.putUpload(
@@ -358,6 +383,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
             to.insertSnapshots(from.snapshots())
             from.syncRows().forEach { to.putSync(it) }
             from.uploads().forEach { to.putUpload(it) }
+            to.insertOps(from.ops())
             from.downloads().forEach { to.putDownload(it) }
             from.appliedOps().forEach { to.markOpApplied(it) }
         }

@@ -40,6 +40,7 @@ import me.esdex.coffer.core.sync.ContentMismatchException
 import me.esdex.coffer.core.sync.DownloadRunner
 import me.esdex.coffer.core.sync.MissingPartException
 import me.esdex.coffer.core.sync.NotEnoughSpaceException
+import me.esdex.coffer.core.sync.OpQueue
 import me.esdex.coffer.core.sync.PrefetchRunner
 import me.esdex.coffer.core.sync.SourceChangedException
 import me.esdex.coffer.core.sync.TransferStage
@@ -155,9 +156,17 @@ class TransferWorker @AssistedInject constructor(
     /** Uploads with their file prepared, downloads, files to cache; not those failed, which wait for Retry. */
     private suspend fun pending(): List<Item> {
         val failed = registry.failures.value
+        // Operations first, as one transfer that sends them all: an upload into a folder made a moment ago
+        // waits until that folder is in Saved Messages. Named after the first one when a run starts, and
+        // keeping that name while it runs: named after the first one each time, a run looked new after
+        // every operation sent, and a second one started beside it.
+        val queuedOps = index.ops()
+        val ops = queuedOps.firstOrNull()?.let { first ->
+            listOf(Item(opsRun ?: opsId(first.seq).also { opsRun = it }, TransferKind.OPS, ready = true))
+        }.orEmpty()
         val uploads = index.uploads().filter { it.uploadId !in failed }.map { upload ->
             val entry = upload.fileId?.let(registry::get)
-            Item(upload.uploadId, TransferKind.UPLOAD, entry?.source != null)
+            Item(upload.uploadId, TransferKind.UPLOAD, entry?.source != null && queuedOps.isEmpty())
         }
         val downloads = index.downloads().filter { it.downloadId !in failed }.map { download ->
             val entry = registry.get(download.fileId)
@@ -165,7 +174,7 @@ class TransferWorker @AssistedInject constructor(
             Item(download.downloadId, TransferKind.DOWNLOAD, entry != null && (download.sealedTarget == null || entry.target != null))
         }
         val caching = cache.queue.items.value.filter { it.id !in failed }.map { Item(it.id, TransferKind.CACHE, ready = true) }
-        return uploads + downloads + caching
+        return ops + uploads + downloads + caching
     }
 
     /**
@@ -179,6 +188,7 @@ class TransferWorker @AssistedInject constructor(
             try {
                 return registry.gate.withPermit {
                     when (item.kind) {
+                        TransferKind.OPS -> sendOps(item.id)
                         TransferKind.UPLOAD -> upload(item.id)
                         TransferKind.DOWNLOAD -> download(item.id)
                         TransferKind.CACHE -> prefetch(item.id)
@@ -227,6 +237,34 @@ class TransferWorker @AssistedInject constructor(
             registry.fail(id, TransferRegistry.Failure.SOURCE_GONE)
         } catch (_: SecurityException) {
             registry.fail(id, TransferRegistry.Failure.SOURCE_GONE)
+        }
+        return true
+    }
+
+    /**
+     * Sends the queued operations at Telegram's pace (see [OpQueue]), with how many of them have gone as
+     * this transfer's progress. A FLOOD_WAIT comes out of here and is waited out, and shown, by [runItem].
+     */
+    private suspend fun sendOps(id: String): Boolean = try {
+        sendQueuedOps(id)
+    } finally {
+        // The next run is a new transfer, with a name of its own.
+        if (opsRun == id) opsRun = null
+    }
+
+    /** The run of the operation queue going now, if one is. */
+    @Volatile
+    private var opsRun: String? = null
+
+    private suspend fun sendQueuedOps(id: String): Boolean {
+        val storage = telegram.readyStorage() ?: throw StorageException("Telegram is not ready")
+        var total = index.ops().size
+        report(id, 0, total.toLong(), TransferStage.MOVING)
+        OpQueue(index).drain(storage, pause = { delay(OpQueue.PACE_MILLIS) }) { left ->
+            // Some may have been added meanwhile.
+            val sent = total - left.size
+            total = maxOf(total, sent + left.size)
+            report(id, sent.toLong(), total.toLong(), TransferStage.MOVING)
         }
         return true
     }
@@ -408,6 +446,7 @@ class TransferWorker @AssistedInject constructor(
             TransferKind.UPLOAD -> res.getQuantityString(R.plurals.transfers_title_upload, count, count)
             TransferKind.DOWNLOAD -> res.getQuantityString(R.plurals.transfers_title_download, count, count)
             TransferKind.CACHE -> res.getQuantityString(R.plurals.transfers_title_cache, count, count)
+            TransferKind.OPS -> res.getString(R.string.transfers_title_ops)
         }
         val text = summary?.let {
             val done = res.getQuantityString(R.plurals.transfers_done_of, it.total, it.finished, it.total)
@@ -431,6 +470,10 @@ class TransferWorker @AssistedInject constructor(
 
     companion object {
         const val TAG = "coffer-transfer"
+
+        /** The transfer that sends the queued operations, named after the first of them. */
+        fun opsId(firstSeq: Long) = "$OPS_PREFIX$firstSeq"
+        const val OPS_PREFIX = "ops-"
         private const val QUEUE = "transfers"
         private const val CHANNEL = "transfers"
         private const val NOTICE_ID = 0x7EAF

@@ -24,6 +24,8 @@ class InMemoryVaultIndex : VaultIndex {
         val oldestRecord: MessageId? = null,
         val appliedOps: Map<Id, MessageId> = emptyMap(),
         val snapshots: Map<MessageId, KnownSnapshot> = emptyMap(),
+        val ops: List<PendingOp> = emptyList(),
+        val nextOp: Long = 1,
         val uploads: Map<String, PendingUpload> = emptyMap(),
         val downloads: Map<String, PendingDownload> = emptyMap(),
     )
@@ -127,6 +129,8 @@ class InMemoryVaultIndex : VaultIndex {
             lastApplied = content.lastApplied,
             contentVersion = content.contentVersion,
             snapshots = content.snapshots.associateBy { it.messageId },
+            ops = s.ops,
+            nextOp = s.nextOp,
             uploads = s.uploads,
             downloads = s.downloads,
             maintainedAt = s.maintainedAt,
@@ -134,6 +138,14 @@ class InMemoryVaultIndex : VaultIndex {
             appliedOps = s.appliedOps,
         )
     }
+
+    override fun observeOps(): Flow<List<PendingOp>> = state.map { it.ops }
+    override suspend fun ops(): List<PendingOp> = state.value.ops
+    override suspend fun putOps(batch: String, kind: String, captions: List<String>) = update { s ->
+        val added = captions.mapIndexed { i, caption -> PendingOp(s.nextOp + i, batch, captions.size, kind, caption) }
+        s.copy(ops = s.ops + added, nextOp = s.nextOp + captions.size)
+    }
+    override suspend fun removeOp(seq: Long) = update { s -> s.copy(ops = s.ops.filter { it.seq != seq }) }
 
     override fun observeUploads(): Flow<List<PendingUpload>> = state.map { it.uploads.values.toList() }
     override suspend fun uploads(): List<PendingUpload> = state.value.uploads.values.toList()

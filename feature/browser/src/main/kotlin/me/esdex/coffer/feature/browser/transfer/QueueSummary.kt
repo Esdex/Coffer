@@ -1,7 +1,7 @@
 package me.esdex.coffer.feature.browser.transfer
 
-/** What kind of transfer a queued one is, for the notification's wording. */
-enum class TransferKind { UPLOAD, DOWNLOAD, CACHE }
+/** What kind of transfer a queued one is, for the notification's wording. OPS: operations going to Telegram. */
+enum class TransferKind { UPLOAD, DOWNLOAD, CACHE, OPS }
 
 /**
  * The one notification of the whole queue: what it is doing, [finished] of [total] transfers of this run,

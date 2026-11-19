@@ -59,12 +59,12 @@ import me.esdex.coffer.core.sync.UploadRunner
 import me.esdex.coffer.core.sync.TransferKeys
 import me.esdex.coffer.core.sync.VaultFileReader
 import me.esdex.coffer.core.sync.VaultKeys
+import me.esdex.coffer.core.sync.OpQueue
 import me.esdex.coffer.core.sync.VaultOps
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.sync.eachWaitingOutFloods
 import me.esdex.coffer.core.sync.reader
 import me.esdex.coffer.core.sync.transferKeys
-import me.esdex.coffer.core.sync.waitingOutFloods
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.UnlockedVault
@@ -469,10 +469,16 @@ class VaultContent @Inject constructor(
     }
 
     /** Runs [block] with the operation log of the open vault; does nothing while locked or signed out. */
+    /**
+     * Creating, renaming and moving go into the queue of operations, which the transfer queue sends at
+     * Telegram's pace and shows; the list changes once Telegram has each one (see [OpQueue]).
+     */
     private suspend fun <T> withOps(block: suspend (VaultOps, VaultKeys, StorageBackend) -> T): T? {
         val keys = keysFlow.value ?: return null
         val storage = telegram.readyStorage() ?: return null
-        return block(VaultOps(storage, keys, System::currentTimeMillis), keys, storage)
+        val result = block(VaultOps(storage, keys, OpQueue(index), System::currentTimeMillis), keys, storage)
+        if (index.ops().isNotEmpty()) TransferWorker.start(context, registry)
+        return result
     }
 
     suspend fun createFolder(name: String, parentId: Id?) = withOps { ops, _, _ -> ops.createFolder(name, parentId) }
@@ -511,10 +517,8 @@ class VaultContent @Inject constructor(
         }
     }
 
-    suspend fun moveMany(folderIds: List<Id>, fileIds: List<Id>, destination: Id?) {
-        eachWaitingOutFloods(folderIds) { moveFolder(it, destination) }
-        eachWaitingOutFloods(fileIds) { moveFile(it, destination) }
-    }
+    suspend fun moveMany(folderIds: List<Id>, fileIds: List<Id>, destination: Id?) =
+        withOps { ops, keys, _ -> ops.moveMany(VaultTree.of(index, keys), folderIds, fileIds, destination) }
 
     /**
      * Saves decrypted copies into [tree], a folder the user picked: each file, and each folder with
@@ -563,10 +567,13 @@ class VaultContent @Inject constructor(
         val resolver = context.contentResolver
         runCatching { resolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         val folder = withContext(Dispatchers.IO) { resolver.readPhoneFolder(tree) }
+        // Every folder as one batch for the queue, their ids known at once; the files follow them into the
+        // transfer queue straight away, which sends the folders first. Nothing waits on Telegram here.
         val files = withOps { ops, _, _ ->
-            bringIn(folder, parentId) { name, parent ->
-                val fitted = FileNames.fitForImport(name).takeIf(FileNames::isValid) ?: FOLDER_FALLBACK_NAME
-                waitingOutFloods { ops.createFolder(fitted, parent) }
+            ops.createFolders { create ->
+                bringIn(folder, parentId) { name, parent ->
+                    create(FileNames.fitForImport(name).takeIf(FileNames::isValid) ?: FOLDER_FALLBACK_NAME, parent)
+                }
             }
         } ?: return 0
         upload(files.map { (file, folderId) -> UploadRequest(file.uri.toUri(), file.name, file.mime, folderId) })

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Changed
+- Creating, renaming and moving folders and files go to Telegram through the transfer queue, which keeps them when Coffer is closed and shows them in Transfers: what they do, how many have gone, and Telegram's pause with a countdown when it asks for one. The list changes once Telegram has each one. A folder brought in from the phone queues its folders and all its files at once; before, a folder of many folders stopped for minutes with nothing on screen when Telegram asked for a pause, and lost its files if Coffer was closed meanwhile.
 - The path under the top bar shows at the root too, with the house marked as the place on screen, so going into a folder and back no longer moves the list.
 
 ### Fixed

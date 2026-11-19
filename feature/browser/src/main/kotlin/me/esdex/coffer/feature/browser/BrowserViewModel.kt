@@ -26,10 +26,12 @@ import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.index.PendingDownload
+import me.esdex.coffer.core.index.PendingOp
 import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.StorageException
+import me.esdex.coffer.core.sync.OpKind
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.tdlib.Connection
 import me.esdex.coffer.core.tdlib.Telegram
@@ -40,6 +42,7 @@ import me.esdex.coffer.feature.browser.transfer.FileCache
 import me.esdex.coffer.feature.browser.transfer.PrefetchQueue
 import me.esdex.coffer.feature.browser.transfer.TransferKind
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
+import me.esdex.coffer.feature.browser.transfer.TransferWorker
 import me.esdex.coffer.feature.browser.transfer.isCached
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import me.esdex.coffer.feature.browser.viewer.ViewerViewModel
@@ -102,9 +105,12 @@ data class TransferItem(
     val file: FileItem? = null,
     /** Waiting out FLOOD_WAIT or an outage before it tries again. */
     val wait: TransferRegistry.Waiting? = null,
+    /** A batch of operations on its way to Telegram rather than a file (see [OperationBatch]). */
+    val operation: OperationBatch? = null,
 ) {
     val kind: TransferKind
         get() = when {
+            operation != null -> TransferKind.OPS
             isUpload -> TransferKind.UPLOAD
             caching -> TransferKind.CACHE
             else -> TransferKind.DOWNLOAD
@@ -114,6 +120,9 @@ data class TransferItem(
     val running: Boolean
         get() = preparing || progress?.phase == TransferRegistry.Phase.MOVING || progress?.phase == TransferRegistry.Phase.PREPARING
 }
+
+/** One action's operations on their way to Telegram: what they do, and how many of [total] have gone. */
+data class OperationBatch(val kind: OpKind, val sent: Int, val total: Int)
 
 /** What needs a look first, then what is moving, then what waits its turn; in the queue's order within each. */
 internal fun List<TransferItem>.inQueueOrder(): List<TransferItem> = sortedBy {
@@ -349,17 +358,44 @@ class BrowserViewModel @Inject constructor(
 
     val catchingUp: StateFlow<Int?> = content.catchingUp
 
-    private class Queued(val uploads: List<PendingUpload>, val downloads: List<PendingDownload>, val caching: List<PrefetchQueue.Item>)
+    private class Queued(
+        val ops: List<PendingOp>,
+        val uploads: List<PendingUpload>,
+        val downloads: List<PendingDownload>,
+        val caching: List<PrefetchQueue.Item>,
+    )
 
     val transfers: StateFlow<List<TransferItem>> = combine(
-        combine(index.observeUploads(), index.observeDownloads(), cache.queue.items, ::Queued),
+        combine(index.observeOps(), index.observeUploads(), index.observeDownloads(), cache.queue.items, ::Queued),
         contents,
         registry.progress,
         registry.failures,
         registry.waits,
     ) { queued, contents, progress, failures, waits ->
         val files = contents?.files.orEmpty()
-        val all = queued.uploads.map {
+        // One row per action, in the order they go; the one going now carries the queue's progress and wait.
+        val sending = progress.keys.firstOrNull { it.startsWith(TransferWorker.OPS_PREFIX) }
+        val waitingOps = waits.keys.firstOrNull { it.startsWith(TransferWorker.OPS_PREFIX) }
+        val ops = queued.ops.groupBy { it.batch }.values.mapIndexed { i, batch ->
+            val first = batch.first()
+            val kind = runCatching { OpKind.valueOf(first.kind) }.getOrDefault(OpKind.MOVE)
+            val sent = first.batchSize - batch.size
+            TransferItem(
+                "batch-${first.batch}",
+                isUpload = true,
+                name = null,
+                progress = if (i == 0) {
+                    sending?.let { TransferRegistry.Progress(sent.toLong(), first.batchSize.toLong(), TransferRegistry.Phase.MOVING) }
+                } else {
+                    null
+                },
+                failure = null,
+                preparing = false,
+                wait = if (i == 0) waitingOps?.let(waits::get) else null,
+                operation = OperationBatch(kind, sent, first.batchSize),
+            )
+        }
+        val all = ops + queued.uploads.map {
             val file = it.fileId?.let(files::get)
             val name = file?.name ?: content.keys.value?.local?.openUpload(it.uploadId, it.sealedRequest)?.name
             TransferItem(it.uploadId, true, name, progress[it.uploadId], failures[it.uploadId], it.fileId == null, file = file, wait = waits[it.uploadId])
@@ -494,7 +530,8 @@ class BrowserViewModel @Inject constructor(
     fun cancelAll() = act {
         // One that cannot reach Telegram does not keep the rest running; the notice comes once, after.
         var failed: StorageException? = null
-        for (item in transfers.value.sortedBy { it.running }) {
+        // Operations stay: cut short, a folder brought in would keep part of its folders and none of the files.
+        for (item in transfers.value.filter { it.operation == null }.sortedBy { it.running }) {
             try {
                 cancelOne(item)
             } catch (e: StorageException) {
