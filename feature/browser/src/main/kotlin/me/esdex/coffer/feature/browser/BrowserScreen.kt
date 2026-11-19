@@ -363,7 +363,11 @@ fun BrowserScreen(
             Scaffold(
                 snackbarHost = { AppSnackbarHost(snackbar) },
                 topBar = {
-                    Column(if (amoled) Modifier.hazeEffect(state = haze, style = CofferHazeStyle.topBar) else Modifier) {
+                    // One ground for the bar and what hangs under it: frosted glass in pure black, the bar's own colour
+                    // otherwise, or the path and the catch-up line let the list show through them.
+                    Column(
+                        if (amoled) Modifier.hazeEffect(state = haze, style = CofferHazeStyle.topBar) else Modifier.background(MaterialTheme.colorScheme.surface),
+                    ) {
                       AnimatedContent(
                         targetState = selecting,
                         transitionSpec = { fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick()) },
