@@ -149,6 +149,7 @@ fun ViewerScreen(
     var isBuffering by remember { mutableStateOf(false) }
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
+    var bufferedMs by remember { mutableLongStateOf(0L) }
     var scrubbing by remember { mutableStateOf(false) }
     var scrubMs by remember { mutableLongStateOf(0L) }
     var videoAspect by remember { mutableFloatStateOf(0f) }
@@ -197,6 +198,7 @@ fun ViewerScreen(
         userTapped = false
         positionMs = 0L
         durationMs = 0L
+        bufferedMs = 0L
         isPlaying = false
         scrubbing = false
         videoAspect = 0f
@@ -236,6 +238,14 @@ fun ViewerScreen(
         }
         p.addListener(listener)
         onDispose { p.removeListener(listener) }
+    }
+
+    // How far the file is loaded, for the seek bar: the player goes on loading while paused, so not only while playing.
+    LaunchedEffect(player, current) {
+        while (player != null) {
+            bufferedMs = player.bufferedPosition
+            delay(BUFFERED_POLL_MS)
+        }
     }
 
     // Once a frame rather than on a timer, so the seek bar moves smoothly.
@@ -514,6 +524,7 @@ fun ViewerScreen(
                 val shownMs = if (scrubbing) scrubMs else positionMs
                 VideoBottomBar(
                     fraction = if (durationMs > 0L) (shownMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f,
+                    bufferedFraction = if (durationMs > 0L) (bufferedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f,
                     positionMs = shownMs,
                     durationMs = durationMs,
                     onSeek = { f ->
@@ -791,3 +802,6 @@ private val PREVIEW_BLUR = 16.dp
 private const val PREVIEW_ALPHA = 0.6f
 private const val BARS_MILLIS = 3_000L
 private const val SEEK_MS = 10_000L
+
+/** How often the seek bar asks how far the file is loaded: often enough to grow smoothly, at no cost. */
+private const val BUFFERED_POLL_MS = 250L

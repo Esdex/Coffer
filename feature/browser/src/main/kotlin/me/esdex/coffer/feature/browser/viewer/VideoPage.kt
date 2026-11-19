@@ -267,6 +267,7 @@ internal fun VideoSurface(
 @Composable
 internal fun VideoBottomBar(
     fraction: Float,
+    bufferedFraction: Float,
     positionMs: Long,
     durationMs: Long,
     onSeek: (Float) -> Unit,
@@ -294,7 +295,10 @@ internal fun VideoBottomBar(
                 }
                 Spacer(Modifier.width(4.dp))
             }
-            SeekSlider(fraction, onSeek, onSeekDone, color = Color.White, trackColor = Color.White.copy(alpha = 0.35f), modifier = Modifier.weight(1f))
+            SeekSlider(
+                fraction, onSeek, onSeekDone, color = Color.White, trackColor = Color.White.copy(alpha = 0.35f), modifier = Modifier.weight(1f),
+                buffered = bufferedFraction, bufferedColor = Color.White.copy(alpha = 0.6f),
+            )
             Spacer(Modifier.width(10.dp))
             Text("${formatTime(positionMs)} / ${formatTime(durationMs)}", color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.labelSmall.tabular(), maxLines = 1)
             // A speed other than normal and a repeat are easy to forget having set: they stay in sight.
@@ -318,7 +322,8 @@ internal fun VideoBottomBar(
 
 /**
  * A seek bar for video and audio alike: a thin track, and a thumb that grows under the finger so
- * holding it shows. [color] fills the part played and the thumb.
+ * holding it shows. [color] fills the part played and the thumb; [buffered], when given, how far the
+ * player has the file loaded, in [bufferedColor] under the part played.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -330,6 +335,8 @@ internal fun SeekSlider(
     trackColor: Color,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    buffered: Float? = null,
+    bufferedColor: Color = trackColor,
 ) {
     val touch = remember { MutableInteractionSource() }
     val dragged by touch.collectIsDraggedAsState()
@@ -349,6 +356,9 @@ internal fun SeekSlider(
         track = {
             Box(Modifier.fillMaxWidth().height(24.dp), contentAlignment = Alignment.CenterStart) {
                 Spacer(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(trackColor))
+                if (buffered != null) {
+                    Spacer(Modifier.fillMaxWidth(buffered.coerceIn(0f, 1f)).height(3.dp).clip(CircleShape).background(bufferedColor))
+                }
                 Spacer(Modifier.fillMaxWidth(fraction.coerceIn(0f, 1f)).height(3.dp).clip(CircleShape).background(color))
             }
         },
