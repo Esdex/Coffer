@@ -1576,6 +1576,7 @@ private fun OperationCard(item: TransferItem, operation: OperationBatch, shape: 
         OpKind.CREATE_FOLDERS -> Icons.Outlined.CreateNewFolder to pluralStringResource(R.plurals.browser_op_create_folders, operation.total, operation.total)
         OpKind.RENAME -> Icons.Outlined.DriveFileRenameOutline to stringResource(R.string.browser_op_rename)
         OpKind.MOVE -> Icons.AutoMirrored.Outlined.DriveFileMove to pluralStringResource(R.plurals.browser_op_move, operation.total, operation.total)
+        OpKind.DELETE -> Icons.Outlined.Delete to pluralStringResource(R.plurals.browser_op_delete, operation.total, operation.total)
     }
     Row(
         modifier.fillMaxWidth().clip(shape).background(MaterialTheme.colorScheme.surfaceContainerHigh)

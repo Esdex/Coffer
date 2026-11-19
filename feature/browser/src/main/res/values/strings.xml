@@ -160,6 +160,10 @@
         <item quantity="one">Moving %1$d item</item>
         <item quantity="other">Moving %1$d items</item>
     </plurals>
+    <plurals name="browser_op_delete">
+        <item quantity="one">Deleting %1$d item</item>
+        <item quantity="other">Deleting %1$d items</item>
+    </plurals>
     <string name="browser_op_sent" tools:ignore="PluralsCandidate">%1$d of %2$d sent</string>
     <string name="browser_transfers_cancel_all">Cancel all</string>
     <string name="browser_transfers_cancel_all_title">Cancel all transfers?</string>

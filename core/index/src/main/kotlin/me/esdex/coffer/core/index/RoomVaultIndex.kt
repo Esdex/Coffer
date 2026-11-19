@@ -85,6 +85,11 @@ internal class PendingOpRow(
     val caption: String,
     // Version 3 packs several in one message (2026-11-19); before, each was alone.
     @ColumnInfo(defaultValue = "1") val opCount: Int = 1,
+    // Deletes, queued since schema 9: ids comma-separated, empty for none.
+    @ColumnInfo(defaultValue = "") val deletedFiles: String = "",
+    @ColumnInfo(defaultValue = "") val deletedFolders: String = "",
+    @ColumnInfo(defaultValue = "") val parts: String = "",
+    @ColumnInfo(defaultValue = "0") val sent: Boolean = false,
 )
 
 @Entity(tableName = "downloads")
@@ -148,6 +153,7 @@ internal interface IndexDao {
     @Query("SELECT * FROM pending_ops ORDER BY seq") fun observeOps(): Flow<List<PendingOpRow>>
     @Query("SELECT * FROM pending_ops ORDER BY seq") suspend fun ops(): List<PendingOpRow>
     @Insert suspend fun insertOps(rows: List<PendingOpRow>)
+    @Query("UPDATE pending_ops SET sent = 1 WHERE seq = :seq") suspend fun markOpSent(seq: Long)
     @Query("DELETE FROM pending_ops WHERE seq = :seq") suspend fun deleteOp(seq: Long)
 
     @Query("SELECT * FROM uploads") fun observeUploads(): Flow<List<UploadRow>>
@@ -171,12 +177,13 @@ internal interface IndexDao {
         SnapshotRow::class, SyncRow::class, UploadRow::class, DownloadRow::class, AppliedOpRow::class,
         PendingOpRow::class,
     ],
-    version = 8,
+    version = 9,
     // Only new tables and columns so far: the queue of transfers survives the update.
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6),
         AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8),
+        AutoMigration(from = 8, to = 9),
     ],
 )
 internal abstract class IndexDatabase : RoomDatabase() {
@@ -305,14 +312,30 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         Unit
     }
 
-    private fun PendingOpRow.pending() = PendingOp(seq, batch, batchSize, kind, caption, opCount)
+    private fun PendingOpRow.pending() = PendingOp(
+        seq, batch, batchSize, kind, caption, opCount,
+        deletedFiles = ids(deletedFiles), deletedFolders = ids(deletedFolders),
+        parts = parts.split(',').filter { it.isNotEmpty() }.map { MessageId(it.toLong()) }, sent = sent,
+    )
+
+    private fun ids(joined: String): List<Id> = joined.split(',').filter { it.isNotEmpty() }.map(::idOf)
 
     override fun observeOps(): Flow<List<PendingOp>> = dao.observeOps().map { rows -> rows.map { it.pending() } }
     override suspend fun ops(): List<PendingOp> = dao.ops().map { it.pending() }
     override suspend fun putOps(batch: String, kind: String, messages: List<OpMessage>) {
         val size = messages.sumOf { it.opCount }
-        dao.insertOps(messages.map { PendingOpRow(batch = batch, batchSize = size, kind = kind, caption = it.caption, opCount = it.opCount) })
+        dao.insertOps(
+            messages.map {
+                PendingOpRow(
+                    batch = batch, batchSize = size, kind = kind, caption = it.caption, opCount = it.opCount,
+                    deletedFiles = it.deletedFiles.joinToString(",") { id -> id.hex() },
+                    deletedFolders = it.deletedFolders.joinToString(",") { id -> id.hex() },
+                    parts = it.parts.joinToString(",") { id -> id.value.toString() },
+                )
+            },
+        )
     }
+    override suspend fun markOpSent(seq: Long) = dao.markOpSent(seq)
     override suspend fun removeOp(seq: Long) = dao.deleteOp(seq)
 
     override fun observeUploads(): Flow<List<PendingUpload>> = dao.observeUploads().map { rows -> rows.map { it.pending() } }

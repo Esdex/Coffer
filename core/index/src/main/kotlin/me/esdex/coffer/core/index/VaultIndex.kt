@@ -65,11 +65,32 @@ class IndexContent(
  * [caption] is the encrypted text sent as it is, so it goes out while the vault is locked too, and holds
  * [opCount] operations. One [batch] is one action of the user's, of [batchSize] operations in all, such
  * as every folder of a folder brought in from the phone; [kind] says what it does, for Transfers.
+ *
+ * A message of deletes names the files and folders it deletes, for the list to mark them, and the
+ * [parts] of those files, deleted from Saved Messages once the message is there ([sent]), never
+ * before: a part gone with no `file.delete` before it is damage to every other device (SPEC §5.3).
  */
-class PendingOp(val seq: Long, val batch: String, val batchSize: Int, val kind: String, val caption: String, val opCount: Int)
+class PendingOp(
+    val seq: Long,
+    val batch: String,
+    val batchSize: Int,
+    val kind: String,
+    val caption: String,
+    val opCount: Int,
+    val deletedFiles: List<Id> = emptyList(),
+    val deletedFolders: List<Id> = emptyList(),
+    val parts: List<MessageId> = emptyList(),
+    val sent: Boolean = false,
+)
 
-/** One message of a batch to queue: its encrypted [caption], holding [opCount] operations. */
-class OpMessage(val caption: String, val opCount: Int)
+/** One message of a batch to queue: its encrypted [caption], holding [opCount] operations; see [PendingOp]. */
+class OpMessage(
+    val caption: String,
+    val opCount: Int,
+    val deletedFiles: List<Id> = emptyList(),
+    val deletedFolders: List<Id> = emptyList(),
+    val parts: List<MessageId> = emptyList(),
+)
 
 class PendingUpload(
     val uploadId: String,
@@ -171,6 +192,8 @@ interface VaultIndex {
     suspend fun ops(): List<PendingOp>
     /** Queues one batch of [kind], every message at once or none. */
     suspend fun putOps(batch: String, kind: String, messages: List<OpMessage>)
+    /** The message is in Telegram; what is left is deleting the parts it names. */
+    suspend fun markOpSent(seq: Long)
     suspend fun removeOp(seq: Long)
 
     fun observeUploads(): Flow<List<PendingUpload>>

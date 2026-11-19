@@ -3,14 +3,15 @@ package me.esdex.coffer.core.sync
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.Op
 import me.esdex.coffer.core.index.OpMessage
+import me.esdex.coffer.core.storage.MessageId
 import me.esdex.coffer.core.storage.StorageBackend
 
 /**
  * Sends the operation log (SPEC §4.3). Nothing here touches the index: the indexer applies each
  * operation when its message comes back, in message order like everyone else's.
  *
- * Creating, renaming and moving go in packs (SPEC §4.6), into [queue] if there is one, for the transfer
- * queue to send and show, rather than out at once (see [OpQueue]); deletes still go out at once, alone.
+ * Creating, renaming, moving and deleting go in packs (SPEC §4.6), into [queue] if there is one, for the
+ * transfer queue to send and show, rather than out at once (see [OpQueue]).
  */
 class VaultOps(
     private val storage: StorageBackend,
@@ -27,6 +28,38 @@ class VaultOps(
     private suspend fun send(kind: OpKind, ops: List<Op>) {
         val messages = keys.meta.packOps(ops).map { OpMessage(keys.meta.encodeOpPack(it), it.size) }
         if (queue != null) queue.enqueue(kind, messages) else messages.forEach { storage.sendText(it.caption) }
+    }
+
+    /**
+     * Folders with everything in them and files, as one batch of deletes in packs: each file first,
+     * then the folders deepest first, so no `folder.delete` goes while something is still inside (SPEC
+     * §4.3). Each message carries the [partsOf] its files, deleted once it is in Telegram (see
+     * [OpQueue.drain]). [handled] takes a file out of the batch when it deals with it itself, as with an
+     * upload of this device's, cancelled instead. Needs [queue].
+     */
+    suspend fun deleteMany(
+        tree: VaultTree,
+        folderIds: List<Id>,
+        fileIds: List<Id>,
+        partsOf: suspend (Id) -> Collection<MessageId>,
+        handled: suspend (Id) -> Boolean = { false },
+    ) {
+        val queue = checkNotNull(queue) { "deletes go through the queue" }
+        val subtrees = folderIds.map(tree::subtree)
+        val folders = subtrees.flatMap { it.first }.distinct()
+        val files = (subtrees.flatMap { it.second } + fileIds).distinct().filterNot { handled(it) }
+        val ops = files.map { Op.FileDelete(newId(), clock(), it) } + folders.map { Op.FolderDelete(newId(), clock(), it) }
+        val messages = keys.meta.packOps(ops).map { pack ->
+            val deletedFiles = pack.mapNotNull { (it as? Op.FileDelete)?.fileId }
+            OpMessage(
+                keys.meta.encodeOpPack(pack),
+                pack.size,
+                deletedFiles = deletedFiles,
+                deletedFolders = pack.mapNotNull { (it as? Op.FolderDelete)?.folderId },
+                parts = deletedFiles.flatMap { partsOf(it) },
+            )
+        }
+        queue.enqueue(OpKind.DELETE, messages)
     }
 
     private suspend fun sendNow(op: Op) {

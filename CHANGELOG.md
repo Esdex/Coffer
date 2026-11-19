@@ -4,6 +4,7 @@
 
 ### Changed
 - Creating, renaming and moving folders and files go to Telegram through the transfer queue, which keeps them when Coffer is closed and shows them in Transfers: what they do, how many have gone, and Telegram's pause with a countdown when it asks for one. The list changes once Telegram has each one. A folder brought in from the phone queues its folders and all its files at once; before, a folder of many folders stopped for minutes with nothing on screen when Telegram asked for a pause, and lost its files if Coffer was closed meanwhile.
+- Deleting goes through the same queue: a folder with everything in it is a few messages, its rows say Deleting until Telegram has them, and a delete cut short by closing Coffer goes on when it opens. Before, each file and folder was a message of its own, so a large folder took most of an hour of Telegram's pauses, and closing Coffer meanwhile left it half deleted.
 - Several of these changes go in one message to Telegram, up to some 35 with ordinary names, so a folder of many folders is a few messages rather than one a folder, and Telegram's pause rarely comes. This is a new version of the vault format: Coffer 1.0.0 does not see folders created, renamed or moved with this version, so update every device that opens the vault.
 - The path under the top bar shows at the root too, with the house marked as the place on screen, so going into a folder and back no longer moves the list.
 

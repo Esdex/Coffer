@@ -4,6 +4,8 @@ import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
+import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.storage.MessageId
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -32,8 +34,8 @@ class MigrationTest {
             db.execSQL("INSERT INTO uploads VALUES ('u1', ?, NULL, '', NULL)", arrayOf(byteArrayOf(4, 5)))
             db.execSQL("INSERT INTO sync_state VALUES ('lastAppliedMessageId', 1048576)")
         }
-        // Validates the migrated schema against 8.json.
-        helper.runMigrationsAndValidate(name, 8, true).close()
+        // Validates the migrated schema against 9.json.
+        helper.runMigrationsAndValidate(name, 9, true).close()
 
         // Audit 1, M9: the plain database is turned into an encrypted one, its rows kept.
         val file = context.getDatabasePath(name)
@@ -65,6 +67,17 @@ class MigrationTest {
             // Version 8: how many operations each message holds, packs of SPEC §4.6 (2026-11-19).
             assertEquals(listOf(9, 2), index.ops().map { it.opCount })
             assertEquals(listOf(11, 11), index.ops().map { it.batchSize })
+            // Version 9: deletes queued too, with the parts that go once the message is sent (2026-11-19).
+            val gone = Id.of(ByteArray(16) { 7 })
+            index.putOps("deletes", "DELETE", listOf(OpMessage("third", 2, listOf(gone), listOf(gone), listOf(MessageId(5), MessageId(6)))))
+            val delete = index.ops().last()
+            assertEquals(listOf(gone), delete.deletedFiles)
+            assertEquals(listOf(gone), delete.deletedFolders)
+            assertEquals(listOf(MessageId(5), MessageId(6)), delete.parts)
+            assertEquals(false, delete.sent)
+            index.markOpSent(delete.seq)
+            assertEquals(listOf(false, false, true), index.ops().map { it.sent })
+            assertEquals(emptyList<Id>(), index.ops().first().deletedFiles)
         }
         // Encrypted on disk now: not a plain SQLite file, and not the rows' bytes in the clear.
         assertFalse(RoomVaultIndex.isPlain(file))

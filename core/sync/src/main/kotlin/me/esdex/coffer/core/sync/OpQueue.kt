@@ -7,7 +7,7 @@ import me.esdex.coffer.core.storage.StorageBackend
 import java.util.UUID
 
 /** What a batch of queued operations does, for the Transfers screen. */
-enum class OpKind { CREATE_FOLDERS, RENAME, MOVE }
+enum class OpKind { CREATE_FOLDERS, RENAME, MOVE, DELETE }
 
 /**
  * Operations on their way to Telegram (SPEC §4.3), kept in the index so they outlive the app being
@@ -33,11 +33,20 @@ class OpQueue(private val index: VaultIndex) {
      * Telegram has it: sent twice after a crash in between, the second is the same op_id and is not
      * applied again (audit 1, M4). A FLOOD_WAIT or any other failure is thrown with the queue as it is,
      * for the caller to wait out and call again. [onSent] gets the message sent and what is left.
+     *
+     * A message of deletes takes the parts of its files with it once it is in Telegram, and only then
+     * (SPEC §5.3); its files count as deleted from that moment, so their parts going is not damage. A
+     * message already sent is not sent again when only its parts were left.
      */
     suspend fun drain(storage: StorageBackend, pause: suspend () -> Unit, onSent: (sent: PendingOp, left: List<PendingOp>) -> Unit = { _, _ -> }) {
         while (true) {
             val next = index.ops().firstOrNull() ?: return
-            storage.sendText(next.caption)
+            if (!next.sent) {
+                storage.sendText(next.caption)
+                index.markOpSent(next.seq)
+            }
+            for (fileId in next.deletedFiles) index.markDeleted(fileId)
+            for (slice in next.parts.chunked(StorageBackend.MAX_DELETE)) storage.delete(slice)
             index.removeOp(next.seq)
             val left = index.ops()
             onSent(next, left)

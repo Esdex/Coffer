@@ -30,9 +30,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -50,7 +53,6 @@ import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.storage.StorageException
-import me.esdex.coffer.core.sync.FileDeleter
 import me.esdex.coffer.core.sync.Indexer
 import me.esdex.coffer.core.sync.Maintenance
 import me.esdex.coffer.core.sync.Snapshotter
@@ -62,7 +64,6 @@ import me.esdex.coffer.core.sync.VaultKeys
 import me.esdex.coffer.core.sync.OpQueue
 import me.esdex.coffer.core.sync.VaultOps
 import me.esdex.coffer.core.sync.VaultTree
-import me.esdex.coffer.core.sync.eachWaitingOutFloods
 import me.esdex.coffer.core.sync.reader
 import me.esdex.coffer.core.sync.transferKeys
 import me.esdex.coffer.core.tdlib.AuthState
@@ -176,19 +177,13 @@ class VaultContent @Inject constructor(
     private val deletingFlow = MutableStateFlow<Set<Id>>(emptySet())
 
     /**
-     * Files and folders whose delete has not reached Telegram yet. The row stays until the operation is
-     * sent (SPEC §5.3), which can take a while on a slow network; this lets the browser say so.
+     * Files and folders whose delete has not reached Telegram yet: being queued, or in the queue of
+     * operations, which outlives the app. The row stays until the operation is sent (SPEC §5.3), which
+     * can take a while; this lets the browser say so.
      */
-    val deleting: StateFlow<Set<Id>> = deletingFlow.asStateFlow()
-
-    private suspend fun <T> markedDeleting(id: Id, block: suspend () -> T): T {
-        deletingFlow.update { it + id }
-        try {
-            return block()
-        } finally {
-            deletingFlow.update { it - id }
-        }
-    }
+    val deleting: StateFlow<Set<Id>> = combine(deletingFlow, index.observeOps()) { queuing, queued ->
+        queuing + queued.flatMap { it.deletedFiles + it.deletedFolders }
+    }.stateIn(scope, SharingStarted.Eagerly, emptySet())
 
     /** Messages read so far while catching up, or null when caught up. */
     val catchingUp: StateFlow<Int?> = catchUpFlow.asStateFlow()
@@ -460,14 +455,6 @@ class VaultContent @Inject constructor(
         if (cache.queue.add(fileIds).isNotEmpty()) TransferWorker.start(context, registry)
     }
 
-    suspend fun delete(fileId: Id) {
-        val keys = keysFlow.value ?: return
-        markedDeleting(fileId) {
-            val storage = telegram.readyStorage() ?: return@markedDeleting
-            FileDeleter(storage, index).delete(keys, fileId, System.currentTimeMillis())
-        }
-    }
-
     /** Runs [block] with the operation log of the open vault; does nothing while locked or signed out. */
     /**
      * Creating, renaming and moving go into the queue of operations, which the transfer queue sends at
@@ -492,26 +479,24 @@ class VaultContent @Inject constructor(
 
     suspend fun moveFile(fileId: Id, folderId: Id?) = withOps { ops, _, _ -> ops.moveFile(fileId, folderId) }
 
-    /** The folder and everything in it; uploads into it are cancelled, which takes back what they sent. */
-    suspend fun deleteFolder(folderId: Id) = markedDeleting(folderId) {
-        withOps { ops, keys, storage ->
-            ops.deleteFolder(VaultTree.of(index, keys), folderId) { fileId ->
-                val upload = index.uploads().find { it.fileId == fileId }
-                if (upload != null) cancelUpload(upload.uploadId) else FileDeleter(storage, index).delete(keys, fileId, System.currentTimeMillis())
-            }
-        }
-    }
-
     /**
-     * Deletes all of them, folders first: a file inside one goes with it. Every row says Deleting from
-     * the start, and each one disappears as its operation goes out.
+     * Deletes all of them, folders with everything in them, as one batch through the queue of
+     * operations (see [VaultOps.deleteMany]), which outlives the app; uploads of this device's into them
+     * are cancelled instead, which takes back what they sent. Every row says Deleting from the start, and
+     * each one disappears once Telegram has its delete.
      */
     suspend fun deleteMany(folderIds: List<Id>, fileIds: List<Id>) {
         val all = folderIds + fileIds
         deletingFlow.update { it + all }
         try {
-            eachWaitingOutFloods(folderIds) { deleteFolder(it) }
-            eachWaitingOutFloods(fileIds) { if (index.file(it) != null) delete(it) }
+            withOps { ops, keys, _ ->
+                val files = fileIds.filter { index.file(it) != null }
+                ops.deleteMany(VaultTree.of(index, keys), folderIds, files, partsOf = { index.parts(it).values }) { fileId ->
+                    val upload = index.uploads().find { it.fileId == fileId }
+                    upload?.let { cancelUpload(it.uploadId) }
+                    upload != null
+                }
+            }
         } finally {
             deletingFlow.update { it - all.toSet() }
         }

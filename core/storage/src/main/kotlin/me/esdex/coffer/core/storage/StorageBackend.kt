@@ -81,6 +81,9 @@ interface StorageBackend {
         /** Telegram limits without Premium, in UTF-16 units. Longer text or captions are rejected. */
         const val MAX_CAPTION = 1024
         const val MAX_TEXT = 4096
+
+        /** Messages one [delete] asks for at most: Telegram's limit for one request. */
+        const val MAX_DELETE = 100
     }
 }
 

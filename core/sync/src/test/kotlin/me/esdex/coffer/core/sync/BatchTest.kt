@@ -29,40 +29,29 @@ class BatchTest {
     private fun device() = Device(cloud, keysOf(master), temp.newFolder())
 
     @Test
-    fun aFloodWaitIsWaitedOutAndTheSameItemTriedAgain() = runTest {
+    fun aFloodWaitIsWaitedOutAndTheActionTriedAgain() = runTest {
         val here = device()
-        val files = listOf("a", "b", "c").map { here.upload("$it.txt", BytesSource(it.toByteArray())) }
+        val fileId = here.upload("a.txt", BytesSource("a".toByteArray()))
         val waits = mutableListOf<Int>()
-        var done = 0
-        eachWaitingOutFloods(files, onWait = { waits += it }) { fileId ->
-            // Telegram asks for a pause just as the second delete goes out.
-            if (done == 1 && waits.isEmpty()) cloud.failNextCall(FloodWaitException(7))
-            here.deleter.delete(here.keys, fileId, now = 1)
-            done++
-        }
+        cloud.failNextCall(FloodWaitException(7))
+        waitingOutFloods(onWait = { waits += it }) { here.deleter.delete(here.keys, fileId, now = 1) }
         assertEquals(listOf(7), waits)
         assertTrue(currentTime >= 7_000)
-        files.forEach { assertNull(here.index.file(it)) }
+        assertNull(here.index.file(fileId))
         assertTrue(cloud.allMessages().none { it.content is MessageContent.Blob })
     }
 
     @Test
-    fun anyOtherErrorEndsTheBatch() = runTest {
+    fun anyOtherErrorIsThrown() = runTest {
         val here = device()
-        val files = listOf("a", "b", "c").map { here.upload("$it.txt", BytesSource(it.toByteArray())) }
-        var tried = 0
+        val fileId = here.upload("a.txt", BytesSource("a".toByteArray()))
+        cloud.failNextCall(StorageException("connection lost"))
         try {
-            eachWaitingOutFloods(files) { fileId ->
-                tried++
-                if (tried == 2) cloud.failNextCall(StorageException("connection lost"))
-                here.deleter.delete(here.keys, fileId, now = 1)
-            }
-            fail("the second delete should have failed")
+            waitingOutFloods { here.deleter.delete(here.keys, fileId, now = 1) }
+            fail("the delete should have failed")
         } catch (_: StorageException) {
         }
-        assertEquals(2, tried)
-        assertNull(here.index.file(files[0]))
-        assertEquals(listOf(files[1], files[2]).toSet(), here.index.files().map { it.fileId }.toSet())
+        assertEquals(listOf(fileId), here.index.files().map { it.fileId })
     }
 
     @Test

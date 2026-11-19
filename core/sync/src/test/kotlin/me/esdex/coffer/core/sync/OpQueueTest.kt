@@ -115,6 +115,87 @@ class OpQueueTest {
         assertEquals(listOf(OpKind.MOVE.name), here.index.ops().map { it.kind }.distinct())
     }
 
+    private fun parts() = cloud.allMessages().filter { it.content is MessageContent.Blob }.map { it.id }.toSet()
+
+    @Test
+    fun aDeleteIsOneBatchWhosePartsGoOnlyOnceItsMessageIsInTelegram() = runTest {
+        val here = device()
+        val trip = here.ops.createFolder("Trip", null)
+        val day = here.ops.createFolder("Day 1", trip)
+        here.indexer.catchUp()
+        val inside = (1..3).map { here.upload("p$it.jpg", BytesSource(byteArrayOf(it.toByte())), folderId = day) }
+        val loose = here.upload("note.txt", BytesSource("n".toByteArray()))
+        val kept = here.upload("kept.txt", BytesSource("k".toByteArray()))
+        here.indexer.catchUp()
+        val keptParts = here.index.parts(kept).values.toSet()
+        val doomedParts = (inside + loose).flatMap { here.index.parts(it).values }.toSet()
+        val textsBefore = texts().size
+
+        here.queued().deleteMany(here.tree(), listOf(trip), listOf(loose), partsOf = { here.index.parts(it).values })
+        // Nothing gone yet: queued, files first, then the folders deepest first.
+        assertEquals(textsBefore, texts().size)
+        assertEquals(doomedParts + keptParts, parts())
+        val queued = here.index.ops().single()
+        assertEquals(OpKind.DELETE.name, queued.kind)
+        assertEquals(6, queued.opCount)
+        assertEquals((inside + loose).toSet(), queued.deletedFiles.toSet())
+        assertEquals(listOf(day, trip), queued.deletedFolders)
+        assertEquals(doomedParts, queued.parts.toSet())
+        val ops = here.keys.meta.decodeOpPack(Captions.parse(queued.caption)!!)!!
+        assertEquals(4, ops.takeWhile { it is Op.FileDelete }.size)
+
+        // Telegram has the message, then the connection drops before the parts go.
+        var refuse = true
+        val flaky = object : me.esdex.coffer.core.storage.StorageBackend by here.storage {
+            override suspend fun delete(ids: Collection<me.esdex.coffer.core.storage.MessageId>) {
+                if (refuse) throw me.esdex.coffer.core.storage.StorageException("connection lost")
+                here.storage.delete(ids)
+            }
+        }
+        assertThrows(me.esdex.coffer.core.storage.StorageException::class.java) {
+            kotlinx.coroutines.runBlocking { OpQueue(here.index).drain(flaky, pause = {}) }
+        }
+        assertEquals(textsBefore + 1, texts().size)
+        assertEquals(doomedParts + keptParts, parts())
+        assertTrue(here.index.ops().single().sent)
+        // Deleted from the moment the message went: the parts going later is not damage.
+        assertTrue((inside + loose).all { here.index.isDeleted(it) })
+
+        // Again: the parts go, the message is not sent a second time.
+        refuse = false
+        OpQueue(here.index).drain(flaky, pause = {})
+        assertEquals(textsBefore + 1, texts().size)
+        assertEquals(keptParts, parts())
+        assertTrue(here.index.ops().isEmpty())
+        here.indexer.catchUp()
+        assertEquals(setOf(Triple("kept.txt", null, me.esdex.coffer.core.index.FileStatus.READY)), here.view().files)
+        assertTrue(here.view().folders.isEmpty())
+        val fresh = device()
+        fresh.indexer.rescan()
+        assertEquals(here.view(), fresh.view())
+    }
+
+    @Test
+    fun aLongDeleteSplitsIntoPacksEachWithItsOwnFilesParts() = runTest {
+        val here = device()
+        val files = (1..60).map { here.upload("f$it.txt", BytesSource(byteArrayOf(it.toByte()))) }
+        val own = files.last()
+        here.indexer.catchUp()
+        here.queued().deleteMany(here.tree(), emptyList(), files, partsOf = { here.index.parts(it).values }) { it == own }
+        val queued = here.index.ops()
+        assertEquals(listOf(49, 10), queued.map { it.opCount })
+        assertEquals(listOf(59, 59), queued.map { it.batchSize })
+        // A file dealt with by the caller, as an upload of this device's would be, is left out.
+        assertTrue(queued.none { own in it.deletedFiles })
+        for (message in queued) {
+            assertEquals(message.deletedFiles.flatMap { here.index.parts(it).values }.toSet(), message.parts.toSet())
+        }
+        OpQueue(here.index).drain(here.storage, pause = {})
+        here.indexer.catchUp()
+        assertEquals(setOf("f60.txt"), here.view().files.map { it.first }.toSet())
+        assertEquals(here.index.parts(own).values.toSet(), parts())
+    }
+
     @Test
     fun laterInAPackWinsAndAPackSentAgainIsNotAppliedAgain() = runTest {
         val here = device()
