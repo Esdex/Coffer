@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Edit in another app, in a file's menu: an editor such as WPS or OnlyOffice changes a decrypted copy, and each save goes back into the vault in place of the file, where it is now. A save made while Coffer is locked goes in at the next unlock; one that finds the file deleted comes in beside it as "name (edited)". The copy stays decrypted on the phone while you edit and for an hour after the last save. It can be turned off in Settings, Security.
 - The video seek bar shows how far the video is loaded, in grey under the part played.
 - Adding or moving something into a folder that already has its name asks what to do: for a file Replace, Keep both or Skip, for a folder Merge, Keep both or Skip, with a tick to do the same for the rest. Keep both numbers the new one, as in report (1).pdf. Replace deletes the old file only once the new one is uploaded whole, so a failed upload leaves it. Names that differ only in case count as the same. Settings, Storage: When a name is taken, Ask (the default), Keep both, Skip or Replace.
 - A new folder or a rename cannot take a name already used in the same folder.

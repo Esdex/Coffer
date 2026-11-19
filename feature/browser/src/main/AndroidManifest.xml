@@ -37,6 +37,13 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/open_files" />
         </provider>
+
+        <!-- Copies decrypted for editing in another app, read and write, from no_backup/edit (2026-11-19). -->
+        <provider
+            android:name=".transfer.EditProvider"
+            android:authorities="${applicationId}.edit"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 
 </manifest>

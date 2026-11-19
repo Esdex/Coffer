@@ -112,6 +112,15 @@ class VaultStore(private val dir: File, private val sealer: DeviceSealer = Devic
 
         @Synchronized set(value) = updatePrefs { it.setProperty(NAME_CONFLICTS, value.name) }
 
+    /**
+     * Files offer "Edit in another app" (decision 2026-11-19): on by default. A copy being edited stays
+     * decrypted on the phone, also while the vault is locked, until its changes are sent.
+     */
+    var editInOtherApps: Boolean
+        @Synchronized get() = prefs().getProperty(EDIT_IN_OTHER_APPS) != "false"
+
+        @Synchronized set(value) = updatePrefs { it.setProperty(EDIT_IN_OTHER_APPS, value.toString()) }
+
     /** Debug builds: the Debug section of Settings, shown after six taps on the icon in About and the screen lock. */
     var debugTools: Boolean
         @Synchronized get() = prefs().getProperty(DEBUG_TOOLS) == "true"
@@ -151,6 +160,7 @@ class VaultStore(private val dir: File, private val sealer: DeviceSealer = Devic
         const val WEEKLY_CHECK = "weeklyCheck"
         const val HIDE_SIZES = "hideSizes"
         const val NAME_CONFLICTS = "nameConflicts"
+        const val EDIT_IN_OTHER_APPS = "editInOtherApps"
         const val DEBUG_TOOLS = "debugTools"
         const val DEFAULT_AUTO_LOCK_MINUTES = 5
     }

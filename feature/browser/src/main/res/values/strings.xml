@@ -146,6 +146,7 @@
     <string name="browser_cd_caching">Caching</string>
     <string name="browser_transfer_unnamed">A file (unlock to see its name)</string>
     <string name="browser_transfer_preparing">Preparing</string>
+    <string name="browser_edit_elsewhere">Edit in another app</string>
     <string name="browser_name_taken">Something here already has this name</string>
     <string name="conflict_file_title">File already here</string>
     <string name="conflict_folder_title">Folder already here</string>

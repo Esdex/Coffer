@@ -70,6 +70,7 @@ import androidx.compose.material.icons.outlined.DownloadForOffline
 import androidx.compose.material.icons.outlined.DriveFileRenameOutline
 import androidx.compose.material.icons.outlined.DriveFolderUpload
 import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.outlined.FileOpen
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
@@ -185,6 +186,7 @@ import me.esdex.coffer.core.ui.theme.Motion
 import me.esdex.coffer.core.ui.theme.tabular
 import me.esdex.coffer.feature.browser.preview.Previews
 import me.esdex.coffer.feature.browser.transfer.CacheOffer
+import me.esdex.coffer.feature.browser.transfer.EditProvider
 import me.esdex.coffer.feature.browser.transfer.QueueSummary
 import me.esdex.coffer.feature.browser.transfer.TransferKind
 import me.esdex.coffer.feature.browser.transfer.TransferRegistry
@@ -302,8 +304,19 @@ fun BrowserScreen(
     // Decrypted files go straight to the app that can show them.
     LaunchedEffect(Unit) {
         viewModel.readyToOpen.collect { ready ->
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", ready.file)
-            val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, ready.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            val edit = ready.edit
+            val intent = if (edit == null) {
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.files", ready.file)
+                Intent(Intent.ACTION_VIEW).setDataAndType(uri, ready.mime).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } else {
+                // To edit: write access too, through Coffer's own provider, which sees the save. Editors that take
+                // ACTION_EDIT are offered first; Word and Excel only answer ACTION_VIEW and edit what they may write.
+                val uri = EditProvider.uri(context, edit)
+                val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                val editing = Intent(Intent.ACTION_EDIT).setDataAndType(uri, ready.mime).addFlags(flags)
+                if (editing.resolveActivity(context.packageManager) != null) editing
+                else Intent(Intent.ACTION_VIEW).setDataAndType(uri, ready.mime).addFlags(flags)
+            }
             try {
                 context.startActivity(Intent.createChooser(intent, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             } catch (_: ActivityNotFoundException) {
@@ -548,6 +561,7 @@ fun BrowserScreen(
                             shown = shown,
                             padding = padding,
                             previews = viewModel.previews,
+                            canEdit = viewModel.canEdit,
                             selection = selection,
                             onToggle = viewModel::toggleSelected,
                             empty = when {
@@ -589,6 +603,10 @@ fun BrowserScreen(
                             onExport = { item, uri -> askForNotifications(); viewModel.export(item.fileId, uri) },
                             onFileMenu = { item, action ->
                                 when (action) {
+                                    RowAction.EDIT -> {
+                                        askForNotifications()
+                                        viewModel.edit(item.fileId)
+                                    }
                                     RowAction.RENAME -> renaming = Target.File(item)
                                     RowAction.MOVE -> moving = Target.File(item)
                                     RowAction.DELETE -> deletingFile = item
@@ -804,7 +822,7 @@ private fun FileItem.isReadable() = mime == PDF || TextFiles.isText(name, mime)
 
 private const val PDF = "application/pdf"
 
-private enum class RowAction { OPEN, EXPORT, CACHE, RENAME, MOVE, DELETE }
+private enum class RowAction { OPEN, EDIT, EXPORT, CACHE, RENAME, MOVE, DELETE }
 
 /** Each kind of empty list says what it is and what to do about it. */
 private enum class Empty(val title: Int, val hint: Int) {
@@ -818,6 +836,7 @@ private fun Listing(
     shown: Listing,
     padding: PaddingValues,
     previews: Previews,
+    canEdit: Boolean,
     selection: Set<Id>,
     onToggle: (Id) -> Unit,
     empty: Empty,
@@ -857,6 +876,7 @@ private fun Listing(
             FileRow(
                 file,
                 previews = previews,
+                canEdit = canEdit,
                 selecting = selection.isNotEmpty(),
                 selected = file.fileId in selection,
                 onOpen = { onOpenFile(file) },
@@ -1209,6 +1229,7 @@ private fun FolderRow(
 private fun FileRow(
     file: FileItem,
     previews: Previews,
+    canEdit: Boolean,
     selecting: Boolean,
     selected: Boolean,
     onOpen: () -> Unit,
@@ -1288,6 +1309,9 @@ private fun FileRow(
                     HorizontalDivider()
                 }
                 MenuItem(Icons.Outlined.FileOpen, R.string.browser_open, enabled = ready) { menu = false; onOpen() }
+                if (canEdit) {
+                    MenuItem(Icons.Outlined.EditNote, R.string.browser_edit_elsewhere, enabled = ready) { menu = false; onAction(RowAction.EDIT) }
+                }
                 MenuItem(Icons.Outlined.SaveAlt, R.string.browser_export, enabled = ready) { menu = false; export.launch(file.name) }
                 MenuItem(Icons.Outlined.DownloadForOffline, R.string.browser_cache, enabled = ready && !file.cached) { menu = false; onAction(RowAction.CACHE) }
                 MenuItem(Icons.Outlined.Edit, R.string.browser_rename, enabled = settled) { menu = false; onAction(RowAction.RENAME) }

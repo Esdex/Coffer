@@ -27,8 +27,11 @@ import javax.inject.Singleton
 @Singleton
 class TransferRegistry @Inject constructor() {
 
-    /** Name and type for a file being decrypted to open in another app; known only while unlocked. */
-    class OpenTarget(val name: String, val mime: String)
+    /**
+     * Name and type for a file being decrypted to open in another app; known only while unlocked. [edit]
+     * is the session of a copy to edit there (see [EditSessions]), null for one only to open.
+     */
+    class OpenTarget(val name: String, val mime: String, val edit: String? = null)
 
     /**
      * [source] is an upload's content URI, [target] an export's; both are sealed in the index and only
@@ -155,14 +158,14 @@ class TransferRegistry @Inject constructor() {
     fun fail(id: String, failure: Failure) = failureFlow.update { it + (id to failure) }
     fun clearFailure(id: String) = failureFlow.update { it - id }
 
-    class ReadyToOpen(val file: File, val mime: String)
+    class ReadyToOpen(val file: File, val mime: String, val edit: EditSession? = null)
 
     private val openFlow = MutableSharedFlow<ReadyToOpen>(extraBufferCapacity = 8, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     /** Decrypted files the UI should hand to another app; dropped if no screen is listening. */
     val readyToOpen: SharedFlow<ReadyToOpen> = openFlow.asSharedFlow()
 
-    fun readyToOpen(file: File, mime: String) {
-        openFlow.tryEmit(ReadyToOpen(file, mime))
+    fun readyToOpen(file: File, mime: String, edit: EditSession? = null) {
+        openFlow.tryEmit(ReadyToOpen(file, mime, edit))
     }
 }

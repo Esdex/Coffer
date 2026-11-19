@@ -187,6 +187,8 @@
     <string name="settings_name_conflicts_keep_both_info">The one coming in gets a number, as in report (1).pdf.</string>
     <string name="settings_name_conflicts_skip_info">The one coming in is left out; what is there stays.</string>
     <string name="settings_name_conflicts_replace_info">A file coming in replaces the one there once it is uploaded whole. Folders are merged.</string>
+    <string name="settings_edit_elsewhere">Edit in another app</string>
+    <string name="settings_edit_elsewhere_summary">Files offer Edit in another app: an editor such as WPS or OnlyOffice changes a decrypted copy, and each save goes back into the vault in place of the file. While you edit, and for an hour after the last save, the copy stays decrypted on the phone, also while Coffer is locked; a save made while locked goes in at the next unlock. Some apps, Microsoft Word and Excel among them, may open it only to read.</string>
     <string name="settings_hide_sizes">Hide exact file sizes</string>
     <string name="settings_hide_sizes_summary">New uploads are padded inside the encryption, so Telegram cannot tell a file by its exact size. Costs about 1 to 2 percent more traffic and space, a little more for very small files. Files already uploaded stay as they are.</string>
 

@@ -180,6 +180,15 @@ internal fun SecuritySection(
                     onCheckedChange = viewModel::setHideSizes,
                 )
             }
+            row { shape ->
+                GroupedSwitch(
+                    shape,
+                    title = stringResource(R.string.settings_edit_elsewhere),
+                    checked = state.editInOtherApps,
+                    info = stringResource(R.string.settings_edit_elsewhere_summary),
+                    onCheckedChange = viewModel::setEditInOtherApps,
+                )
+            }
         }
     }
 }

@@ -495,6 +495,13 @@ class BrowserViewModel @Inject constructor(
         viewModelScope.launch { content.download(fileId, null) }
     }
 
+    /** Whether files offer editing in another app (Settings, on by default). */
+    val canEdit: Boolean get() = store.editInOtherApps
+
+    fun edit(fileId: Id) {
+        viewModelScope.launch { content.edit(fileId) }
+    }
+
     fun delete(fileId: Id) = deleteLater(emptyList(), listOf(fileId))
 
     fun renameFile(fileId: Id, name: String) = act { content.renameFile(fileId, name) }

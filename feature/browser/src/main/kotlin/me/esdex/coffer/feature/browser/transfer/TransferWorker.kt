@@ -171,8 +171,9 @@ class TransferWorker @AssistedInject constructor(
         }
         val downloads = index.downloads().filter { it.downloadId !in failed }.map { download ->
             val entry = registry.get(download.fileId)
-            // An export whose target is not in memory yet waits for the unlock that provides it.
-            Item(download.downloadId, TransferKind.DOWNLOAD, entry != null && (download.sealedTarget == null || entry.target != null))
+            // An export whose target is not in memory yet waits for the unlock that provides it. An edit's sealed
+            // target is its session, not a place to save into: it is ready once the unlock gave it its copy's name.
+            Item(download.downloadId, TransferKind.DOWNLOAD, entry != null && (download.sealedTarget == null || entry.target != null || entry.open != null))
         }
         val caching = cache.queue.items.value.filter { it.id !in failed }.map { Item(it.id, TransferKind.CACHE, ready = true) }
         return ops + uploads + downloads + caching
@@ -273,7 +274,8 @@ class TransferWorker @AssistedInject constructor(
         val download = index.downloads().find { it.downloadId == id } ?: return true
         val entry = registry.get(download.fileId) ?: return false
         val target = entry.target?.let(Uri::parse)
-        if (download.sealedTarget != null && target == null) return false
+        // An edit's sealed target is its session, and it has no place to save into.
+        if (download.sealedTarget != null && target == null && entry.open == null) return false
         val open = entry.open
         if (open != null && vault.state.value !is VaultManager.State.Unlocked) {
             // Queued before the vault locked: its copy would be for nobody, and written decrypted onto a
@@ -283,7 +285,14 @@ class TransferWorker @AssistedInject constructor(
             return true
         }
         val storage = telegram.readyStorage() ?: throw StorageException("Telegram is not ready")
-        val openFile = open?.let { File(File(OpenFiles.dir(applicationContext), id), OpenFiles.safeName(it.name)) }
+        // A copy to edit goes into its session, which outlives a lock; one to open into the cache, which does not.
+        val editing = open?.edit?.let { EditSessions.get(EditSessions.dir(applicationContext), it) }
+        if (open?.edit != null && editing == null) {
+            index.removeDownload(id)
+            registry.remove(download.fileId)
+            return true
+        }
+        val openFile = editing?.copy ?: open?.let { File(File(OpenFiles.dir(applicationContext), id), OpenFiles.safeName(it.name)) }
         // Whatever ends this download but a hand-over to the other app, cancelling included, takes the copy.
         var handedOver = false
         val failure = try {
@@ -292,7 +301,7 @@ class TransferWorker @AssistedInject constructor(
                     applicationContext.contentResolver.openOutputStream(target, "wt") ?: throw FileNotFoundException()
                 } else {
                     // Before the first byte: a process killed halfway still has its copy swept.
-                    OpenFilesSweeper.schedule(applicationContext)
+                    if (editing == null) OpenFilesSweeper.schedule(applicationContext)
                     checkNotNull(openFile).also { it.parentFile?.mkdirs() }.outputStream()
                 }
                 output.use {
@@ -323,8 +332,8 @@ class TransferWorker @AssistedInject constructor(
             } else if (openFile != null && open != null) {
                 // Finished after the vault locked, which cleared the copies: this one is not to stay either (audit 1, M11).
                 if (vault.state.value is VaultManager.State.Unlocked) {
-                    registry.readyToOpen(openFile, open.mime)
-                    OpenFilesSweeper.schedule(applicationContext)
+                    registry.readyToOpen(openFile, open.mime, editing)
+                    if (editing == null) OpenFilesSweeper.schedule(applicationContext)
                     handedOver = true
                 }
             }

@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -42,6 +43,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import me.esdex.coffer.core.crypto.ContentHasher
 import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.LocalUpload
@@ -230,6 +232,7 @@ class VaultContent @Inject constructor(
         session = scope.launch {
             sweepShareCopies(keys)
             sealHeldDeletes(keys)
+            saveEdits(keys)
             val storage = telegram.readyStorage(Long.MAX_VALUE) ?: return@launch
             val indexer = Indexer(storage, index, keys)
             val snapshotter = Snapshotter(storage, index, indexer, keys, WorkFiles.snapshot(context), System::currentTimeMillis)
@@ -280,6 +283,7 @@ class VaultContent @Inject constructor(
                 val prepared = UploadPreparer(keys, index, store.hideSizes, System::currentTimeMillis)
                     .prepare(upload, request, inbox.source(request.source))
                 registry.put(prepared.upload.fileId!!, TransferRegistry.Entry(prepared.keys, source = request.source, displayName = request.name))
+                EditSessions.prepared(EditSessions.dir(context), upload.uploadId, prepared.upload.fileId!!)
                 prepared.upload.fileId!!
             } catch (_: IOException) {
                 registry.fail(upload.uploadId, TransferRegistry.Failure.SOURCE_GONE)
@@ -301,8 +305,10 @@ class VaultContent @Inject constructor(
                 val meta = keys.local.openFileMeta(download.fileId, file.sealedMeta) ?: continue
                 val transferKeys = keys.transferKeys(download.fileId, file.sealedMeta) ?: continue
                 val sealedTarget = download.sealedTarget
-                val target = sealedTarget?.let { keys.local.openTarget(download.downloadId, it) ?: continue }
-                val open = if (target == null) TransferRegistry.OpenTarget(meta.name, meta.mime) else null
+                val sealed = sealedTarget?.let { keys.local.openTarget(download.downloadId, it) ?: continue }
+                val edit = sealed?.takeIf { it.startsWith(EDIT_TARGET) }?.removePrefix(EDIT_TARGET)
+                val target = sealed?.takeIf { edit == null }
+                val open = if (target == null) TransferRegistry.OpenTarget(meta.name, meta.mime, edit) else null
                 registry.put(download.fileId, TransferRegistry.Entry(transferKeys, target = target, open = open, displayName = meta.name))
             }
         }
@@ -426,14 +432,56 @@ class VaultContent @Inject constructor(
         queue(placed)
     }
 
-    private suspend fun queue(requests: List<UploadRequest>) {
-        val keys = keysFlow.value ?: return
-        for (request in requests) {
+    /** Queues [requests] as they are; returns their upload ids. */
+    private suspend fun queue(requests: List<UploadRequest>): List<String> {
+        val keys = keysFlow.value ?: return emptyList()
+        val ids = requests.map { request ->
             val id = UUID.randomUUID().toString()
             val sealed = keys.local.sealUpload(id, LocalUpload(request.uri.toString(), request.displayName, request.mime, request.folderId))
             index.putUpload(PendingUpload(id, sealed, null, emptyList(), null, replaces = request.replaces))
+            id
         }
         pendingWork.trySend(Unit)
+        return ids
+    }
+
+    /**
+     * Decrypts [fileId] for editing in another app (decision 2026-11-19): into a session of its own (see
+     * [EditSessions]), handed out read and write once it is there, like a copy to open.
+     */
+    suspend fun edit(fileId: Id) {
+        val keys = keysFlow.value ?: return
+        val file = index.file(fileId)?.takeIf { it.status == FileStatus.READY } ?: return
+        val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: return
+        val session = EditSessions.begin(EditSessions.dir(context), meta.name, meta.mime, fileId, meta.folderId, meta.contentHash, System.currentTimeMillis())
+        val id = UUID.randomUUID().toString()
+        index.putDownload(PendingDownload(id, fileId, keys.local.sealTarget(id, EDIT_TARGET + session.id)))
+        pendingWork.trySend(Unit)
+    }
+
+    /**
+     * Saves what editors wrote: each copy changed since its last save is uploaded in place of its file
+     * (see [EditSessions.plan]). At once while the vault is open, and for those saved while it was locked,
+     * on the next unlock: the change needs the key.
+     */
+    private fun CoroutineScope.saveEdits(keys: VaultKeys) = launch {
+        EditSessions.changes.onStart { emit(Unit) }.collect {
+            val root = EditSessions.dir(context)
+            for (session in EditSessions.all(root).filter { it.dirty }) {
+                val hash = withContext(Dispatchers.IO) { session.copy.inputStream().use { ContentHasher.hash(sodium, it).first } }
+                if (hash == session.savedHash) {
+                    EditSessions.unchanged(session)
+                    continue
+                }
+                val pending = index.uploads().mapTo(HashSet()) { it.uploadId }
+                val whole = session.uploadFile?.takeIf { index.file(it)?.status == FileStatus.READY }
+                val save = EditSessions.plan(session, VaultTree.of(index, keys), pending) { it == whole }
+                save.cancel?.let { cancelUpload(it) }
+                val uploadId = queue(listOf(UploadRequest(Uri.fromFile(session.copy), save.name, session.mime, save.folderId, save.replaces))).single()
+                EditSessions.queued(session, uploadId, hash, save.original)
+            }
+            EditSessions.sweep(root, index.uploads().mapTo(HashSet()) { it.uploadId }, System.currentTimeMillis())
+        }
     }
 
     /**
@@ -747,6 +795,8 @@ class VaultContent @Inject constructor(
         index.clear()
         // Files shared in and not uploaded are plain copies; none of them is to outlive the vault (audit 1, M10).
         inbox.discard()
+        // Nor copies being edited.
+        EditSessions.dir(context).deleteRecursively()
         ShareInbox.dir(context).deleteRecursively()
     }
 }
@@ -773,6 +823,9 @@ suspend fun releaseFolderGrants(context: Context, index: VaultIndex) {
     }
 }
 
+
+/** A download's target naming an edit session rather than a place to save into (see [VaultContent.edit]). */
+private const val EDIT_TARGET = "coffer-edit:"
 
 /** How long a delete can be taken back before it goes to Telegram, where it is final. */
 const val UNDO_MILLIS = 6_000L
