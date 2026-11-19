@@ -101,6 +101,8 @@ class PendingUpload(
     val captions: List<String>,
     /** A ready file.delete op, so an upload can be abandoned without MetaKey (the vault may be locked). */
     val abandonOp: String?,
+    /** The file this one takes the place of, once it is whole: a name taken, and the user said replace. */
+    val replaces: Id? = null,
 )
 
 class PendingDownload(

@@ -92,7 +92,7 @@ class UploadPreparer(
         }
         val abandon = keys.meta.encodeOp(Op.FileDelete(Id.random(sodium), now, fileId))
         // The upload first: a file row at UPLOADING with no upload is taken for a stale one and repaired.
-        val prepared = PendingUpload(upload.uploadId, upload.sealedRequest, fileId, captions, abandon)
+        val prepared = PendingUpload(upload.uploadId, upload.sealedRequest, fileId, captions, abandon, upload.replaces)
         index.putUpload(prepared)
         index.putFile(fileId, size, partCount, keys.local.sealFileMeta(fileId, meta), FileStatus.UPLOADING, padSizes)
         return Prepared(prepared, TransferKeys(dek, hash))
@@ -178,7 +178,20 @@ class UploadRunner(
         }
         if (hasher.finish() != keys.contentHash) throw abandon(upload, fileId)
         index.setStatus(fileId, FileStatus.READY)
+        replaceAfter(upload)
         index.removeUpload(upload.uploadId)
+    }
+
+    /**
+     * The file this one takes the place of is held for deleting now that this one is whole, never before:
+     * an upload that fails or is cancelled leaves it. Held, not sent: the deletes of many replaced files
+     * go together in packs once the key is there (see [OpQueue.sealHeld]); one message each, 150 files
+     * replaced at once ran into Telegram's pause (2026-11-19). Gone meanwhile, there is nothing to do.
+     */
+    private suspend fun replaceAfter(upload: PendingUpload) {
+        val old = upload.replaces ?: return
+        if (index.file(old) == null) return
+        OpQueue(index).hold(old, index.parts(old).values.toList())
     }
 
     /** Takes back everything sent so far. */

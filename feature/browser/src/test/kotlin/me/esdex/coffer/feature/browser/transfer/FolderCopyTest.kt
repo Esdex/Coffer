@@ -5,7 +5,13 @@ import me.esdex.coffer.core.crypto.Bytes
 import me.esdex.coffer.core.crypto.CofferFormat
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.FileMeta
+import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.crypto.format.LocalFolder
+import me.esdex.coffer.core.sync.ConflictDecider
+import me.esdex.coffer.core.sync.FileChoice
+import me.esdex.coffer.core.sync.FolderChoice
+import me.esdex.coffer.core.sync.Incoming
+import me.esdex.coffer.core.sync.NameConflicts
 import me.esdex.coffer.core.sync.VaultTree
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -29,7 +35,8 @@ class FolderCopyTest {
         )
         val made = mutableListOf<Triple<String, Id?, Id>>()
         val root = id()
-        val files = bringIn(phone, root) { name, parent -> id().also { made += Triple(name, parent, it) } }
+        val placed = NameConflicts(VaultTree(emptyMap(), emptyMap()), ConflictDecider.always(FileChoice.SKIP, FolderChoice.SKIP)).place(root, listOf(phone.incoming()))
+        val files = bringIn(placed, root) { name, parent -> id().also { made += Triple(name, parent, it) } }
 
         // Written out by hand: Trip under the folder on screen, Day 1 in Trip, Empty in Day 1.
         assertEquals(listOf("Trip", "Day 1", "Empty"), made.map { it.first })
@@ -39,8 +46,42 @@ class FolderCopyTest {
         assertEquals(day1, made[2].second)
         assertEquals(
             listOf("a.jpg" to trip, "b.jpg" to day1, ".nomedia" to trip),
-            files.map { it.first.name to it.second },
+            files.map { it.file.name to it.folderId },
         )
+    }
+
+    @Test
+    fun aPhoneFolderMergedIntoOneOfTheSameNameMakesOnlyWhatIsNew() = runTest {
+        // The vault has Trip/ with a.jpg; the phone's Trip has a.jpg again, b.jpg and Day 1/.
+        val trip = id()
+        val old = id()
+        val vault = VaultTree(
+            mapOf(trip to LocalFolder("Trip", null)),
+            mapOf(old to FileMeta("a.jpg", trip, "image/jpeg", 1, 1, Bytes.of(ByteArray(CofferFormat.CONTENT_HASH_BYTES)), Bytes.of(ByteArray(CofferFormat.WRAPPED_KEY_BYTES)))),
+        )
+        val phone = PhoneEntry.Folder(
+            "trip",
+            listOf(
+                PhoneEntry.File("a.jpg", "content://a", "image/jpeg"),
+                PhoneEntry.File("b.jpg", "content://b", "image/jpeg"),
+                PhoneEntry.Folder("Day 1", emptyList()),
+            ),
+        )
+        val placed = NameConflicts(vault, ConflictDecider.always(FileChoice.REPLACE, FolderChoice.MERGE)).place(null, listOf(phone.incoming()))
+        val made = mutableListOf<Pair<String, Id?>>()
+        val files = bringIn(placed, null) { name, parent -> id().also { made += name to parent } }
+        assertEquals(listOf("Day 1" to trip), made)
+        assertEquals(listOf(Arriving(phone.children[0] as PhoneEntry.File, trip, "a.jpg", replaces = old), Arriving(phone.children[1] as PhoneEntry.File, trip, "b.jpg")), files)
+    }
+
+    @Test
+    fun namesTooLongForTheVaultAreFittedBeforeTheyAreCompared() {
+        val long = "x".repeat(300) + ".txt"
+        val incoming = PhoneEntry.Folder("", listOf(PhoneEntry.File(long, "content://l", null))).incoming() as Incoming.Folder
+        assertEquals(FOLDER_FALLBACK_NAME, incoming.name)
+        val name = incoming.children.single().name
+        assertEquals(255, FileNames.utf8Size(name))
+        assertTrue(name.endsWith(".txt"))
     }
 
     private fun tree(): Pair<VaultTree, Map<String, Id>> {

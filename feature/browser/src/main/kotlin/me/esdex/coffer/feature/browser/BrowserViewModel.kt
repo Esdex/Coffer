@@ -31,8 +31,12 @@ import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.FloodWaitException
 import me.esdex.coffer.core.storage.StorageException
+import me.esdex.coffer.core.sync.ConflictsCancelled
+import me.esdex.coffer.core.sync.Decision
+import me.esdex.coffer.core.sync.NameConflicts
 import me.esdex.coffer.core.sync.OpKind
 import me.esdex.coffer.core.sync.VaultTree
+import me.esdex.coffer.core.vault.VaultStore
 import me.esdex.coffer.core.tdlib.Connection
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.ui.theme.CacheStore
@@ -142,8 +146,31 @@ class BrowserViewModel @Inject constructor(
     private val cache: FileCache,
     private val cacheStore: CacheStore,
     val previews: Previews,
+    private val store: VaultStore,
     telegram: Telegram,
 ) : ViewModel() {
+
+    private val prompt = ConflictPrompt()
+
+    /** A name taken where something goes, waiting for the user's word (decision 2026-11-19). */
+    val conflict: StateFlow<ConflictPrompt.Asking?> = prompt.asking
+
+    /** The user's word on [conflict]; null cancels the whole action. */
+    fun answerConflict(decision: Decision<*>?) = prompt.answer(decision)
+
+    private fun decider() = prompt.decider(store.nameConflicts)
+
+    /** True if [name] is taken in [folderId] by anything but [except]: names equal but for case are one. */
+    fun nameTaken(name: String, folderId: Id?, except: Id? = null): Boolean {
+        val tree = tree.value ?: return false
+        val key = NameConflicts.key(name)
+        val here = tree.childFolders(folderId).associateWith { tree.folders.getValue(it).name } +
+            tree.childFiles(folderId).associateWith { tree.files.getValue(it).name }
+        return here.any { (id, taken) -> id != except && NameConflicts.key(taken) == key }
+    }
+
+    /** The folder on screen, where a new folder goes; null for the top level. */
+    val here: Id? get() = listing.value.folderId
 
     /** Telegram's link, for the title bar. */
     val connection: StateFlow<Connection> = telegram.connection
@@ -242,7 +269,7 @@ class BrowserViewModel @Inject constructor(
 
     fun moveSelected(destination: Id?) {
         val (folders, files) = takeSelection()
-        act { content.moveMany(folders, files, destination) }
+        act { content.moveMany(folders, files, destination, decider()) }
     }
 
     /** Files and folders, each folder with everything in it. */
@@ -265,7 +292,7 @@ class BrowserViewModel @Inject constructor(
     fun importFolder(tree: Uri) {
         val parent = listing.value.folderId
         act {
-            if (content.importFolder(tree, parent) == 0) messagesFlow.emit(R.string.browser_import_empty)
+            if (content.importFolder(tree, parent, decider()) == 0) messagesFlow.emit(R.string.browser_import_empty)
         }
     }
 
@@ -380,20 +407,22 @@ class BrowserViewModel @Inject constructor(
             val first = batch.first()
             val kind = runCatching { OpKind.valueOf(first.kind) }.getOrDefault(OpKind.MOVE)
             // Operations, not messages: a pack holds several (SPEC §4.6).
-            val sent = first.batchSize - batch.sumOf { it.opCount }
+            // Held deletes come one file a row, each its own batch size of 1: the rows left are the least there are.
+            val total = maxOf(first.batchSize, batch.sumOf { it.opCount })
+            val sent = total - batch.sumOf { it.opCount }
             TransferItem(
                 "batch-${first.batch}",
                 isUpload = true,
                 name = null,
                 progress = if (i == 0) {
-                    sending?.let { TransferRegistry.Progress(sent.toLong(), first.batchSize.toLong(), TransferRegistry.Phase.MOVING) }
+                    sending?.let { TransferRegistry.Progress(sent.toLong(), total.toLong(), TransferRegistry.Phase.MOVING) }
                 } else {
                     null
                 },
                 failure = null,
                 preparing = false,
                 wait = if (i == 0) waitingOps?.let(waits::get) else null,
-                operation = OperationBatch(kind, sent, first.batchSize),
+                operation = OperationBatch(kind, sent, total),
             )
         }
         val all = ops + queued.uploads.map {
@@ -450,13 +479,13 @@ class BrowserViewModel @Inject constructor(
                 messagesFlow.emit(R.string.browser_error_flood)
             } catch (_: StorageException) {
                 messagesFlow.emit(R.string.browser_error_network)
+            } catch (_: ConflictsCancelled) {
+                // The user left a question about a taken name: nothing was done, nothing to say.
             }
         }
     }
 
-    fun upload(requests: List<VaultContent.UploadRequest>) {
-        viewModelScope.launch { content.upload(requests) }
-    }
+    fun upload(requests: List<VaultContent.UploadRequest>) = act { content.upload(requests, decider()) }
 
     fun export(fileId: Id, target: Uri) {
         viewModelScope.launch { content.download(fileId, target) }
@@ -470,7 +499,7 @@ class BrowserViewModel @Inject constructor(
 
     fun renameFile(fileId: Id, name: String) = act { content.renameFile(fileId, name) }
 
-    fun moveFile(fileId: Id, folderId: Id?) = act { content.moveFile(fileId, folderId) }
+    fun moveFile(fileId: Id, folderId: Id?) = act { content.moveMany(emptyList(), listOf(fileId), folderId, decider()) }
 
     fun createFolder(name: String) {
         val parent = listing.value.folderId
@@ -479,7 +508,7 @@ class BrowserViewModel @Inject constructor(
 
     fun renameFolder(folderId: Id, name: String) = act { content.renameFolder(folderId, name) }
 
-    fun moveFolder(folderId: Id, parentId: Id?) = act { content.moveFolder(folderId, parentId) }
+    fun moveFolder(folderId: Id, parentId: Id?) = act { content.moveMany(listOf(folderId), emptyList(), parentId, decider()) }
 
     fun deleteFolder(folderId: Id) = deleteLater(listOf(folderId), emptyList())
 

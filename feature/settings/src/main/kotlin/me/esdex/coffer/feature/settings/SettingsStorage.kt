@@ -56,6 +56,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -74,6 +75,7 @@ import me.esdex.coffer.core.ui.components.GroupedBox
 import me.esdex.coffer.core.ui.components.GroupedRow
 import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.ui.components.TypeTile
+import me.esdex.coffer.core.vault.NameConflictPolicy
 import me.esdex.coffer.core.ui.components.fileTypeIcon
 import me.esdex.coffer.core.ui.theme.Corners
 import me.esdex.coffer.core.ui.theme.Hues
@@ -108,6 +110,7 @@ internal fun FileKind.label(): Int = when (this) {
  */
 @Composable
 internal fun StorageSection(viewModel: SettingsViewModel, onBack: () -> Unit, onKind: (FileKind) -> Unit) {
+    val settings by viewModel.state.collectAsStateWithLifecycle()
     val breakdown by viewModel.breakdown.collectAsStateWithLifecycle()
     val counting by viewModel.counting.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -115,6 +118,10 @@ internal fun StorageSection(viewModel: SettingsViewModel, onBack: () -> Unit, on
     LaunchedEffect(Unit) { if (viewModel.counting.value == null) viewModel.count() }
 
     SectionScaffold(stringResource(R.string.settings_card_storage), onBack) {
+        // What goes in, before what is there: shown at once, not after the count.
+        SettingsGroup(stringResource(R.string.settings_name_conflicts)) {
+            row { shape -> NameConflictChoice(shape, settings.nameConflicts, viewModel::setNameConflicts) }
+        }
       LoadedFade(breakdown) { current ->
         Ring(
             segments = current.kinds.map { it.bytes to it.kind.look().second },
@@ -153,6 +160,46 @@ internal fun StorageSection(viewModel: SettingsViewModel, onBack: () -> Unit, on
             }
         }
       }
+    }
+}
+
+/** What happens when something comes into a folder that already has its name (decision 2026-11-19). */
+@Composable
+private fun NameConflictChoice(shape: Shape, policy: NameConflictPolicy, onChange: (NameConflictPolicy) -> Unit) {
+    val policies = NameConflictPolicy.entries
+    GroupedBox(shape) {
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            policies.forEachIndexed { i, choice ->
+                SegmentedButton(
+                    selected = policy == choice,
+                    onClick = { onChange(choice) },
+                    shape = SegmentedButtonDefaults.itemShape(index = i, count = policies.size),
+                    icon = {},
+                    label = {
+                        val label = when (choice) {
+                            NameConflictPolicy.ASK -> R.string.settings_name_conflicts_ask
+                            NameConflictPolicy.KEEP_BOTH -> R.string.settings_name_conflicts_keep_both
+                            NameConflictPolicy.SKIP -> R.string.settings_name_conflicts_skip
+                            NameConflictPolicy.REPLACE -> R.string.settings_name_conflicts_replace
+                        }
+                        Text(stringResource(label), style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(
+                when (policy) {
+                    NameConflictPolicy.ASK -> R.string.settings_name_conflicts_ask_info
+                    NameConflictPolicy.KEEP_BOTH -> R.string.settings_name_conflicts_keep_both_info
+                    NameConflictPolicy.SKIP -> R.string.settings_name_conflicts_skip_info
+                    NameConflictPolicy.REPLACE -> R.string.settings_name_conflicts_replace_info
+                },
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

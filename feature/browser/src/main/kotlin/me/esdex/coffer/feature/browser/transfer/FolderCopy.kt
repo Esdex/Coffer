@@ -4,6 +4,9 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.provider.DocumentsContract
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.format.FileNames
+import me.esdex.coffer.core.sync.Incoming
+import me.esdex.coffer.core.sync.Placed
 import me.esdex.coffer.core.sync.VaultTree
 
 /** A folder on the phone as the system's document provider lists it, read once before it is brought in. */
@@ -19,23 +22,44 @@ sealed interface PhoneEntry {
     }
 }
 
+/** Files in this folder and every folder below it. */
+fun PhoneEntry.Folder.fileCount(): Int = children.sumOf { if (it is PhoneEntry.Folder) it.fileCount() else 1 }
+
+/** A phone file on its way into the vault folder [folderId], under [name], maybe in place of [replaces]. */
+data class Arriving(val file: PhoneEntry.File, val folderId: Id?, val name: String, val replaces: Id? = null) {
+    override fun toString(): String = "Arriving(folderId=$folderId, replaces=$replaces, name=***)"
+}
+
+/** [this] as it comes into a vault folder, its names fitted to the vault's limits (SPEC §4.0). */
+fun PhoneEntry.incoming(): Incoming<PhoneEntry> = when (this) {
+    is PhoneEntry.File -> Incoming.File(vaultName(name, FILE_FALLBACK_NAME), this)
+    is PhoneEntry.Folder -> Incoming.Folder(vaultName(name, FOLDER_FALLBACK_NAME), this, children.map { it.incoming() })
+}
+
+/** [name] shortened to the vault's limit, or [fallback] when nothing usable is left of it. */
+fun vaultName(name: String, fallback: String): String =
+    runCatching { FileNames.fitForImport(name) }.getOrNull()?.takeIf(FileNames::isValid) ?: fallback
+
+const val FILE_FALLBACK_NAME = "file"
+const val FOLDER_FALLBACK_NAME = "Folder"
+
 /**
- * Brings [folder] into the vault under [parent], keeping its shape: each folder is created before
- * anything inside it, empty ones too. Returns every file with the vault folder it goes into, for the
- * upload queue; the files themselves are read later, by the uploads.
+ * Brings what [placed] says (see [NameConflicts]) into the vault under [parent], keeping its shape:
+ * each new folder is created before anything inside it, empty ones too, and a folder merged into one
+ * of the same name uses that one. Returns every file with where it goes, for the upload queue; the
+ * files themselves are read later, by the uploads.
  */
-suspend fun bringIn(folder: PhoneEntry.Folder, parent: Id?, createFolder: suspend (name: String, parent: Id?) -> Id): List<Pair<PhoneEntry.File, Id>> {
-    val files = mutableListOf<Pair<PhoneEntry.File, Id>>()
-    suspend fun walk(at: PhoneEntry.Folder, under: Id?) {
-        val created = createFolder(at.name, under)
-        for (child in at.children) {
-            when (child) {
-                is PhoneEntry.File -> files += child to created
-                is PhoneEntry.Folder -> walk(child, created)
+suspend fun bringIn(placed: List<Placed<PhoneEntry>>, parent: Id?, createFolder: suspend (name: String, parent: Id?) -> Id): List<Arriving> {
+    val files = mutableListOf<Arriving>()
+    suspend fun walk(items: List<Placed<PhoneEntry>>, under: Id?) {
+        for (item in items) {
+            when (item) {
+                is Placed.File -> files += Arriving(item.item as PhoneEntry.File, under, item.name, item.replaces)
+                is Placed.Folder -> walk(item.children, item.existing ?: createFolder(item.name, under))
             }
         }
     }
-    walk(folder, parent)
+    walk(placed, parent)
     return files
 }
 

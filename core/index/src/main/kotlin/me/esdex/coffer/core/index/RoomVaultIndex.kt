@@ -5,6 +5,7 @@ import androidx.room.AutoMigration
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Database
+import androidx.room.DeleteColumn
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Insert
@@ -13,6 +14,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.AutoMigrationSpec
 import androidx.room.withTransaction
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -66,7 +68,13 @@ internal class UploadRow(
     /** Newline-separated; captions are base64url and never contain one. */
     val captions: String,
     val abandonOp: String?,
+    // Schema 10: a name taken, and the user said replace (2026-11-19).
+    val replaces: String? = null,
 )
+
+/** Schema 10 kept a ready delete per replaced file; they are packed together once the key is there instead. */
+@DeleteColumn(tableName = "uploads", columnName = "replaceOp")
+internal class DropReplaceOp : AutoMigrationSpec
 
 /**
  * Operations already applied, so one sent again under a new message id is not applied twice (audit 1, M4),
@@ -177,13 +185,14 @@ internal interface IndexDao {
         SnapshotRow::class, SyncRow::class, UploadRow::class, DownloadRow::class, AppliedOpRow::class,
         PendingOpRow::class,
     ],
-    version = 9,
+    version = 11,
     // Only new tables and columns so far: the queue of transfers survives the update.
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6),
         AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8),
-        AutoMigration(from = 8, to = 9),
+        AutoMigration(from = 8, to = 9), AutoMigration(from = 9, to = 10),
+        AutoMigration(from = 10, to = 11, spec = DropReplaceOp::class),
     ],
 )
 internal abstract class IndexDatabase : RoomDatabase() {
@@ -266,6 +275,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
 
     private fun UploadRow.pending() = PendingUpload(
         uploadId, sealedRequest, fileId?.let(::idOf), captions.split('\n').filter { it.isNotEmpty() }, abandonOp,
+        replaces?.let(::idOf),
     )
 
     override suspend fun allParts(): Map<Id, Map<Int, MessageId>> =
@@ -341,7 +351,10 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
     override fun observeUploads(): Flow<List<PendingUpload>> = dao.observeUploads().map { rows -> rows.map { it.pending() } }
     override suspend fun uploads(): List<PendingUpload> = dao.uploads().map { it.pending() }
     override suspend fun putUpload(upload: PendingUpload) = dao.putUpload(
-        UploadRow(upload.uploadId, upload.sealedRequest, upload.fileId?.hex(), upload.captions.joinToString("\n"), upload.abandonOp),
+        UploadRow(
+            upload.uploadId, upload.sealedRequest, upload.fileId?.hex(), upload.captions.joinToString("\n"), upload.abandonOp,
+            upload.replaces?.hex(),
+        ),
     )
     override suspend fun removeUpload(uploadId: String) = dao.deleteUpload(uploadId)
 

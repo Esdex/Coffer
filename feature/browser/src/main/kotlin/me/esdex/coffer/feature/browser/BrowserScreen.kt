@@ -232,6 +232,7 @@ fun BrowserScreen(
     val connection by viewModel.connection.collectAsStateWithLifecycle()
     val selection by viewModel.selection.collectAsStateWithLifecycle()
     val cacheOffer by viewModel.cacheOffer.collectAsStateWithLifecycle()
+    val conflict by viewModel.conflict.collectAsStateWithLifecycle()
     val selecting = selection.isNotEmpty()
     var movingSelection by remember { mutableStateOf(false) }
     var deletingSelection by remember { mutableStateOf(false) }
@@ -617,10 +618,12 @@ fun BrowserScreen(
         )
     }
     if (creatingFolder) {
+        val here = viewModel.here
         NameDialog(
             title = R.string.browser_new_folder_title,
             confirm = R.string.browser_create,
             initial = "",
+            taken = { viewModel.nameTaken(it, here) },
             onConfirm = { creatingFolder = false; viewModel.createFolder(it) },
             onDismiss = { creatingFolder = false },
         )
@@ -630,6 +633,12 @@ fun BrowserScreen(
             title = R.string.browser_rename_title,
             confirm = R.string.browser_rename,
             initial = target.name,
+            taken = { name ->
+                when (target) {
+                    is Target.Folder -> viewModel.nameTaken(name, tree?.parentOf(target.item.folderId), except = target.item.folderId)
+                    is Target.File -> viewModel.nameTaken(name, tree?.folderOf(target.item.fileId), except = target.item.fileId)
+                }
+            },
             onConfirm = { name ->
                 renaming = null
                 when (target) {
@@ -707,6 +716,10 @@ fun BrowserScreen(
     }
     cacheOffer?.let { offer ->
         CacheOfferDialog(offer, onCache = viewModel::acceptCacheOffer, onDismiss = viewModel::dismissCacheOffer)
+    }
+    conflict?.let { asking ->
+        val top = stringResource(R.string.browser_root)
+        NameConflictDialog(asking, folderName = { id -> id?.let { tree?.folders?.get(it)?.name } ?: top }, onAnswer = viewModel::answerConflict)
     }
     deletingFolder?.let { folder ->
         val (folders, files) = currentTree?.subtree(folder.folderId) ?: (emptyList<Id>() to emptyList())
@@ -1017,12 +1030,24 @@ private fun Context.uploadRequest(uri: Uri, folderId: Id?): VaultContent.UploadR
     return VaultContent.UploadRequest(uri, name, contentResolver.getType(uri), folderId)
 }
 
-/** A name for a new folder or a rename, held to the format's limits (SPEC §4.0). */
+/**
+ * A name for a new folder or a rename, held to the format's limits (SPEC §4.0) and not [taken] by
+ * something else in the same folder (decision 2026-11-19).
+ */
 @Composable
-private fun NameDialog(title: Int, confirm: Int, initial: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+private fun NameDialog(
+    title: Int,
+    confirm: Int,
+    initial: String,
+    taken: (String) -> Boolean,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var name by remember { mutableStateOf(initial) }
     val trimmed = name.trim()
-    val valid = trimmed.isNotEmpty() && FileNames.isValid(trimmed)
+    val fits = trimmed.isNotEmpty() && FileNames.isValid(trimmed)
+    val free = !fits || !taken(trimmed)
+    val valid = fits && free
     AppDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(title)) },
@@ -1032,7 +1057,13 @@ private fun NameDialog(title: Int, confirm: Int, initial: String, onConfirm: (St
                 onValueChange = { name = it },
                 singleLine = true,
                 isError = trimmed.isNotEmpty() && !valid,
-                supportingText = { if (trimmed.isNotEmpty() && !valid) Text(stringResource(R.string.browser_name_too_long)) },
+                supportingText = {
+                    when {
+                        trimmed.isEmpty() -> Unit
+                        !fits -> Text(stringResource(R.string.browser_name_too_long))
+                        !free -> Text(stringResource(R.string.browser_name_taken))
+                    }
+                },
             )
         },
         confirmButton = {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+- Adding or moving something into a folder that already has its name asks what to do: for a file Replace, Keep both or Skip, for a folder Merge, Keep both or Skip, with a tick to do the same for the rest. Keep both numbers the new one, as in report (1).pdf. Replace deletes the old file only once the new one is uploaded whole, so a failed upload leaves it. Names that differ only in case count as the same. Settings, Storage: When a name is taken, Ask (the default), Keep both, Skip or Replace.
+- A new folder or a rename cannot take a name already used in the same folder.
+
 ### Changed
 - Creating, renaming and moving folders and files go to Telegram through the transfer queue, which keeps them when Coffer is closed and shows them in Transfers: what they do, how many have gone, and Telegram's pause with a countdown when it asks for one. The list changes once Telegram has each one. A folder brought in from the phone queues its folders and all its files at once; before, a folder of many folders stopped for minutes with nothing on screen when Telegram asked for a pause, and lost its files if Coffer was closed meanwhile.
 - Deleting goes through the same queue: a folder with everything in it is a few messages, its rows say Deleting until Telegram has them, and a delete cut short by closing Coffer goes on when it opens. Before, each file and folder was a message of its own, so a large folder took most of an hour of Telegram's pauses, and closing Coffer meanwhile left it half deleted.

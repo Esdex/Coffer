@@ -146,6 +146,16 @@
     <string name="browser_cd_caching">Caching</string>
     <string name="browser_transfer_unnamed">A file (unlock to see its name)</string>
     <string name="browser_transfer_preparing">Preparing</string>
+    <string name="browser_name_taken">Something here already has this name</string>
+    <string name="conflict_file_title">File already here</string>
+    <string name="conflict_folder_title">Folder already here</string>
+    <string name="conflict_text">%2$s already has %1$s.</string>
+    <string name="conflict_for_all_files">Do the same for other files</string>
+    <string name="conflict_for_all_folders">Do the same for other folders</string>
+    <string name="conflict_replace">Replace</string>
+    <string name="conflict_merge">Merge</string>
+    <string name="conflict_keep_both">Keep both</string>
+    <string name="conflict_skip">Skip</string>
     <string name="browser_transfer_waiting">Waiting</string>
     <string name="browser_transfer_queued">In line</string>
     <string name="browser_transfer_wait_network">Waiting for network</string>

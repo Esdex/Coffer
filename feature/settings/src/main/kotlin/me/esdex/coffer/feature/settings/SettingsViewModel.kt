@@ -43,6 +43,7 @@ import me.esdex.coffer.core.ui.theme.CachePrefs
 import me.esdex.coffer.core.ui.theme.CacheStore
 import me.esdex.coffer.core.ui.theme.ThemeMode
 import me.esdex.coffer.core.vault.DeviceUnlock
+import me.esdex.coffer.core.vault.NameConflictPolicy
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
 import me.esdex.coffer.feature.browser.transfer.VaultContent
@@ -55,6 +56,7 @@ data class SettingsState(
     val blockScreenshots: Boolean = false,
     val weeklyCheck: Boolean = true,
     val hideSizes: Boolean = true,
+    val nameConflicts: NameConflictPolicy = NameConflictPolicy.ASK,
     val deviceUnlockAvailable: Boolean = false,
     val deviceUnlockOn: Boolean = false,
     val debugTools: Boolean = false,
@@ -216,7 +218,10 @@ class SettingsViewModel @Inject constructor(
     private val deviceTick = MutableStateFlow(0)
 
     val state: StateFlow<SettingsState> = combine(store.changes, deviceTick) { _, _ ->
-        SettingsState(store.autoLockMinutes, store.blockScreenshots, store.weeklyCheck, store.hideSizes, device.isAvailable(), device.isEnabled, store.debugTools)
+        SettingsState(
+            store.autoLockMinutes, store.blockScreenshots, store.weeklyCheck, store.hideSizes, store.nameConflicts,
+            device.isAvailable(), device.isEnabled, store.debugTools,
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
 
     /** Messages read so far by a check or rescan in progress; null when idle. */
@@ -242,6 +247,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setHideSizes(on: Boolean) {
         store.hideSizes = on
+    }
+
+    fun setNameConflicts(policy: NameConflictPolicy) {
+        store.nameConflicts = policy
     }
 
     fun setDebugTools(on: Boolean) {

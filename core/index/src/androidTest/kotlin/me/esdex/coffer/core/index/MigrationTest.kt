@@ -34,8 +34,8 @@ class MigrationTest {
             db.execSQL("INSERT INTO uploads VALUES ('u1', ?, NULL, '', NULL)", arrayOf(byteArrayOf(4, 5)))
             db.execSQL("INSERT INTO sync_state VALUES ('lastAppliedMessageId', 1048576)")
         }
-        // Validates the migrated schema against 9.json.
-        helper.runMigrationsAndValidate(name, 9, true).close()
+        // Validates the migrated schema against 11.json.
+        helper.runMigrationsAndValidate(name, 11, true).close()
 
         // Audit 1, M9: the plain database is turned into an encrypted one, its rows kept.
         val file = context.getDatabasePath(name)
@@ -78,6 +78,11 @@ class MigrationTest {
             index.markOpSent(delete.seq)
             assertEquals(listOf(false, false, true), index.ops().map { it.sent })
             assertEquals(emptyList<Id>(), index.ops().first().deletedFiles)
+            // Version 10: an upload that replaces a file once it is whole (2026-11-19).
+            index.putUpload(PendingUpload("replacing", byteArrayOf(1), null, emptyList(), null, replaces = gone))
+            val replacing = index.uploads().single { it.uploadId == "replacing" }
+            assertEquals(gone, replacing.replaces)
+            index.removeUpload("replacing")
         }
         // Encrypted on disk now: not a plain SQLite file, and not the rows' bytes in the clear.
         assertFalse(RoomVaultIndex.isPlain(file))

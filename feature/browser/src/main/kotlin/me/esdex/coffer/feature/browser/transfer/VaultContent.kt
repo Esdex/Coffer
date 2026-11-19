@@ -44,7 +44,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
-import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.crypto.format.LocalUpload
 import me.esdex.coffer.core.crypto.sodium.Sodium
 import me.esdex.coffer.core.index.FileStatus
@@ -53,8 +52,12 @@ import me.esdex.coffer.core.index.PendingUpload
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.storage.StorageException
+import me.esdex.coffer.core.sync.ConflictDecider
+import me.esdex.coffer.core.sync.Incoming
 import me.esdex.coffer.core.sync.Indexer
 import me.esdex.coffer.core.sync.Maintenance
+import me.esdex.coffer.core.sync.NameConflicts
+import me.esdex.coffer.core.sync.Placed
 import me.esdex.coffer.core.sync.Snapshotter
 import me.esdex.coffer.core.sync.UploadPreparer
 import me.esdex.coffer.core.sync.UploadRunner
@@ -185,6 +188,17 @@ class VaultContent @Inject constructor(
         queuing + queued.flatMap { it.deletedFiles + it.deletedFolders }
     }.stateIn(scope, SharingStarted.Eagerly, emptySet())
 
+    /**
+     * Deletes held for files an upload replaced go into packs here, the one place with the key: once no
+     * such upload is left but failed ones (see [OpQueue.sealHeld]), at once or after an unlock. Left to
+     * the transfer queue, an upload that ended while the vault was locked left them held for good.
+     */
+    private fun CoroutineScope.sealHeldDeletes(keys: VaultKeys) = launch {
+        combine(index.observeOps(), index.observeUploads(), registry.failures) { _, _, failed -> failed.keys }.collect { failed ->
+            if (OpQueue(index).sealHeld(keys, failed, System::currentTimeMillis)) TransferWorker.start(context, registry)
+        }
+    }
+
     /** Messages read so far while catching up, or null when caught up. */
     val catchingUp: StateFlow<Int?> = catchUpFlow.asStateFlow()
 
@@ -215,6 +229,7 @@ class VaultContent @Inject constructor(
         keysFlow.value = keys
         session = scope.launch {
             sweepShareCopies(keys)
+            sealHeldDeletes(keys)
             val storage = telegram.readyStorage(Long.MAX_VALUE) ?: return@launch
             val indexer = Indexer(storage, index, keys)
             val snapshotter = Snapshotter(storage, index, indexer, keys, WorkFiles.snapshot(context), System::currentTimeMillis)
@@ -393,22 +408,47 @@ class VaultContent @Inject constructor(
         }
     }
 
-    class UploadRequest(val uri: Uri, val displayName: String, val mime: String?, val folderId: Id?)
+    data class UploadRequest(val uri: Uri, val displayName: String, val mime: String?, val folderId: Id?, val replaces: Id? = null) {
+        override fun toString(): String = "UploadRequest(folderId=$folderId, replaces=$replaces, name=***)"
+    }
 
-    suspend fun upload(requests: List<UploadRequest>) {
+    /**
+     * Queues [requests], their names settled first against what their folders hold (see [NameConflicts]):
+     * asked about through [decider], which may cancel it all with [ConflictsCancelled].
+     */
+    suspend fun upload(requests: List<UploadRequest>, decider: ConflictDecider) {
+        val keys = keysFlow.value ?: return
+        val conflicts = NameConflicts(VaultTree.of(index, keys), decider)
+        val placed = requests.groupBy { it.folderId }.flatMap { (folderId, group) ->
+            val incoming = group.map { Incoming.File(vaultName(it.displayName, FILE_FALLBACK_NAME), it) }
+            conflicts.place(folderId, incoming).map { (it as Placed.File).let { p -> p.item.copy(displayName = p.name, replaces = p.replaces) } }
+        }
+        queue(placed)
+    }
+
+    private suspend fun queue(requests: List<UploadRequest>) {
         val keys = keysFlow.value ?: return
         for (request in requests) {
             val id = UUID.randomUUID().toString()
             val sealed = keys.local.sealUpload(id, LocalUpload(request.uri.toString(), request.displayName, request.mime, request.folderId))
-            index.putUpload(PendingUpload(id, sealed, null, emptyList(), null))
+            index.putUpload(PendingUpload(id, sealed, null, emptyList(), null, replaces = request.replaces))
         }
         pendingWork.trySend(Unit)
     }
 
-    /** Queues the files the inbox holds into [folderId]; their copies are deleted once uploaded. */
-    suspend fun addShared(folderId: Id?) {
-        val items = inbox.take()
-        upload(items.map { UploadRequest(Uri.fromFile(it.file), it.name, it.mime, folderId) })
+    /**
+     * Queues the files the inbox holds into [folderId]; their copies are deleted once uploaded. Taken from
+     * the inbox only once their names are settled: cancelled, they stay for another try. Returns how many
+     * were queued, skipped ones left out.
+     */
+    suspend fun addShared(folderId: Id?, decider: ConflictDecider): Int {
+        val keys = keysFlow.value ?: return 0
+        val items = (inbox.state.value as? ShareInbox.State.Ready)?.items.orEmpty()
+        val incoming = items.map { Incoming.File(vaultName(it.name, FILE_FALLBACK_NAME), it) }
+        val placed = NameConflicts(VaultTree.of(index, keys), decider).place(folderId, incoming).map { it as Placed.File }
+        inbox.take()
+        queue(placed.map { UploadRequest(Uri.fromFile(it.item.file), it.name, it.item.mime, folderId, it.replaces) })
+        return placed.size
     }
 
     /**
@@ -472,12 +512,9 @@ class VaultContent @Inject constructor(
 
     suspend fun renameFolder(folderId: Id, name: String) = withOps { ops, _, _ -> ops.renameFolder(folderId, name) }
 
-    suspend fun moveFolder(folderId: Id, parentId: Id?) =
-        withOps { ops, keys, _ -> ops.moveFolder(VaultTree.of(index, keys), folderId, parentId) }
 
     suspend fun renameFile(fileId: Id, name: String) = withOps { ops, _, _ -> ops.renameFile(fileId, name) }
 
-    suspend fun moveFile(fileId: Id, folderId: Id?) = withOps { ops, _, _ -> ops.moveFile(fileId, folderId) }
 
     /**
      * Deletes all of them, folders with everything in them, as one batch through the queue of
@@ -502,8 +539,20 @@ class VaultContent @Inject constructor(
         }
     }
 
-    suspend fun moveMany(folderIds: List<Id>, fileIds: List<Id>, destination: Id?) =
-        withOps { ops, keys, _ -> ops.moveMany(VaultTree.of(index, keys), folderIds, fileIds, destination) }
+    /**
+     * Moves them into [destination], names settled first against what it holds (see [NameConflicts]):
+     * asked about through [decider], which may cancel it all. What is there already stays as it is.
+     */
+    suspend fun moveMany(folderIds: List<Id>, fileIds: List<Id>, destination: Id?, decider: ConflictDecider) =
+        withOps { ops, keys, _ ->
+            val tree = VaultTree.of(index, keys)
+            val folders = folderIds.filter { it in tree.folders && tree.parentOf(it) != destination }
+            val files = fileIds.filter { it in tree.files && tree.folderOf(it) != destination }
+            require(destination == null || folders.none { tree.isWithin(destination, it) }) { "folder cannot move into itself" }
+            val incoming = folders.map { NameConflicts.incoming(tree, it) } + files.map { Incoming.File(tree.files.getValue(it).name, it) }
+            val placed = NameConflicts(tree, decider, leaving = (folders + files).toSet()).place(destination, incoming)
+            ops.movePlaced(tree, placed, destination, partsOf = { index.parts(it).values })
+        }
 
     /**
      * Saves decrypted copies into [tree], a folder the user picked: each file, and each folder with
@@ -546,23 +595,21 @@ class VaultContent @Inject constructor(
      * Brings [tree], a folder the user picked on the phone, into the vault under [parentId] with its
      * shape (see [bringIn]), and queues its files. The uploads read them later, maybe after a restart,
      * so the grant on the folder is kept until nothing is left to read (see [releaseFolderGrants]).
-     * Returns how many files were queued.
+     * Names taken where they go are settled first (see [NameConflicts]), asked about through [decider].
+     * Returns how many files the phone folder holds, whether queued or skipped.
      */
-    suspend fun importFolder(tree: Uri, parentId: Id?): Int {
+    suspend fun importFolder(tree: Uri, parentId: Id?, decider: ConflictDecider): Int {
         val resolver = context.contentResolver
         runCatching { resolver.takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         val folder = withContext(Dispatchers.IO) { resolver.readPhoneFolder(tree) }
-        // Every folder as one batch for the queue, their ids known at once; the files follow them into the
-        // transfer queue straight away, which sends the folders first. Nothing waits on Telegram here.
-        val files = withOps { ops, _, _ ->
-            ops.createFolders { create ->
-                bringIn(folder, parentId) { name, parent ->
-                    create(FileNames.fitForImport(name).takeIf(FileNames::isValid) ?: FOLDER_FALLBACK_NAME, parent)
-                }
-            }
+        // Every new folder as one batch for the queue, their ids known at once; the files follow them into
+        // the transfer queue straight away, which sends the folders first. Nothing waits on Telegram here.
+        val files = withOps { ops, keys, _ ->
+            val placed = NameConflicts(VaultTree.of(index, keys), decider).place(parentId, listOf(folder.incoming()))
+            ops.createFolders { create -> bringIn(placed, parentId) { name, parent -> create(name, parent) } }
         } ?: return 0
-        upload(files.map { (file, folderId) -> UploadRequest(file.uri.toUri(), file.name, file.mime, folderId) })
-        return files.size
+        queue(files.map { UploadRequest(it.file.uri.toUri(), it.name, it.file.mime, it.folderId, it.replaces) })
+        return folder.fileCount()
     }
 
     /** A vault file open for reading in place, for the viewers; [close] wipes and lets go of it all. */
@@ -726,7 +773,6 @@ suspend fun releaseFolderGrants(context: Context, index: VaultIndex) {
     }
 }
 
-private const val FOLDER_FALLBACK_NAME = "Folder"
 
 /** How long a delete can be taken back before it goes to Telegram, where it is final. */
 const val UNDO_MILLIS = 6_000L

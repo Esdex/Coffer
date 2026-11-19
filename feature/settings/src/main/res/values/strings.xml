@@ -178,6 +178,15 @@
     <string name="settings_device_prompt">Unlock Coffer with your fingerprint</string>
     <string name="settings_screenshots">Block screenshots</string>
     <string name="settings_screenshots_summary">No screenshots or screen recording, and the app looks blank in recent apps</string>
+    <string name="settings_name_conflicts">When a name is taken</string>
+    <string name="settings_name_conflicts_ask">Ask</string>
+    <string name="settings_name_conflicts_keep_both">Keep both</string>
+    <string name="settings_name_conflicts_skip">Skip</string>
+    <string name="settings_name_conflicts_replace">Replace</string>
+    <string name="settings_name_conflicts_ask_info">Adding or moving something into a folder that already has its name asks what to do.</string>
+    <string name="settings_name_conflicts_keep_both_info">The one coming in gets a number, as in report (1).pdf.</string>
+    <string name="settings_name_conflicts_skip_info">The one coming in is left out; what is there stays.</string>
+    <string name="settings_name_conflicts_replace_info">A file coming in replaces the one there once it is uploaded whole. Folders are merged.</string>
     <string name="settings_hide_sizes">Hide exact file sizes</string>
     <string name="settings_hide_sizes_summary">New uploads are padded inside the encryption, so Telegram cannot tell a file by its exact size. Costs about 1 to 2 percent more traffic and space, a little more for very small files. Files already uploaded stay as they are.</string>
 

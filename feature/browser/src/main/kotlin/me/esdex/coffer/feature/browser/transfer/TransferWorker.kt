@@ -160,7 +160,8 @@ class TransferWorker @AssistedInject constructor(
         // waits until that folder is in Saved Messages. Named after the first one when a run starts, and
         // keeping that name while it runs: named after the first one each time, a run looked new after
         // every operation sent, and a second one started beside it.
-        val queuedOps = index.ops()
+        // Deletes held for files an upload replaced wait here until VaultContent packs them with the key.
+        val queuedOps = OpQueue(index).sendable()
         val ops = queuedOps.firstOrNull()?.let { first ->
             listOf(Item(opsRun ?: opsId(first.seq).also { opsRun = it }, TransferKind.OPS, ready = true))
         }.orEmpty()

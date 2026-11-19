@@ -103,6 +103,15 @@ class VaultStore(private val dir: File, private val sealer: DeviceSealer = Devic
 
         @Synchronized set(value) = updatePrefs { it.setProperty(HIDE_SIZES, value.toString()) }
 
+    /**
+     * What happens when something goes into a folder that already holds its name (decision 2026-11-19):
+     * asked each time by default.
+     */
+    var nameConflicts: NameConflictPolicy
+        @Synchronized get() = NameConflictPolicy.entries.firstOrNull { it.name == prefs().getProperty(NAME_CONFLICTS) } ?: NameConflictPolicy.ASK
+
+        @Synchronized set(value) = updatePrefs { it.setProperty(NAME_CONFLICTS, value.name) }
+
     /** Debug builds: the Debug section of Settings, shown after six taps on the icon in About and the screen lock. */
     var debugTools: Boolean
         @Synchronized get() = prefs().getProperty(DEBUG_TOOLS) == "true"
@@ -141,7 +150,11 @@ class VaultStore(private val dir: File, private val sealer: DeviceSealer = Devic
         const val BLOCK_SCREENSHOTS = "blockScreenshots"
         const val WEEKLY_CHECK = "weeklyCheck"
         const val HIDE_SIZES = "hideSizes"
+        const val NAME_CONFLICTS = "nameConflicts"
         const val DEBUG_TOOLS = "debugTools"
         const val DEFAULT_AUTO_LOCK_MINUTES = 5
     }
 }
+
+/** The setting for a name taken where something goes; for folders, replace means merge. */
+enum class NameConflictPolicy { ASK, KEEP_BOTH, SKIP, REPLACE }

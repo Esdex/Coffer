@@ -62,6 +62,47 @@ class VaultOps(
         queue.enqueue(OpKind.DELETE, messages)
     }
 
+    /**
+     * Moves what [placed] says into [destination] (see [NameConflicts]): renamed where its name was taken,
+     * in place of a file it replaces, or into a folder of the same name, merged. Three batches, in this
+     * order: the replaced files deleted, everything moved, then the folders a merge left empty deleted;
+     * one that kept something skipped stays. Needs [queue].
+     */
+    suspend fun movePlaced(tree: VaultTree, placed: List<Placed<Id>>, destination: Id?, partsOf: suspend (Id) -> Collection<MessageId>) {
+        val queue = checkNotNull(queue) { "moves go through the queue" }
+        val replaced = mutableListOf<Id>()
+        val moves = mutableListOf<Op>()
+        val emptied = mutableListOf<Id>()
+        // A merged folder goes once nothing is left in it: everything in it placed, each folder merged into emptied too.
+        fun visit(items: List<Placed<Id>>, into: Id?) {
+            for (item in items) when (item) {
+                is Placed.File -> {
+                    item.replaces?.let { replaced += it }
+                    moves += Op.FileMove(newId(), clock(), item.item, into)
+                    if (item.name != tree.files.getValue(item.item).name) moves += Op.FileRename(newId(), clock(), item.item, item.name)
+                }
+                is Placed.Folder -> if (item.existing == null) {
+                    require(into == null || !tree.isWithin(into, item.item)) { "folder cannot move into itself" }
+                    moves += Op.FolderMove(newId(), clock(), item.item, into)
+                    if (item.name != tree.folders.getValue(item.item).name) moves += Op.FolderRename(newId(), clock(), item.item, item.name)
+                } else {
+                    visit(item.children, item.existing)
+                    val placedHere = item.children.map { it.item }.toSet()
+                    val inside = tree.childFolders(item.item) + tree.childFiles(item.item)
+                    val childrenEmptied = item.children.filterIsInstance<Placed.Folder<Id>>().filter { it.existing != null }.all { it.item in emptied }
+                    if (placedHere.containsAll(inside) && childrenEmptied) emptied += item.item
+                }
+            }
+        }
+        visit(placed, destination)
+        if (replaced.isNotEmpty()) deleteMany(tree, emptyList(), replaced, partsOf)
+        send(OpKind.MOVE, moves)
+        val removals = keys.meta.packOps(emptied.map { Op.FolderDelete(newId(), clock(), it) }).map { pack ->
+            OpMessage(keys.meta.encodeOpPack(pack), pack.size, deletedFolders = pack.map { (it as Op.FolderDelete).folderId })
+        }
+        queue.enqueue(OpKind.DELETE, removals)
+    }
+
     private suspend fun sendNow(op: Op) {
         storage.sendText(keys.meta.encodeOp(op))
     }

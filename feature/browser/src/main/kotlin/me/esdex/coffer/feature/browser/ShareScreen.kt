@@ -37,6 +37,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.index.VaultIndex
+import me.esdex.coffer.core.sync.ConflictsCancelled
+import me.esdex.coffer.core.sync.Decision
 import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.ui.components.CofferScaffold
 import me.esdex.coffer.core.ui.components.EmptyStateView
@@ -47,6 +49,7 @@ import me.esdex.coffer.core.ui.components.OperationLoading
 import me.esdex.coffer.core.ui.components.SettingsGroup
 import me.esdex.coffer.core.ui.components.TypeTile
 import me.esdex.coffer.core.ui.components.fileTypeIcon
+import me.esdex.coffer.core.vault.VaultStore
 import me.esdex.coffer.feature.browser.transfer.ShareInbox
 import me.esdex.coffer.feature.browser.transfer.VaultContent
 import javax.inject.Inject
@@ -55,8 +58,16 @@ import javax.inject.Inject
 class ShareViewModel @Inject constructor(
     private val inbox: ShareInbox,
     private val content: VaultContent,
+    private val store: VaultStore,
     index: VaultIndex,
 ) : ViewModel() {
+
+    private val prompt = ConflictPrompt()
+
+    /** A shared file whose name the chosen folder already has, waiting for the user's word. */
+    val conflict: StateFlow<ConflictPrompt.Asking?> = prompt.asking
+
+    fun answerConflict(decision: Decision<*>?) = prompt.answer(decision)
 
     val state: StateFlow<ShareInbox.State> = inbox.state
 
@@ -66,11 +77,13 @@ class ShareViewModel @Inject constructor(
         VaultTree(folders.mapNotNull { f -> keys.local.openFolder(f.folderId, f.sealedMeta)?.let { f.folderId to it } }.toMap(), emptyMap())
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** Left unanswered, a question about a taken name keeps the screen as it is, for another try. */
     fun add(folderId: Id?, then: (Int) -> Unit) {
-        val count = (inbox.state.value as? ShareInbox.State.Ready)?.items?.size ?: 0
         viewModelScope.launch {
-            content.addShared(folderId)
-            then(count)
+            try {
+                then(content.addShared(folderId, prompt.decider(store.nameConflicts)))
+            } catch (_: ConflictsCancelled) {
+            }
         }
     }
 
@@ -83,6 +96,11 @@ fun ShareScreen(onDone: (added: Int) -> Unit, modifier: Modifier = Modifier, vie
     val context = LocalContext.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     val tree by viewModel.tree.collectAsStateWithLifecycle()
+    val conflict by viewModel.conflict.collectAsStateWithLifecycle()
+    conflict?.let { asking ->
+        val top = stringResource(R.string.browser_root)
+        NameConflictDialog(asking, folderName = { id -> id?.let { tree?.folders?.get(it)?.name } ?: top }, onAnswer = viewModel::answerConflict)
+    }
     // Ids are not Parcelable; the chosen folder survives rotation as its bytes.
     var atBytes by rememberSaveable { mutableStateOf<ByteArray?>(null) }
     val at = atBytes?.let(Id::of)?.takeIf { tree?.folders?.containsKey(it) == true }
