@@ -2,14 +2,15 @@ package me.esdex.coffer.core.sync
 
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.Op
+import me.esdex.coffer.core.index.OpMessage
 import me.esdex.coffer.core.storage.StorageBackend
 
 /**
  * Sends the operation log (SPEC §4.3). Nothing here touches the index: the indexer applies each
  * operation when its message comes back, in message order like everyone else's.
  *
- * With [queue], creating, renaming and moving go into it, for the transfer queue to send and show,
- * rather than out at once (see [OpQueue]); deletes still go out at once.
+ * Creating, renaming and moving go in packs (SPEC §4.6), into [queue] if there is one, for the transfer
+ * queue to send and show, rather than out at once (see [OpQueue]); deletes still go out at once, alone.
  */
 class VaultOps(
     private val storage: StorageBackend,
@@ -19,9 +20,13 @@ class VaultOps(
 ) {
     private fun newId() = Id.random(keys.sodium)
 
+    /**
+     * As few messages as hold [ops] (SPEC §4.6): Telegram lets about 20 into a chat before a pause of
+     * minutes, and a folder brought in with its subfolders was one message a folder.
+     */
     private suspend fun send(kind: OpKind, ops: List<Op>) {
-        val captions = ops.map(keys.meta::encodeOp)
-        if (queue != null) queue.enqueue(kind, captions) else captions.forEach { storage.sendText(it) }
+        val messages = keys.meta.packOps(ops).map { OpMessage(keys.meta.encodeOpPack(it), it.size) }
+        if (queue != null) queue.enqueue(kind, messages) else messages.forEach { storage.sendText(it.caption) }
     }
 
     private suspend fun sendNow(op: Op) {

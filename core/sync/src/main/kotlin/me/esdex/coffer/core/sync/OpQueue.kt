@@ -1,5 +1,6 @@
 package me.esdex.coffer.core.sync
 
+import me.esdex.coffer.core.index.OpMessage
 import me.esdex.coffer.core.index.PendingOp
 import me.esdex.coffer.core.index.VaultIndex
 import me.esdex.coffer.core.storage.StorageBackend
@@ -16,29 +17,30 @@ enum class OpKind { CREATE_FOLDERS, RENAME, MOVE }
  * they come (measured on 2026-11-19: 17 in 2.3 s, then FLOOD_WAIT 138 s; 20 at one a second, then 283 s;
  * 20 at one every 3 s, then 238 s). So the pause is waited out, and shown, rather than paced away. Before
  * this queue, a folder of folders brought in from the phone stalled for minutes with nothing on screen,
- * and the rest of it was lost if the app was closed meanwhile.
+ * and the rest of it was lost if the app was closed meanwhile. Packs (SPEC §4.6) make that pause rare:
+ * one message holds 8 to some 50 operations.
  */
 class OpQueue(private val index: VaultIndex) {
 
-    /** Queues [captions], encrypted operations, as one batch of [kind]. */
-    suspend fun enqueue(kind: OpKind, captions: List<String>) {
-        if (captions.isEmpty()) return
-        index.putOps(UUID.randomUUID().toString(), kind.name, captions)
+    /** Queues [messages], encrypted operations, as one batch of [kind]. */
+    suspend fun enqueue(kind: OpKind, messages: List<OpMessage>) {
+        if (messages.isEmpty()) return
+        index.putOps(UUID.randomUUID().toString(), kind.name, messages)
     }
 
     /**
      * Sends every queued operation, oldest first, [pause] between two. Each leaves the queue once
      * Telegram has it: sent twice after a crash in between, the second is the same op_id and is not
      * applied again (audit 1, M4). A FLOOD_WAIT or any other failure is thrown with the queue as it is,
-     * for the caller to wait out and call again. [onSent] gets what is left.
+     * for the caller to wait out and call again. [onSent] gets the message sent and what is left.
      */
-    suspend fun drain(storage: StorageBackend, pause: suspend () -> Unit, onSent: (left: List<PendingOp>) -> Unit = {}) {
+    suspend fun drain(storage: StorageBackend, pause: suspend () -> Unit, onSent: (sent: PendingOp, left: List<PendingOp>) -> Unit = { _, _ -> }) {
         while (true) {
             val next = index.ops().firstOrNull() ?: return
             storage.sendText(next.caption)
             index.removeOp(next.seq)
             val left = index.ops()
-            onSent(left)
+            onSent(next, left)
             if (left.isEmpty()) return
             pause()
         }

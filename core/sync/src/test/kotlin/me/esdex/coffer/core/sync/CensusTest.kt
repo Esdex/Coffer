@@ -38,6 +38,13 @@ class CensusTest {
     }
 
     @Test
+    fun aPackOfOperationsCountsAsOperations() = runBlocking {
+        post(MessageContent.Text("coffer:v3:ops:pack"))
+        assertEquals(Census.Tally(1, 18), cloud.device().census().operations)
+        assertEquals(0, cloud.device().census().ownMessages)
+    }
+
+    @Test
     fun aTextCountsItsBytesNotItsCharacters() = runBlocking {
         // "Ж" is two bytes in UTF-8.
         post(MessageContent.Text("coffer:v1:op:Ж"))
@@ -47,11 +54,12 @@ class CensusTest {
     @Test
     fun theUsersOwnLookalikesAreTheirs() = runBlocking {
         post(MessageContent.Text("coffer:v3:op:x"))
+        post(MessageContent.Text("coffer:v2:ops:x"))
         post(MessageContent.Text("coffer:v1:unknown:x"))
         post(MessageContent.Text("coffer:v1:op"))
         post(MessageContent.Blob("Coffer:v1:blob:x", "x", 10))
         val census = cloud.device().census()
-        assertEquals(4, census.ownMessages)
+        assertEquals(5, census.ownMessages)
         assertEquals(Census.Tally(), census.coffer)
     }
 

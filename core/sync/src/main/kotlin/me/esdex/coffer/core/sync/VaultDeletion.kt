@@ -125,8 +125,8 @@ class VaultDeletion(private val storage: StorageBackend, private val keys: Vault
     }
 
     private fun opensOp(text: String): Boolean {
-        val record = Captions.parse(text)?.takeIf { it.kind == RecordKind.OP } ?: return false
-        return runCatching { keys.meta.decodeOp(record) != null }.getOrDefault(false)
+        val record = Captions.parse(text) ?: return false
+        return runCatching { keys.meta.decodeOps(record) != null }.getOrDefault(false)
     }
 
     // A header carries no key of its own to check: it is this vault's by its master_id.

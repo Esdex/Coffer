@@ -57,6 +57,7 @@ object VaultHeaderCodec {
  * version 1, P is the CBOR; in version 2 (§4.5) it is a two-byte length, the CBOR and zeros up to a
  * fixed size per kind, so a caption shows neither the length of a name nor which part of a file it is.
  * Both versions are read; [writeVersion] is what is written, 2 but for the version 1 test vectors.
+ * Packs of operations (§4.6) are version 3 whatever [writeVersion] is: framed like version 2, one size.
  *
  * Decoders return null for anything that does not authenticate or breaks the format: such a record is
  * either from another vault or damaged, and sync treats both the same way.
@@ -146,9 +147,56 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey, priv
         }
     }
 
-    fun encodeOp(op: Op): String {
+    fun encodeOp(op: Op): String = seal(RecordKind.OP, opCbor(op))
+
+    fun decodeOp(record: RawRecord): Op? = open(RecordKind.OP, record)?.cbor?.let(::opOf)
+
+    /**
+     * [ops] split, in order, into as few packs (SPEC §4.6) as hold them: from 8 operations with
+     * 255-byte names each to some 50 deletes in one.
+     */
+    fun packOps(ops: List<Op>): List<List<Op>> {
+        val packs = mutableListOf<List<Op>>()
+        var pack = mutableListOf<Op>()
+        var bytes = 0
+        for (op in ops) {
+            val size = opCbor(op).size
+            if (pack.isNotEmpty() && packSize(pack.size + 1, bytes + size) > CofferFormat.V3_OPS_PAYLOAD) {
+                packs += pack
+                pack = mutableListOf()
+                bytes = 0
+            }
+            pack += op
+            bytes += size
+        }
+        if (pack.isNotEmpty()) packs += pack
+        return packs
+    }
+
+    /** One message of [ops], applied in this order (SPEC §4.6); [packOps] says which go together. */
+    fun encodeOpPack(ops: List<Op>): String {
+        require(ops.isNotEmpty()) { "a pack holds at least one operation" }
+        require(ops.distinctBy { it.opId }.size == ops.size) { "an operation goes into a pack once" }
+        return seal(RecordKind.OPS, packCbor(ops.map(::opCbor)), Captions.V3)
+    }
+
+    /** The operations of a pack in their order, or null if any one of them is not valid: all or none. */
+    fun decodeOpPack(record: RawRecord): List<Op>? {
+        val items = open(RecordKind.OPS, record)?.cbor?.let(::packItems) ?: return null
+        val ops = items.map { opOf(it) ?: return null }
+        return ops.takeIf { it.distinctBy(Op::opId).size == it.size }
+    }
+
+    /** A single operation or a pack, as the operations in it; null for anything else. */
+    fun decodeOps(record: RawRecord): List<Op>? = when (record.kind) {
+        RecordKind.OP -> decodeOp(record)?.let(::listOf)
+        RecordKind.OPS -> decodeOpPack(record)
+        else -> null
+    }
+
+    private fun opCbor(op: Op): ByteArray {
         val id = op.opId.toByteArray()
-        val cbor = when (op) {
+        return when (op) {
             is Op.FolderCreate -> CanonicalCbor.encode(
                 FolderCreateCbor.serializer(),
                 FolderCreateCbor(id, op.type, op.ts, op.folderId.toByteArray(), op.parentId?.toByteArray(), op.name),
@@ -178,11 +226,9 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey, priv
                 FileDeleteCbor(id, op.type, op.ts, op.fileId.toByteArray()),
             )
         }
-        return seal(RecordKind.OP, cbor)
     }
 
-    fun decodeOp(record: RawRecord): Op? {
-        val bytes = open(RecordKind.OP, record)?.cbor ?: return null
+    private fun opOf(bytes: ByteArray): Op? {
         val type = CanonicalCbor.sniff(OpHeadCbor.serializer(), bytes)?.type ?: return null
         return validated {
             when (type) {
@@ -232,11 +278,11 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey, priv
         }
     }
 
-    private fun seal(kind: RecordKind, cbor: ByteArray): String {
-        val plain = if (writeVersion == Captions.V2) framed(kind, cbor) else cbor
+    private fun seal(kind: RecordKind, cbor: ByteArray, version: Int = writeVersion): String {
+        val plain = if (version == Captions.V1) cbor else framed(kind, cbor)
         val nonce = sodium.randomBytes(CofferFormat.NONCE_BYTES)
-        val sealed = metaKey.withBytes { sodium.aeadEncrypt(plain, AssociatedData.meta(kind, writeVersion), nonce, it) }
-        return Captions.format(kind, Base64Url.encode(nonce + sealed), writeVersion)
+        val sealed = metaKey.withBytes { sodium.aeadEncrypt(plain, AssociatedData.meta(kind, version), nonce, it) }
+        return Captions.format(kind, Base64Url.encode(nonce + sealed), version)
     }
 
     private class Opened(val version: Int, val cbor: ByteArray)
@@ -248,7 +294,7 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey, priv
         val nonce = raw.copyOfRange(0, CofferFormat.NONCE_BYTES)
         val body = raw.copyOfRange(CofferFormat.NONCE_BYTES, raw.size)
         val plain = metaKey.withBytes { sodium.aeadDecrypt(body, AssociatedData.meta(kind, record.version), nonce, it) } ?: return null
-        val cbor = if (record.version == Captions.V2) unframed(kind, plain) ?: return null else plain
+        val cbor = if (record.version == Captions.V1) plain else unframed(kind, plain) ?: return null
         return Opened(record.version, cbor)
     }
 
@@ -276,7 +322,92 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey, priv
         RecordKind.BLOB -> CofferFormat.V2_BLOB_PAYLOAD
         RecordKind.OP -> CofferFormat.V2_OP_PAYLOAD
         RecordKind.INDEX -> CofferFormat.V2_INDEX_PAYLOAD
+        RecordKind.OPS -> CofferFormat.V3_OPS_PAYLOAD
         RecordKind.VAULT -> throw IllegalArgumentException("the vault header is not encrypted")
+    }
+}
+
+/**
+ * A pack's CBOR, SPEC §4.6: `{1: [op, …]}`, each operation the map it is alone (§4.3), so a pack is
+ * built from and split into those maps' bytes, and each one is then read as strictly as alone.
+ */
+private fun packCbor(ops: List<ByteArray>): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    out.write(PACK_START)
+    out.write(arrayHead(ops.size))
+    for (op in ops) out.write(op)
+    return out.toByteArray()
+}
+
+private fun packSize(count: Int, opBytes: Int): Int = PACK_START.size + arrayHead(count).size + opBytes
+
+/** The bytes of each operation in a pack, or null unless the pack is exactly `{1: [one or more items]}`. */
+private fun packItems(cbor: ByteArray): List<ByteArray>? {
+    if (cbor.size < PACK_START.size + 1 || !cbor.copyOf(PACK_START.size).contentEquals(PACK_START)) return null
+    val at = PACK_START.size
+    val head = cbor[at].toInt() and 0xFF
+    if (head ushr 5 != 4) return null
+    val (count, headSize) = when (val info = head and 0x1F) {
+        in 0..23 -> info to 1
+        24 -> (cbor.getOrNull(at + 1)?.toInt()?.and(0xFF) ?: return null) to 2
+        else -> return null
+    }
+    // An empty pack is not one, and the count has its shortest head, as canonical CBOR has it.
+    if (count == 0 || arrayHead(count).size != headSize) return null
+    var next = at + headSize
+    val items = ArrayList<ByteArray>(count)
+    repeat(count) {
+        val end = CborWalk.end(cbor, next) ?: return null
+        items += cbor.copyOfRange(next, end)
+        next = end
+    }
+    return items.takeIf { next == cbor.size }
+}
+
+private fun arrayHead(count: Int): ByteArray = when {
+    count < 24 -> byteArrayOf((0x80 or count).toByte())
+    count < 256 -> byteArrayOf(0x98.toByte(), count.toByte())
+    else -> throw IllegalArgumentException("more operations than a pack holds")
+}
+
+// Map of one entry, key 1.
+private val PACK_START = byteArrayOf(0xA1.toByte(), 0x01)
+
+/**
+ * Where one CBOR item ends, only to find the edges of the operations in a pack: what is inside is then
+ * decoded strictly. Null for indefinite lengths, reserved values, nesting past any operation's, or an
+ * item running past the end.
+ */
+internal object CborWalk {
+    private const val MAX_DEPTH = 4
+
+    fun end(bytes: ByteArray, at: Int, depth: Int = 0): Int? {
+        if (depth > MAX_DEPTH || at !in bytes.indices) return null
+        val head = bytes[at].toInt() and 0xFF
+        val major = head ushr 5
+        var next = at + 1
+        val argument = when (val info = head and 0x1F) {
+            in 0..23 -> info.toLong()
+            in 24..27 -> {
+                val length = 1 shl (info - 24)
+                if (next + length > bytes.size) return null
+                var value = 0L
+                repeat(length) { value = (value shl 8) or (bytes[next++].toLong() and 0xFF) }
+                value
+            }
+            else -> return null
+        }
+        return when (major) {
+            0, 1, 7 -> next
+            2, 3 -> if (argument !in 0..(bytes.size - next).toLong()) null else next + argument.toInt()
+            4, 5 -> {
+                val items = if (major == 5) argument * 2 else argument
+                if (items !in 0..bytes.size.toLong()) return null
+                for (i in 0 until items) next = end(bytes, next, depth + 1) ?: return null
+                next
+            }
+            else -> end(bytes, next, depth + 1)
+        }
     }
 }
 

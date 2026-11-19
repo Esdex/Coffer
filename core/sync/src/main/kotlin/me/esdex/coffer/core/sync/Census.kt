@@ -36,7 +36,7 @@ data class Census(val parts: Tally, val operations: Tally, val snapshots: Tally,
                 }
                 when (Captions.parse(text)?.kind) {
                     RecordKind.BLOB -> parts += bytes
-                    RecordKind.OP -> operations += bytes
+                    RecordKind.OP, RecordKind.OPS -> operations += bytes
                     RecordKind.INDEX -> snapshots += bytes
                     RecordKind.VAULT -> headers += bytes
                     null -> own++

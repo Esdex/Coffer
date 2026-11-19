@@ -141,9 +141,10 @@ class InMemoryVaultIndex : VaultIndex {
 
     override fun observeOps(): Flow<List<PendingOp>> = state.map { it.ops }
     override suspend fun ops(): List<PendingOp> = state.value.ops
-    override suspend fun putOps(batch: String, kind: String, captions: List<String>) = update { s ->
-        val added = captions.mapIndexed { i, caption -> PendingOp(s.nextOp + i, batch, captions.size, kind, caption) }
-        s.copy(ops = s.ops + added, nextOp = s.nextOp + captions.size)
+    override suspend fun putOps(batch: String, kind: String, messages: List<OpMessage>) = update { s ->
+        val size = messages.sumOf { it.opCount }
+        val added = messages.mapIndexed { i, m -> PendingOp(s.nextOp + i, batch, size, kind, m.caption, m.opCount) }
+        s.copy(ops = s.ops + added, nextOp = s.nextOp + messages.size)
     }
     override suspend fun removeOp(seq: Long) = update { s -> s.copy(ops = s.ops.filter { it.seq != seq }) }
 

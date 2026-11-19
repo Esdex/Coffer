@@ -35,28 +35,35 @@ class Compactor(private val storage: StorageBackend, private val keys: VaultKeys
         return emptySet()
     }
 
+    /** One operation and the message it came in, alone or in a pack (SPEC §4.6). */
+    private data class Entry(val message: StoredMessage, val op: Op)
+
+    /** Messages of operations that can go: a pack only when every operation in it can (SPEC §4.6). */
     internal fun candidates(history: List<StoredMessage>, beforeId: MessageId, beforeDate: Long, folderMovesSupersede: Boolean): Set<MessageId> {
-        val ops = history.mapNotNull { message ->
-            val text = (message.content as? MessageContent.Text)?.text ?: return@mapNotNull null
-            val record = Captions.parse(text)?.takeIf { it.kind == RecordKind.OP } ?: return@mapNotNull null
-            keys.meta.decodeOp(record)?.let { message to it }
+        val ops = history.flatMap { message ->
+            val text = (message.content as? MessageContent.Text)?.text ?: return@flatMap emptyList()
+            val record = Captions.parse(text) ?: return@flatMap emptyList()
+            keys.meta.decodeOps(record)?.map { Entry(message, it) }.orEmpty()
         }
         val filesWithParts = history.mapNotNullTo(HashSet()) { message ->
             val caption = (message.content as? MessageContent.Blob)?.caption ?: return@mapNotNullTo null
             Captions.parse(caption)?.takeIf { it.kind == RecordKind.BLOB }?.let { keys.meta.decodeBlob(it)?.fileId }
         }
-        val deletedFiles = ops.mapNotNullTo(HashSet()) { (it.second as? Op.FileDelete)?.fileId }
-        val deletedFolders = ops.mapNotNullTo(HashSet()) { (it.second as? Op.FolderDelete)?.folderId }
-        val firstCreate = HashMap<Id, MessageId>()
-        val lastOfKind = HashMap<Pair<String, Id>, MessageId>()
-        for ((message, op) in ops) {
-            if (op is Op.FolderCreate) firstCreate.putIfAbsent(op.folderId, message.id)
-            lastOfKind[op.type to target(op)] = message.id
+        val deletedFiles = ops.mapNotNullTo(HashSet()) { (it.op as? Op.FileDelete)?.fileId }
+        val deletedFolders = ops.mapNotNullTo(HashSet()) { (it.op as? Op.FolderDelete)?.folderId }
+        // Entries, not message ids: two operations of a pack on the same folder are not the same one.
+        val firstCreate = HashMap<Id, Entry>()
+        val lastOfKind = HashMap<Pair<String, Id>, Entry>()
+        for (entry in ops) {
+            val op = entry.op
+            if (op is Op.FolderCreate) firstCreate.putIfAbsent(op.folderId, entry)
+            lastOfKind[op.type to target(op)] = entry
         }
 
-        val removable = HashSet<MessageId>()
-        for ((message, op) in ops) {
-            val superseded = lastOfKind[op.type to target(op)] != message.id
+        val going = HashSet<Entry>()
+        for (entry in ops) {
+            val (message, op) = entry
+            val superseded = lastOfKind[op.type to target(op)] !== entry
             val goes = when (op) {
                 is Op.FileRename, is Op.FileMove -> {
                     val fileId = target(op)
@@ -64,20 +71,24 @@ class Compactor(private val storage: StorageBackend, private val keys: VaultKeys
                 }
                 // Once no part is left, a rescan has nothing for the delete to remove.
                 is Op.FileDelete -> op.fileId !in filesWithParts
-                is Op.FolderCreate -> op.folderId in deletedFolders || firstCreate[op.folderId] != message.id
+                is Op.FolderCreate -> op.folderId in deletedFolders || firstCreate[op.folderId] !== entry
                 is Op.FolderRename -> op.folderId in deletedFolders || op.folderId !in firstCreate || superseded
                 is Op.FolderMove -> op.folderId in deletedFolders || op.folderId !in firstCreate || (folderMovesSupersede && superseded)
                 is Op.FolderDelete -> false
             }
-            if (goes && message.id < beforeId && message.date < beforeDate) removable += message.id
+            if (goes && message.id < beforeId && message.date < beforeDate) going += entry
         }
+        val byMessage = ops.groupBy { it.message.id }
+        fun removable() = byMessage.filterValues { entries -> entries.all { it in going } }.keys
         // A folder.delete may go only with every folder.create of its folder, or the folder would come back.
-        for ((message, op) in ops) {
+        val removable = removable()
+        for (entry in ops) {
+            val (message, op) = entry
             if (op !is Op.FolderDelete || message.id >= beforeId || message.date >= beforeDate) continue
-            val creates = ops.filter { (m, o) -> o is Op.FolderCreate && o.folderId == op.folderId }.map { it.first.id }
-            if (creates.all { it in removable }) removable += message.id
+            val creates = ops.filter { (_, o) -> o is Op.FolderCreate && o.folderId == op.folderId }.map { it.message.id }
+            if (creates.all { it in removable }) going += entry
         }
-        return removable
+        return removable()
     }
 
     private fun target(op: Op): Id = when (op) {

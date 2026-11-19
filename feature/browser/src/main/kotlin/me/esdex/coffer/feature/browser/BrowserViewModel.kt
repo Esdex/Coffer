@@ -379,7 +379,8 @@ class BrowserViewModel @Inject constructor(
         val ops = queued.ops.groupBy { it.batch }.values.mapIndexed { i, batch ->
             val first = batch.first()
             val kind = runCatching { OpKind.valueOf(first.kind) }.getOrDefault(OpKind.MOVE)
-            val sent = first.batchSize - batch.size
+            // Operations, not messages: a pack holds several (SPEC §4.6).
+            val sent = first.batchSize - batch.sumOf { it.opCount }
             TransferItem(
                 "batch-${first.batch}",
                 isUpload = true,

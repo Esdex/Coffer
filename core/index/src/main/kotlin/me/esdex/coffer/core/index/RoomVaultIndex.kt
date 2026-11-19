@@ -83,6 +83,8 @@ internal class PendingOpRow(
     val batchSize: Int,
     val kind: String,
     val caption: String,
+    // Version 3 packs several in one message (2026-11-19); before, each was alone.
+    @ColumnInfo(defaultValue = "1") val opCount: Int = 1,
 )
 
 @Entity(tableName = "downloads")
@@ -169,12 +171,12 @@ internal interface IndexDao {
         SnapshotRow::class, SyncRow::class, UploadRow::class, DownloadRow::class, AppliedOpRow::class,
         PendingOpRow::class,
     ],
-    version = 7,
+    version = 8,
     // Only new tables and columns so far: the queue of transfers survives the update.
     autoMigrations = [
         AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5), AutoMigration(from = 5, to = 6),
-        AutoMigration(from = 6, to = 7),
+        AutoMigration(from = 6, to = 7), AutoMigration(from = 7, to = 8),
     ],
 )
 internal abstract class IndexDatabase : RoomDatabase() {
@@ -303,12 +305,14 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         Unit
     }
 
-    private fun PendingOpRow.pending() = PendingOp(seq, batch, batchSize, kind, caption)
+    private fun PendingOpRow.pending() = PendingOp(seq, batch, batchSize, kind, caption, opCount)
 
     override fun observeOps(): Flow<List<PendingOp>> = dao.observeOps().map { rows -> rows.map { it.pending() } }
     override suspend fun ops(): List<PendingOp> = dao.ops().map { it.pending() }
-    override suspend fun putOps(batch: String, kind: String, captions: List<String>) =
-        dao.insertOps(captions.map { PendingOpRow(batch = batch, batchSize = captions.size, kind = kind, caption = it) })
+    override suspend fun putOps(batch: String, kind: String, messages: List<OpMessage>) {
+        val size = messages.sumOf { it.opCount }
+        dao.insertOps(messages.map { PendingOpRow(batch = batch, batchSize = size, kind = kind, caption = it.caption, opCount = it.opCount) })
+    }
     override suspend fun removeOp(seq: Long) = dao.deleteOp(seq)
 
     override fun observeUploads(): Flow<List<PendingUpload>> = dao.observeUploads().map { rows -> rows.map { it.pending() } }

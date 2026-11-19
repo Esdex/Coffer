@@ -258,13 +258,12 @@ class TransferWorker @AssistedInject constructor(
 
     private suspend fun sendQueuedOps(id: String): Boolean {
         val storage = telegram.readyStorage() ?: throw StorageException("Telegram is not ready")
-        var total = index.ops().size
-        report(id, 0, total.toLong(), TransferStage.MOVING)
-        OpQueue(index).drain(storage, pause = { delay(OpQueue.PACE_MILLIS) }) { left ->
-            // Some may have been added meanwhile.
-            val sent = total - left.size
-            total = maxOf(total, sent + left.size)
-            report(id, sent.toLong(), total.toLong(), TransferStage.MOVING)
+        // Operations, not messages: a pack holds several (SPEC §4.6). Some may be added meanwhile.
+        var sent = 0L
+        report(id, 0, index.ops().sumOf { it.opCount }.toLong(), TransferStage.MOVING)
+        OpQueue(index).drain(storage, pause = { delay(OpQueue.PACE_MILLIS) }) { message, left ->
+            sent += message.opCount
+            report(id, sent, sent + left.sumOf { it.opCount }, TransferStage.MOVING)
         }
         return true
     }

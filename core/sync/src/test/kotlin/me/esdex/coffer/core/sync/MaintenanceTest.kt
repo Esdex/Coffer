@@ -429,6 +429,56 @@ class MaintenanceTest {
     }
 
     @Test
+    fun aPackGoesOnlyOnceEveryOperationInItCan() = runBlocking {
+        val here = device()
+        val (a, b) = here.ops.createFolders { create -> create("A", null) to create("B", null) }
+        val pack = lastId()
+        here.indexer.catchUp()
+        val deleteA = here.op { ops.deleteFolder(tree(), a) { error("empty") } }
+        here.upload("last.txt", bytes("l"))
+        here.indexer.catchUp()
+        clock += days(31)
+        // B is still there, so the pack stays, and with it A's delete, or A would come back.
+        assertEquals(0, here.maintenance.run().operationsCompacted)
+        assertTrue(present(pack))
+        assertTrue(present(deleteA))
+
+        // Once B is deleted too, both go; B's delete is newer than the snapshot kept from the first run.
+        val deleteB = here.op { ops.deleteFolder(tree(), b) { error("empty") } }
+        here.upload("later.txt", bytes("l"))
+        here.indexer.catchUp()
+        val before = here.view()
+        clock += days(31)
+        assertEquals(2, here.maintenance.run().operationsCompacted)
+        assertFalse(present(pack))
+        assertFalse(present(deleteA))
+        assertTrue(present(deleteB))
+        val fresh = device()
+        fresh.indexer.rescan()
+        assertEquals(before, fresh.view())
+    }
+
+    @Test
+    fun anEarlierRenameInAPackIsSupersededButThePackStaysForTheLaterOne() = runBlocking {
+        val here = device()
+        val fileId = here.upload("a.txt", bytes("a"))
+        val stale = here.op { ops.renameFile(fileId, "b.txt") }
+        here.storage.sendText(
+            here.keys.meta.encodeOpPack(listOf(Op.FileRename(Id.random(sodium), 2, fileId, "c.txt"), Op.FileRename(Id.random(sodium), 3, fileId, "d.txt"))),
+        )
+        val pack = lastId()
+        here.upload("last.txt", bytes("l"))
+        here.indexer.catchUp()
+        clock += days(31)
+        assertEquals(1, here.maintenance.run().operationsCompacted)
+        assertFalse(present(stale))
+        assertTrue(present(pack))
+        val fresh = device()
+        fresh.indexer.rescan()
+        assertEquals(setOf("d.txt", "last.txt"), fresh.view().files.map { it.first }.toSet())
+    }
+
+    @Test
     fun opsOnADeletedFileGoEvenWhileItsPartsRemainButTheDeleteStays() = runBlocking {
         // Maintenance deletes such parts first, so only the rules themselves can show this case.
         val here = device()

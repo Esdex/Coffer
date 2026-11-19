@@ -8,6 +8,9 @@ enum class RecordKind(val tag: String) {
     BLOB("blob"),
     OP("op"),
     INDEX("index"),
+
+    /** Several operations in one message, version 3 only (SPEC §4.6). */
+    OPS("ops"),
 }
 
 /** An app message split into format version, kind and body, before any decoding. */
@@ -15,15 +18,23 @@ data class RawRecord(val kind: RecordKind, val body: String, val version: Int = 
 
 /**
  * The `coffer:v<version>:<kind>:<body>` prefix on captions and texts, SPEC §4. Version 2 (§4.5) hides
- * sizes; the vault header has only version 1.
+ * sizes; the vault header has only version 1; version 3 (§4.6) has only packs of operations, and they
+ * have only version 3.
  */
 object Captions {
     const val V1 = 1
     const val V2 = 2
+    const val V3 = 3
 
     fun format(kind: RecordKind, body: String, version: Int = V1): String {
-        require(version == V1 || (version == V2 && kind != RecordKind.VAULT)) { "no such version of ${kind.tag}" }
+        require(exists(kind, version)) { "no such version of ${kind.tag}" }
         return "coffer:v$version:${kind.tag}:$body"
+    }
+
+    private fun exists(kind: RecordKind, version: Int): Boolean = when (kind) {
+        RecordKind.VAULT -> version == V1
+        RecordKind.OPS -> version == V3
+        else -> version == V1 || version == V2
     }
 
     /**
@@ -35,13 +46,14 @@ object Captions {
         val version = when {
             text.startsWith("coffer:v1:") -> V1
             text.startsWith("coffer:v2:") -> V2
+            text.startsWith("coffer:v3:") -> V3
             else -> return null
         }
         val rest = text.substring("coffer:v1:".length)
         val colon = rest.indexOf(':')
         if (colon < 0) return null
         val kind = RecordKind.entries.firstOrNull { it.tag == rest.substring(0, colon) } ?: return null
-        if (kind == RecordKind.VAULT && version != V1) return null
+        if (!exists(kind, version)) return null
         return RawRecord(kind, rest.substring(colon + 1), version)
     }
 }

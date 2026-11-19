@@ -32,8 +32,8 @@ class MigrationTest {
             db.execSQL("INSERT INTO uploads VALUES ('u1', ?, NULL, '', NULL)", arrayOf(byteArrayOf(4, 5)))
             db.execSQL("INSERT INTO sync_state VALUES ('lastAppliedMessageId', 1048576)")
         }
-        // Validates the migrated schema against 7.json.
-        helper.runMigrationsAndValidate(name, 7, true).close()
+        // Validates the migrated schema against 8.json.
+        helper.runMigrationsAndValidate(name, 8, true).close()
 
         // Audit 1, M9: the plain database is turned into an encrypted one, its rows kept.
         val file = context.getDatabasePath(name)
@@ -59,10 +59,12 @@ class MigrationTest {
             index.replaceContent(IndexContent.EMPTY)
             assertEquals(2097152L, index.opAppliedFrom(op)?.value)
             // Version 7: operations queued for Telegram, kept through a new content like uploads (2026-11-19).
-            index.putOps("batch", "CREATE_FOLDERS", listOf("first", "second"))
+            index.putOps("batch", "CREATE_FOLDERS", listOf(OpMessage("first", 9), OpMessage("second", 2)))
             index.replaceContent(IndexContent.EMPTY)
             assertEquals(listOf("first", "second"), index.ops().map { it.caption })
-            assertEquals(listOf(2, 2), index.ops().map { it.batchSize })
+            // Version 8: how many operations each message holds, packs of SPEC §4.6 (2026-11-19).
+            assertEquals(listOf(9, 2), index.ops().map { it.opCount })
+            assertEquals(listOf(11, 11), index.ops().map { it.batchSize })
         }
         // Encrypted on disk now: not a plain SQLite file, and not the rows' bytes in the clear.
         assertFalse(RoomVaultIndex.isPlain(file))

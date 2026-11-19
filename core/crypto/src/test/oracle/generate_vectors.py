@@ -218,6 +218,57 @@ def main(out_path):
     }
     assert v["v2"]["padme"][-1] == [2 ** 50, 2 ** 50] and padme(2 ** 50 - 1) <= 2 ** 50
 
+    # Format v3 (SPEC §4.6): several operations in one message, framed like v2 at one size.
+    ops_room = 2998
+
+    def v3_pack(ops, seed):
+        body = cbor({1: ops})
+        assert len(body) <= ops_room, len(body)
+        framed = struct.pack(">H", len(body)) + body + b"\0" * (ops_room - len(body))
+        n = nonce(seed)
+        enc = n + xchacha_seal(meta_key, n, framed, b"coffer/v3/ops")
+        caption = f"coffer:v3:ops:{b64url(enc)}"
+        assert len(caption) == 4068 and len(caption) <= 4096, len(caption)
+        # The ops as their CBOR maps, labels as strings, so the test builds them without this script's help.
+        listed = [{str(k): (val.hex() if isinstance(val, bytes) else val) for k, val in op.items()} for op in ops]
+        return {"ops": listed, "nonce": n.hex(), "cbor": body.hex(), "caption": caption}
+
+    def nth_id(k, base):
+        return bytes([base, k]) + bytes(range(14))
+
+    def most_that_fit(make):
+        count = 1
+        while len(cbor({1: [make(k) for k in range(count + 1)]})) <= ops_room:
+            count += 1
+        return count
+
+    folder_id_2 = bytes(range(0xE0, 0xF0))
+    worst_name_v3 = "я" * 127 + "x"
+    worst_folder = lambda k: {1: nth_id(k, 0x01), 2: "folder.create", 3: 2 ** 62, 5: nth_id(k, 0x02), 6: folder_id,
+                              7: worst_name_v3}
+    small_delete = lambda k: {1: nth_id(k, 0x03), 2: "file.delete", 3: 1762531200000 + k, 4: nth_id(k, 0x04)}
+    worst_count = most_that_fit(worst_folder)
+    delete_count = most_that_fit(small_delete)
+    v["v3"] = {
+        "room": ops_room,
+        "packs": {
+            "mixed": v3_pack([
+                {1: nth_id(0, 0x05), 2: "folder.create", 3: 1762531200000, 5: folder_id, 6: None, 7: "Docs"},
+                {1: nth_id(1, 0x05), 2: "folder.create", 3: 1762531200000, 5: folder_id_2, 6: folder_id, 7: "Фото 2026"},
+                {1: nth_id(2, 0x05), 2: "file.rename", 3: 1762531200001, 4: file_id, 7: "new name.bin"},
+                {1: nth_id(3, 0x05), 2: "folder.move", 3: 1762531200002, 5: folder_id_2, 6: None},
+                {1: nth_id(4, 0x05), 2: "file.move", 3: 1762531200003, 4: file_id, 5: folder_id_2},
+                {1: nth_id(5, 0x05), 2: "folder.rename", 3: 1762531200004, 5: folder_id, 7: "Документы"},
+            ], 0xA0),
+            "one": v3_pack([{1: op_id, 2: "file.move", 3: 1005, 4: file_id, 5: None}], 0xA1),
+            "worstFull": v3_pack([worst_folder(k) for k in range(worst_count)], 0xA2),
+            "deletesFull": v3_pack([small_delete(k) for k in range(delete_count)], 0xA3),
+        },
+        "worstCount": worst_count,
+        "deleteCount": delete_count,
+    }
+    assert worst_count == 8 and delete_count >= 24, (worst_count, delete_count)
+
     # Device-only sealing of the local index (SPEC §8): not part of the Telegram format, checked all the same.
     local_key = kdf(master, 1, b"coflocal")
     local_body = cbor({1: "Отчёт 2026.pdf", 2: None, 3: "application/pdf", 4: 1762531200123, 5: 1762531200456,

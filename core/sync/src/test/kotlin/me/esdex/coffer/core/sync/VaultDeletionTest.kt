@@ -70,7 +70,7 @@ class VaultDeletionTest {
     private var lastOfOurs = MessageId(0)
 
     /**
-     * Saved Messages with this vault (two files, folder operations, a snapshot, two headers as a half
+     * Saved Messages with this vault (two files, folder operations alone and in a pack, a snapshot, two headers as a half
      * done password change leaves), then another vault (its header, a file, an operation) and the user's
      * own messages, one of them dressed as a Coffer record that no key opens. Returns what must stay.
      */
@@ -82,7 +82,7 @@ class VaultDeletionTest {
         here.upload("b.bin", BytesSource(ByteArray(10)))
         val folder = Id.random(sodium)
         here.sendOp(Op.FolderCreate(Id.random(sodium), 1, folder, null, "Trip"))
-        here.sendOp(Op.FolderRename(Id.random(sodium), 2, folder, "Trip 2025"))
+        here.storage.sendText(here.keys.meta.encodeOpPack(listOf(Op.FolderRename(Id.random(sodium), 2, folder, "Trip 2025"))))
         here.indexer.catchUp()
         assertTrue(here.snapshotter.snapshotIfNeeded())
         lastOfOurs = storage.sendText(header(ourId)).id
@@ -94,6 +94,7 @@ class VaultDeletionTest {
         other.sendOp(Op.FolderCreate(Id.random(sodium), 3, Id.random(sodium), null, "Theirs"))
         storage.sendText("buy milk")
         storage.sendText("coffer:v2:op:not-really")
+        storage.sendText("coffer:v3:ops:not-really")
         storage.sendBlob(temp.newFile("photo.jpg").apply { writeBytes(ByteArray(5)) }, "holiday")
         // By hand: 2 headers + 2 parts + 2 operations + 1 snapshot of ours.
         assertEquals(7, ourCount)
@@ -107,8 +108,8 @@ class VaultDeletionTest {
         val selection = VaultDeletion(storage, keysOf(ours), ourId).run()
         assertEquals(7, selection.total)
         assertEquals(keep, remaining())
-        // The other vault's header, part and operation, and three messages of the user's own.
-        assertEquals(6, keep.size)
+        // The other vault's header, part and operation, and four messages of the user's own.
+        assertEquals(7, keep.size)
     }
 
     @Test

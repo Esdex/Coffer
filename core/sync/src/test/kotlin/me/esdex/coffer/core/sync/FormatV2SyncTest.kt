@@ -105,9 +105,9 @@ class FormatV2SyncTest {
         assertEquals("renamed.bin", there.meta(file).name)
         assertEquals(true, file.padded)
         assertEquals(expected, there.sha(padded))
-        // Operations are one length too, whatever the name.
-        val ops = captions().filter { Captions.parse(it)?.kind == RecordKind.OP }
-        assertTrue(ops.isNotEmpty() && ops.all { it.length == 539 })
+        // Operations are one length too, whatever the name: a rename goes in a pack (SPEC §4.6).
+        val packs = captions().filter { Captions.parse(it)?.kind == RecordKind.OPS }
+        assertTrue(packs.isNotEmpty() && packs.all { it.length == 4068 })
     }
 
     @Test

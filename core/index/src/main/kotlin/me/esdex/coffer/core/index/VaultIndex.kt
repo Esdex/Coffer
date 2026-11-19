@@ -61,12 +61,15 @@ class IndexContent(
 
 /** An upload this device owes: queued until prepared, then the captions it will send (SPEC §6). */
 /**
- * An operation waiting to go to Telegram (SPEC §4.3), in the order it was made: its [caption] is the
- * encrypted text sent as it is, so it goes out while the vault is locked too. One [batch] is one action
- * of the user's, of [batchSize] operations, such as every folder of a folder brought in from the phone;
- * [kind] says what it does, for the Transfers screen.
+ * A message of operations waiting to go to Telegram (SPEC §4.3, §4.6), in the order it was made: its
+ * [caption] is the encrypted text sent as it is, so it goes out while the vault is locked too, and holds
+ * [opCount] operations. One [batch] is one action of the user's, of [batchSize] operations in all, such
+ * as every folder of a folder brought in from the phone; [kind] says what it does, for Transfers.
  */
-class PendingOp(val seq: Long, val batch: String, val batchSize: Int, val kind: String, val caption: String)
+class PendingOp(val seq: Long, val batch: String, val batchSize: Int, val kind: String, val caption: String, val opCount: Int)
+
+/** One message of a batch to queue: its encrypted [caption], holding [opCount] operations. */
+class OpMessage(val caption: String, val opCount: Int)
 
 class PendingUpload(
     val uploadId: String,
@@ -166,8 +169,8 @@ interface VaultIndex {
     /** Operations waiting to be sent, oldest first; kept by [replaceContent]. */
     fun observeOps(): Flow<List<PendingOp>>
     suspend fun ops(): List<PendingOp>
-    /** Queues one batch of [kind], every caption at once or none. */
-    suspend fun putOps(batch: String, kind: String, captions: List<String>)
+    /** Queues one batch of [kind], every message at once or none. */
+    suspend fun putOps(batch: String, kind: String, messages: List<OpMessage>)
     suspend fun removeOp(seq: Long)
 
     fun observeUploads(): Flow<List<PendingUpload>>

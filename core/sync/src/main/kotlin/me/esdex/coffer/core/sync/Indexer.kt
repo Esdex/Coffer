@@ -381,10 +381,19 @@ class Indexer(
         return true
     }
 
-    /** True if the index (may have) changed. */
+    /**
+     * True if the index (may have) changed. A pack's operations (SPEC §4.6) are applied in their order,
+     * all under its one message id, so a later one in the pack wins over an earlier one.
+     */
     private suspend fun applyText(messageId: MessageId, text: String): Boolean {
-        val record = Captions.parse(text)?.takeIf { it.kind == RecordKind.OP } ?: return false
-        val op = keys.meta.decodeOp(record) ?: return false
+        val record = Captions.parse(text) ?: return false
+        val ops = keys.meta.decodeOps(record) ?: return false
+        var changed = false
+        for (op in ops) if (applyOp(messageId, op)) changed = true
+        return changed
+    }
+
+    private suspend fun applyOp(messageId: MessageId, op: Op): Boolean {
         // Sent again under a new message id, by anyone in the Telegram account: the op_id gives it away (audit 1,
         // M4). The message it first came in is applied again by a rescan, and only that one (audit 2, N2).
         val first = index.opAppliedFrom(op.opId)

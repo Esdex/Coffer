@@ -32,6 +32,12 @@ object CofferFormat {
     const val V2_OP_PAYLOAD = 352
     const val V2_INDEX_PAYLOAD = 64
 
+    /**
+     * A version 3 pack of operations is this long inside the encryption (SPEC §4.6): with the two-byte
+     * length, 3000 bytes, a text of 4068 characters, under Telegram's 4096 for a message.
+     */
+    const val V3_OPS_PAYLOAD = 2998
+
     const val MAX_NAME_BYTES = 255
     const val MAX_MIME_BYTES = 127
     const val FALLBACK_MIME = "application/octet-stream"
