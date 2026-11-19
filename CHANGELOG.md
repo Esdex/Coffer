@@ -1,5 +1,13 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- The path under the top bar shows at the root too, with the house marked as the place on screen, so going into a folder and back no longer moves the list.
+
+### Fixed
+- In the normal theme the path under the top bar has the bar's background; the list no longer shows through it.
+
 ## [1.0.0] - 2026-11-15
 
 ### Added

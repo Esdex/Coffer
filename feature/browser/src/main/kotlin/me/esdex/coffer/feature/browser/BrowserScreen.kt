@@ -472,7 +472,8 @@ fun BrowserScreen(
                         )
                        }
                       }
-                        AnimatedVisibility(visible = !searching && !selecting && listing.path.isNotEmpty(), enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
+                        // At the root too, with the house alone: going into a folder and back does not move the list.
+                        AnimatedVisibility(visible = !searching && !selecting, enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
                             Breadcrumbs(listing.path, onRoot = viewModel::goToRoot, onFolder = viewModel::openFolder)
                         }
                         // Kept while it folds away, so the count does not blank out on the way.
@@ -853,7 +854,7 @@ private fun Listing(
     }
 }
 
-/** Where the browser is: the root as a house, then each folder; any of them is a tap away. */
+/** Where the browser is: the root as a house, then each folder; any of them but the one on screen is a tap away. */
 @Composable
 private fun Breadcrumbs(path: List<FolderItem>, onRoot: () -> Unit, onFolder: (Id) -> Unit) {
     val scroll = rememberScrollState()
@@ -862,12 +863,21 @@ private fun Breadcrumbs(path: List<FolderItem>, onRoot: () -> Unit, onFolder: (I
         Modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = 8.dp, vertical = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Each step a pill of its own, big enough for a thumb, rippling in its own shape.
+        // Each step a pill of its own, big enough for a thumb, rippling in its own shape. At the root the house is
+        // where the browser is, and marked as the last folder of a path is.
+        val atRoot = path.isEmpty()
         Box(
-            Modifier.clip(Corners.pill).clickable(onClick = onRoot).padding(horizontal = 8.dp, vertical = 6.dp),
+            Modifier.clip(Corners.pill)
+                .then(if (atRoot) Modifier else Modifier.clickable(onClick = onRoot))
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Outlined.Home, contentDescription = stringResource(R.string.browser_root), tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Icon(
+                Icons.Outlined.Home,
+                contentDescription = stringResource(R.string.browser_root),
+                tint = if (atRoot) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
         }
         path.forEachIndexed { index, folder ->
             val last = index == path.lastIndex
