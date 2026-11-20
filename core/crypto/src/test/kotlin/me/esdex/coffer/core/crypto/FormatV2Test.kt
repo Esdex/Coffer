@@ -92,6 +92,11 @@ class FormatV2Test {
         KeyRing.derive(realSodium, key(master)).use { ring ->
             for ((name, payload) in cases) {
                 val expected = records.obj(name)
+                // Written by 1.0.0 and still read; snapshots are written as version 3 now (FormatV3Test).
+                if (payload is IndexPayload) {
+                    assertEquals(name, payload, MetaCodec(realSodium, ring.metaKey).decodeIndex(Captions.parse(expected.str("caption"))!!))
+                    continue
+                }
                 val sodium = ScriptedSodium(expected.bytes("nonce"))
                 val codec = MetaCodec(sodium, ring.metaKey)
                 val caption = when (payload) {

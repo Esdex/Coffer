@@ -267,6 +267,18 @@ def main(out_path):
         "worstCount": worst_count,
         "deleteCount": delete_count,
     }
+
+    # A snapshot's caption from a version that reads packs (audit 3, FMT3-1): laid out as version 2, its AD and
+    # prefix say version 3. One of version 2 is from 1.0.0, which skipped packs below its state.
+    def v3_index(payload, seed):
+        body = cbor(payload)
+        framed = struct.pack(">H", len(body)) + body + b"\0" * (rooms["index"] - len(body))
+        n = nonce(seed)
+        enc = n + xchacha_seal(meta_key, n, framed, b"coffer/v3/index")
+        return {"nonce": n.hex(), "cbor": body.hex(), "caption": f"coffer:v3:index:{b64url(enc)}"}
+
+    v["v3"]["index"] = v3_index({1: folder_id, 2: 123456789012, 3: 1762531200789, 4: 98765}, 0xA4)
+    assert len(v["v3"]["index"]["caption"]) == len(v["v2"]["records"]["index"]["caption"])
     assert worst_count == 8 and delete_count >= 24, (worst_count, delete_count)
 
     # Device-only sealing of the local index (SPEC §8): not part of the Telegram format, checked all the same.

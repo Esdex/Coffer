@@ -18,8 +18,8 @@ data class RawRecord(val kind: RecordKind, val body: String, val version: Int = 
 
 /**
  * The `coffer:v<version>:<kind>:<body>` prefix on captions and texts, SPEC §4. Version 2 (§4.5) hides
- * sizes; the vault header has only version 1; version 3 (§4.6) has only packs of operations, and they
- * have only version 3.
+ * sizes; the vault header has only version 1; version 3 (§4.6) has packs of operations, which have only
+ * version 3, and snapshots made by a version that reads packs (audit 3, FMT3-1).
  */
 object Captions {
     const val V1 = 1
@@ -34,6 +34,7 @@ object Captions {
     private fun exists(kind: RecordKind, version: Int): Boolean = when (kind) {
         RecordKind.VAULT -> version == V1
         RecordKind.OPS -> version == V3
+        RecordKind.INDEX -> version == V1 || version == V2 || version == V3
         else -> version == V1 || version == V2
     }
 

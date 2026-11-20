@@ -9,8 +9,10 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import me.esdex.coffer.core.crypto.ContentLayout
 import me.esdex.coffer.core.crypto.Id
+import me.esdex.coffer.core.crypto.KeyRing
 import me.esdex.coffer.core.crypto.MasterKeys
 import me.esdex.coffer.core.crypto.Padme
+import me.esdex.coffer.core.crypto.format.Base64Url
 import me.esdex.coffer.core.crypto.format.BlobPayload
 import me.esdex.coffer.core.crypto.format.Captions
 import me.esdex.coffer.core.crypto.format.IndexPayload
@@ -148,6 +150,53 @@ class SnapshotSyncTest {
         // for a snapshot, then up from the oldest a page at a time, as nothing read is kept past its page
         // (audit 2, L-g).
         assertEquals(2 * cloud.allMessages().size - 1, there.storage.messagesRead)
+    }
+
+    /** A snapshot caption as 1.0.0 wrote it, version 2: nothing here writes one any more, so it is sealed again by hand. */
+    private fun asVersion2(caption: String): String {
+        val ring = KeyRing.derive(sodium, master)
+        val raw = Base64Url.decode(caption.substringAfter("coffer:v3:index:"))!!
+        val nonce = raw.copyOfRange(0, 24)
+        val plain = ring.metaKey.withBytes { sodium.aeadDecrypt(raw.copyOfRange(24, raw.size), "coffer/v3/index".toByteArray(), nonce, it) }!!
+        val sealed = ring.metaKey.withBytes { sodium.aeadEncrypt(plain, "coffer/v2/index".toByteArray(), nonce, it) }
+        return "coffer:v2:index:" + Base64Url.encode(nonce + sealed)
+    }
+
+    @Test
+    fun aSnapshotFrom100WhichSkippedPacksIsNoStartingPoint() = runBlocking {
+        // Audit 3, FMT3-1: 1.0.0 cannot read a pack, yet counts it as read and snapshots that state.
+        val here = device()
+        val old = device()
+        here.upload("a.txt", bytes("a"))
+        old.indexer.catchUp()
+        val docs = here.ops.createFolder("Docs", null)
+        here.ops.renameFolder(docs, "Documents")
+        here.indexer.catchUp()
+        // What 1.0.0 would send: its state without the folder, claiming everything up to the last pack.
+        val state = old.indexer.pendingSnapshot()!!.state.copy(lastAppliedMessageId = here.index.lastApplied()!!.value)
+        val snapshotId = Id.random(sodium)
+        val sealed = old.keys.snapshots.encode(snapshotId, state)
+        val oldSnapshot = old.storage.sendBlob(
+            temp.newFile("cfr_eeeeeeeeeeee.bin").apply { writeBytes(sealed.bytes) },
+            asVersion2(old.keys.meta.encodeIndex(IndexPayload(snapshotId, state.lastAppliedMessageId, 1, sealed.plainSize, padded = true))),
+        )
+
+        // Not loaded: the whole history is, and the folder is there.
+        val there = device()
+        val report = there.indexer.catchUp()
+        assertFalse(report.snapshotUsed)
+        assertEquals(here.view(), there.view())
+        assertTrue("Documents" to null in there.view().folders)
+        // Nor counted, by a catch-up or the integrity check: it does not spare this device a snapshot of its own,
+        // which one that reads packs can start from.
+        here.indexer.catchUp()
+        here.maintenance.run()
+        assertFalse(oldSnapshot.id in here.index.snapshots().map { it.messageId })
+        here.snapshotter.snapshotIfNeeded()
+        assertTrue(indexBlobs().any { Captions.parse((it.content as MessageContent.Blob).caption)!!.version == Captions.V3 })
+        val third = device()
+        assertTrue(third.indexer.catchUp().snapshotUsed)
+        assertEquals(here.view(), third.view())
     }
 
     @Test

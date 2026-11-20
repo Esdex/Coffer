@@ -716,7 +716,12 @@
    }
   },
   "worstCount": 8,
-  "deleteCount": 49
+  "deleteCount": 49,
+  "index": {
+   "nonce": "a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babb",
+   "cbor": "a40150c0c1c2c3c4c5c6c7c8c9cacbcccdcecf021b0000001cbe991a14031b0000019a5f0bcf15041a000181cd",
+   "caption": "coffer:v3:index:pKWmp6ipqqusra6vsLGys7S1tre4ubq7TR_0FtyHqz48941BztIYpMBwRwfB5TrvVEX2PKcKrK6x_zMelihURwSSVJmHn-9zJY8FAc3Yn0QM0R7W-piHRdwV_lMxu37R66wou6h8ERmVwQ"
+  }
  },
  "local": {
   "key": "1f1af6a76a24584a05c92e7cd67b4142d6934e0c7c98250c4723a3aa6821be29",

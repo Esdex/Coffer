@@ -247,10 +247,15 @@ class Indexer(
         return size == expected
     }
 
+    /**
+     * A snapshot this device can start from: one made by a version that reads packs. One from 1.0.0 counts
+     * the packs below its state as read without having applied them, so it is left alone here, neither
+     * loaded nor kept count of; 1.0.0 devices go on using their own (audit 3, FMT3-1).
+     */
     private fun snapshotOf(message: StoredMessage): IndexPayload? {
         val caption = (message.content as? MessageContent.Blob)?.caption ?: return null
         val record = Captions.parse(caption)?.takeIf { it.kind == RecordKind.INDEX } ?: return null
-        return keys.meta.decodeIndex(record)
+        return keys.meta.decodeIndex(record)?.takeIf { it.readsPacks }
     }
 
     private suspend fun load(messageId: MessageId, payload: IndexPayload): Boolean {
@@ -355,7 +360,8 @@ class Indexer(
         val record = Captions.parse(blob.caption) ?: return false
         if (record.kind == RecordKind.INDEX) {
             // Only remembered, for keeping the last few (SPEC §4.4); a snapshot is loaded only when catching up.
-            val payload = keys.meta.decodeIndex(record) ?: return false
+            // One from 1.0.0 is no starting point (see snapshotOf), and must not spare this device its own.
+            val payload = keys.meta.decodeIndex(record)?.takeIf { it.readsPacks } ?: return false
             index.putSnapshot(KnownSnapshot(messageId, MessageId(payload.lastAppliedMessageId)))
             return false
         }
@@ -552,7 +558,7 @@ class Indexer(
                 RecordKind.BLOB -> keys.meta.decodeBlob(record)?.let { p ->
                     partsByFile.getOrPut(p.fileId) { mutableListOf() } += Part(p.partIndex, message, caption, p.meta != null)
                 }
-                RecordKind.INDEX -> keys.meta.decodeIndex(record)?.let {
+                RecordKind.INDEX -> keys.meta.decodeIndex(record)?.takeIf { it.readsPacks }?.let {
                     snapshotsRead += KnownSnapshot(message.id, MessageId(it.lastAppliedMessageId))
                 }
                 else -> Unit

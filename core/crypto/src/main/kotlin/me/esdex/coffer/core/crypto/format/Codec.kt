@@ -258,7 +258,10 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey, priv
         }
     }
 
-    /** A version 2 snapshot is padded and a version 1 one is not: [payload] must say what is written. */
+    /**
+     * A padded snapshot is written as version 3, laid out as version 2 but telling that its maker reads
+     * packs (audit 3, FMT3-1); a version 1 one is not padded: [payload] must say what is written.
+     */
     fun encodeIndex(payload: IndexPayload): String {
         require(payload.padded == (writeVersion == Captions.V2)) { "a version 2 snapshot, and only that, is padded" }
         return seal(
@@ -267,6 +270,7 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey, priv
                 IndexCbor.serializer(),
                 IndexCbor(payload.snapshotId.toByteArray(), payload.lastAppliedMessageId, payload.createdAt, payload.plainSize),
             ),
+            if (writeVersion == Captions.V2) Captions.V3 else Captions.V1,
         )
     }
 
@@ -274,7 +278,10 @@ class MetaCodec(private val sodium: Sodium, private val metaKey: SecretKey, priv
         val opened = open(RecordKind.INDEX, record) ?: return null
         val c = CanonicalCbor.decode(IndexCbor.serializer(), opened.cbor) ?: return null
         return validated {
-            IndexPayload(Id.of(c.snapshotId), c.lastAppliedMessageId, c.createdAt, c.plainSize, padded = opened.version == Captions.V2)
+            IndexPayload(
+                Id.of(c.snapshotId), c.lastAppliedMessageId, c.createdAt, c.plainSize,
+                padded = opened.version != Captions.V1, readsPacks = opened.version == Captions.V3,
+            )
         }
     }
 

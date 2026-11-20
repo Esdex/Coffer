@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import me.esdex.coffer.core.crypto.format.Base64Url
 import me.esdex.coffer.core.crypto.format.Captions
+import me.esdex.coffer.core.crypto.format.IndexPayload
 import me.esdex.coffer.core.crypto.format.MetaCodec
 import me.esdex.coffer.core.crypto.format.Op
 import me.esdex.coffer.core.crypto.format.RawRecord
@@ -175,9 +176,38 @@ class FormatV3Test {
     }
 
     @Test
-    fun packsAreVersion3OnlyAndVersion3IsPacksOnly() {
+    fun snapshotsAreWrittenAsVersion3AndOnlyThoseReadPacks() {
+        // Audit 3, FMT3-1: a snapshot made by 1.0.0 skipped the packs below its state; its version tells it apart.
+        val expected = v3.obj("index")
+        val payload = IndexPayload(Id.of(hex(v.obj("ids").str("folderId"))), 123456789012, 1762531200789, 98765, padded = true, readsPacks = true)
+        KeyRing.derive(realSodium, key(master)).use { ring ->
+            val sodium = ScriptedSodium(hex(expected.str("nonce")))
+            val caption = MetaCodec(sodium, ring.metaKey).encodeIndex(payload.copy(readsPacks = false))
+            assertEquals(expected.str("caption"), caption)
+            sodium.assertUsedUp()
+            val record = Captions.parse(caption)!!
+            assertEquals(RecordKind.INDEX, record.kind)
+            assertEquals(Captions.V3, record.version)
+            val codec = MetaCodec(realSodium, ring.metaKey)
+            assertEquals(payload, codec.decodeIndex(record))
+            // The same snapshot from 1.0.0: read, padded, but not one that read packs.
+            val old = codec.decodeIndex(Captions.parse(v.obj("v2").obj("records").obj("index").str("caption"))!!)!!
+            assertEquals(payload.copy(readsPacks = false), old)
+            // Sealed for version 2 and labelled 3, or the other way round: refused.
+            val body = caption.substringAfter("coffer:v3:index:")
+            assertNull(codec.decodeIndex(Captions.parse("coffer:v2:index:$body")!!))
+            // The test vectors' version 1 writes version 1, unpadded, as before.
+            val v1 = MetaCodec(realSodium, ring.metaKey, Captions.V1)
+            val plain = IndexPayload(Id.of(hex(v.obj("ids").str("folderId"))), 1, 2, 3)
+            assertEquals(plain, v1.decodeIndex(Captions.parse(v1.encodeIndex(plain))!!.also { assertEquals(Captions.V1, it.version) }))
+        }
+    }
+
+    @Test
+    fun version3IsPacksAndSnapshotsOnly() {
         val body = packs.obj("one").str("caption").substringAfter("coffer:v3:ops:")
         assertNotNull(Captions.parse("coffer:v3:ops:$body"))
+        assertNotNull(Captions.parse("coffer:v3:index:$body"))
         assertNull(Captions.parse("coffer:v2:ops:$body"))
         assertNull(Captions.parse("coffer:v1:ops:$body"))
         assertNull(Captions.parse("coffer:v3:op:$body"))

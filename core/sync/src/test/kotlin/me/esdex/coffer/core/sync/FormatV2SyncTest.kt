@@ -81,7 +81,8 @@ class FormatV2SyncTest {
         here.indexer.catchUp()
         assertTrue(here.snapshotter.snapshotIfNeeded())
         val snapshot = captions().map { Captions.parse(it) }.single { it?.kind == RecordKind.INDEX }!!
-        assertEquals(Captions.V2, snapshot.version)
+        // Laid out as version 2, labelled 3: made by a version that reads packs (audit 3, FMT3-1).
+        assertEquals(Captions.V3, snapshot.version)
 
         val there = device()
         assertTrue(there.indexer.catchUp().snapshotUsed)

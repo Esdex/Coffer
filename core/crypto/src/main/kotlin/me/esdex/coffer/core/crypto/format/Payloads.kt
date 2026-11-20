@@ -120,6 +120,12 @@ data class IndexPayload(
     val createdAt: Long,
     val plainSize: Long,
     val padded: Boolean = false,
+    /**
+     * Made by a version that reads packs of operations (SPEC §4.6): a version 3 caption. One made by 1.0.0
+     * skipped the packs below its state yet counts them as read, so it is no starting point for a device
+     * that reads them (audit 3, FMT3-1). Set by decoding; writing always makes one.
+     */
+    val readsPacks: Boolean = false,
 ) {
     init {
         require(lastAppliedMessageId >= 0) { "negative message id" }
