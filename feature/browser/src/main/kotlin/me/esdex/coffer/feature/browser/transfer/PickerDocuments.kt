@@ -142,11 +142,11 @@ class DocumentForwards private constructor(private val links: Map<String, Link>)
             val links = load(file).toMutableMap()
             edit(links, (links.values.maxOfOrNull { it.order } ?: 0L) + 1)
             val kept = links.entries.sortedByDescending { it.value.order }.take(LIMIT)
-            val props = Properties()
-            for ((key, link) in kept) props.setProperty(key, "${link.to} ${link.order}")
             file.parentFile?.mkdirs()
             val temp = File(file.parentFile, file.name + ".tmp")
-            temp.outputStream().use { props.store(it, null) }
+            // Written by hand: Properties.store heads the file with the time of writing. Keys and values are
+            // ids, numbers and a space, nothing a properties file would escape.
+            temp.writeText(kept.joinToString("") { (key, link) -> "$key=${link.to} ${link.order}\n" })
             check(temp.renameTo(file)) { "could not store the forwards" }
         }
 

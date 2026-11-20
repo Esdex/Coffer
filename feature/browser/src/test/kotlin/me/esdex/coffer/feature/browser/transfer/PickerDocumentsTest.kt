@@ -160,6 +160,8 @@ class PickerDocumentsTest {
         DocumentForwards.add(forwards, hex(a), b)
         assertEquals(b, DocumentForwards.read(forwards).target(hex(a)))
         assertEquals(hex(b) + " 1", java.util.Properties().apply { forwards.inputStream().use(::load) }.getProperty(hex(a)))
+        // Not even the time it was written, which Properties.store puts at the top.
+        assertEquals(listOf(hex(a) + "=" + hex(b) + " 1"), forwards.readLines())
         DocumentForwards.clear(forwards)
         assertNull(DocumentForwards.read(forwards).target(hex(a)))
         // A save prepared with the picker off forwards nothing.
