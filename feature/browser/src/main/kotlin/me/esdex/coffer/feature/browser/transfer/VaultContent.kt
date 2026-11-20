@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
@@ -495,20 +496,40 @@ class VaultContent @Inject constructor(
         EditSessions.changes.onStart { emit(Unit) }.collect {
             val root = EditSessions.dir(context)
             for (session in EditSessions.all(root).filter { it.dirty && !it.broken }) {
-                val hash = withContext(Dispatchers.IO) { session.copy.inputStream().use { ContentHasher.hash(sodium, it).first } }
-                if (hash == session.savedHash) {
-                    EditSessions.unchanged(session)
-                    continue
+                // One save failing, as on Telegram's pause while the last one is cancelled, stays to be tried
+                // again; out of here it took the app down, at each unlock, and its message named the copy
+                // (audit 3, DATA3-5).
+                try {
+                    saveEdit(session, keys)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    Log.w(SYNC_TAG, "an edit was not saved yet (${e.javaClass.simpleName}); trying again")
+                    launch {
+                        delay(EDIT_RETRY_MS)
+                        EditSessions.nudge()
+                    }
                 }
-                val pending = index.uploads().mapTo(HashSet()) { it.uploadId }
-                val whole = session.uploadFile?.takeIf { index.file(it)?.status == FileStatus.READY }
-                val save = EditSessions.plan(session, VaultTree.of(index, keys), pending) { it == whole }
-                save.cancel?.let { cancelUpload(it) }
-                val uploadId = queue(listOf(UploadRequest(Uri.fromFile(session.copy), save.name, session.mime, save.folderId, save.replaces))).single()
-                EditSessions.queued(session, uploadId, hash, save.original)
             }
             EditSessions.sweep(root, index.uploads().mapTo(HashSet()) { it.uploadId }, System.currentTimeMillis(), android.os.Process.myPid())
         }
+    }
+
+    private suspend fun saveEdit(session: EditSession, keys: VaultKeys) {
+        val hash = withContext(Dispatchers.IO) { session.copy.inputStream().use { ContentHasher.hash(sodium, it).first } }
+        if (hash == session.savedHash) {
+            EditSessions.unchanged(session)
+            return
+        }
+        val pending = index.uploads().mapTo(HashSet()) { it.uploadId }
+        val whole = session.uploadFile?.takeIf { index.file(it)?.status == FileStatus.READY }
+        val save = EditSessions.plan(session, VaultTree.of(index, keys), pending) { it == whole }
+        save.cancel?.let { cancel ->
+            cancelUpload(cancel)
+            // Not cancelled, Telegram not ready: queued beside it, both would go.
+            if (index.uploads().any { it.uploadId == cancel }) throw IOException("the last save is still queued")
+        }
+        val uploadId = queue(listOf(UploadRequest(Uri.fromFile(session.copy), save.name, session.mime, save.folderId, save.replaces))).single()
+        EditSessions.queued(session, uploadId, hash, save.original)
     }
 
     /**
@@ -830,6 +851,9 @@ class VaultContent @Inject constructor(
 }
 
 private const val SNAPSHOT_DELAY_MS = 90_000L
+
+/** A save of an edit that failed is tried again after this, or at the next save or unlock. */
+private const val EDIT_RETRY_MS = 60_000L
 
 /** A burst of changes, as a catch-up brings, makes one refresh of the system file picker. */
 private const val PICKER_REFRESH_MS = 300L

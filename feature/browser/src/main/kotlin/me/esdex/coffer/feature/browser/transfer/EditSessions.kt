@@ -131,6 +131,11 @@ object EditSessions {
 
     fun all(root: File): List<EditSession> = root.listFiles()?.mapNotNull { get(root, it.name) }.orEmpty()
 
+    /** Time to look for saves again, as after one that failed. */
+    fun nudge() {
+        changesFlow.tryEmit(Unit)
+    }
+
     /** The copy holds the vault's version now, downloaded or decrypted into it. */
     fun filled(root: File, id: String, now: Long) {
         get(root, id)?.let { session ->
