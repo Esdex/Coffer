@@ -9,6 +9,15 @@
     <!-- Music plays on in the background with its controls in a notification. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
+    <!-- Edit in another app offers editors first: without this, Android 11 and later find none for
+         ACTION_EDIT, and every viewer got write access (audit 3, AND3-9). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.EDIT" />
+            <data android:mimeType="*/*" />
+        </intent>
+    </queries>
+
     <application>
         <service
             android:name="androidx.work.impl.foreground.SystemForegroundService"
