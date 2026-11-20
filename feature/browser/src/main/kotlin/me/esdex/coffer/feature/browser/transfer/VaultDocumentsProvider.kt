@@ -263,9 +263,15 @@ class VaultDocumentsProvider : DocumentsProvider() {
                 val job = coroutineContext.job
                 signal?.setOnCancelListener { job.cancel() }
                 val opened = parts.content().openFile(fileId) ?: throw FileNotFoundException()
-                opened.use { file ->
+                // Cut off by a lock like any read: decrypting on after it wrote the file onto a locked phone (audit 3, AND3-2).
+                val file = held(opened)
+                try {
                     FileOutputStream(session.copy).use { out -> copyWhole(file.reader.size, file.reader::read, { bytes, n -> out.write(bytes, 0, n) }) }
+                } finally {
+                    reads -= file
+                    file.close()
                 }
+                if (keys() == null) throw FileNotFoundException("Coffer is locked")
             }
         } catch (e: Exception) {
             File(root, session.id).deleteRecursively()
@@ -283,9 +289,7 @@ class VaultDocumentsProvider : DocumentsProvider() {
     private fun stream(fileId: Id): ParcelFileDescriptor {
         if (Binder.getCallingUid() == Process.myUid()) throw FileNotFoundException("Coffer's own files")
         val context = checkNotNull(context)
-        val opened = runBlocking { parts.content().openFile(fileId) } ?: throw FileNotFoundException()
-        reads += opened
-        cutOffOnLock()
+        val opened = held(runBlocking { parts.content().openFile(fileId) } ?: throw FileNotFoundException())
         val thread = HandlerThread("CofferPickerRead").apply { start() }
         val release: () -> Unit = {
             reads -= opened
@@ -313,6 +317,21 @@ class VaultDocumentsProvider : DocumentsProvider() {
             release()
             throw FileNotFoundException().apply { initCause(e) }
         }
+    }
+
+    /**
+     * [opened], closed when the vault locks. Locked already, as between opening and this, it is closed at
+     * once: the lock's signal came before there was anything to cut off (audit 3, AND3-2).
+     */
+    private fun held(opened: VaultContent.OpenedFile): VaultContent.OpenedFile {
+        reads += opened
+        cutOffOnLock()
+        if (keys() == null) {
+            reads -= opened
+            opened.close()
+            throw FileNotFoundException("Coffer is locked")
+        }
+        return opened
     }
 
     private fun cutOffOnLock() {
