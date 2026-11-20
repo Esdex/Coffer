@@ -21,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,8 @@ import androidx.core.content.IntentCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -81,6 +84,14 @@ class MainActivity : FragmentActivity() {
             CofferTheme(appearance) {
               // The padlock that flies to the unlock screen when the user locks, drawn over everything.
               val lockFlight = remember { LockFlight() }
+              // Left mid-flight, as with Home at once: the flight ends there, and the files held on screen for it
+              // go before the recent apps screen takes its picture (audit 3, AND3-5).
+              val lifecycle = LocalLifecycleOwner.current.lifecycle
+              DisposableEffect(lifecycle) {
+                  val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE && lockFlight.flying) lockFlight.landed() }
+                  lifecycle.addObserver(observer)
+                  onDispose { lifecycle.removeObserver(observer) }
+              }
               // Every field in the app asks the keyboard not to learn what is typed (audit 1, L6).
               NoKeyboardLearning {
               CompositionLocalProvider(LocalLockFlight provides lockFlight) {
