@@ -108,7 +108,10 @@ object EditSessions {
     fun begin(root: File, name: String, mime: String, original: Id?, folder: Id?, hash: Bytes, now: Long, ready: Boolean = true): EditSession {
         val id = UUID.randomUUID().toString()
         val dir = File(root, id).apply { mkdirs() }
-        val copy = File(dir, OpenFiles.safeName(name)).apply { createNewFile() }
+        // Not under the name of the session's own file: the copy would be lost among them (audit 3, AND3-11).
+        val own = setOf(EditSession.PROPS, EditSession.PROPS_TEMP)
+        val safe = OpenFiles.safeName(name).let { if (it in own) NameConflicts.numbered(it, isFile = true, own) else it }
+        val copy = File(dir, safe).apply { createNewFile() }
         return EditSession(id, dir).apply {
             update {
                 it.setProperty(EditSession.READY, ready.toString())

@@ -5,6 +5,7 @@ import me.esdex.coffer.core.crypto.CofferFormat
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.crypto.format.FileMeta
 import me.esdex.coffer.core.crypto.format.LocalFolder
+import me.esdex.coffer.core.sync.NameConflicts
 import me.esdex.coffer.core.sync.VaultTree
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -221,5 +222,15 @@ class EditSessionsTest {
         assertTrue(EditSessions.get(root, session.id)!!.broken)
         EditSessions.sweep(root, emptySet(), now = 2_001, pid = HERE)
         assertNull(EditSessions.get(root, session.id))
+    }
+
+    @Test
+    fun aCopyNamedLikeTheSessionsOwnFileKeepsItsName() {
+        // Audit 3, AND3-11: Save as "session.properties" lost the copy among the session's own files.
+        for (name in listOf("session.properties", "session.properties.tmp")) {
+            val session = EditSessions.begin(root, name, "text/plain", null, null, Bytes.of(ByteArray(0)), now = 1)
+            assertEquals(NameConflicts.numbered(name, isFile = true, setOf(name)), session.copy.name)
+            assertTrue(session.copy.exists())
+        }
     }
 }
