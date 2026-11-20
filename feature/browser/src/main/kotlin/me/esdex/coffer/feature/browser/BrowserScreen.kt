@@ -14,6 +14,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -843,6 +844,28 @@ private enum class Empty(val title: Int, val hint: Int) {
 
 @Composable
 private fun Listing(
+    shown: Listing,
+    padding: PaddingValues,
+    previews: Previews,
+    canEdit: Boolean,
+    selection: Set<Id>,
+    onToggle: (Id) -> Unit,
+    empty: Empty,
+    onOpenFolder: (FolderItem) -> Unit,
+    onFolderMenu: (FolderItem, RowAction) -> Unit,
+    onOpenFile: (FileItem) -> Unit,
+    onExport: (FileItem, Uri) -> Unit,
+    onFileMenu: (FileItem, RowAction) -> Unit,
+) {
+    // Nothing until the files are read, as after a cold start they take a moment: then they fade in, rather
+    // than popping up after the ghost of an empty vault (Esdex, 2026-11-20).
+    AnimatedVisibility(shown.loaded, enter = fadeIn(Motion.screen()), exit = ExitTransition.None) {
+        ListingContent(shown, padding, previews, canEdit, selection, onToggle, empty, onOpenFolder, onFolderMenu, onOpenFile, onExport, onFileMenu)
+    }
+}
+
+@Composable
+private fun ListingContent(
     shown: Listing,
     padding: PaddingValues,
     previews: Previews,

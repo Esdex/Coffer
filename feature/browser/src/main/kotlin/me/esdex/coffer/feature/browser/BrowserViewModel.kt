@@ -87,6 +87,8 @@ data class Listing(
     val path: List<FolderItem> = emptyList(),
     val folders: List<FolderItem> = emptyList(),
     val files: List<FileItem> = emptyList(),
+    /** The vault's files read and opened: until then an empty list says nothing about the vault. */
+    val loaded: Boolean = false,
 ) {
     val folderId: Id? get() = path.lastOrNull()?.folderId
 }
@@ -380,7 +382,7 @@ class BrowserViewModel @Inject constructor(
             SortBy.DATE -> files.sortedBy { it.modifiedAt }
             SortBy.SIZE -> files.sortedBy { it.size }
         }
-        Listing(path, folderItems, if (sorting.descending) sorted.reversed() else sorted)
+        Listing(path, folderItems, if (sorting.descending) sorted.reversed() else sorted, loaded = true)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Listing())
 
     val catchingUp: StateFlow<Int?> = content.catchingUp
