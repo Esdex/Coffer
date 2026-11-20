@@ -621,8 +621,9 @@ class VaultContent @Inject constructor(
     suspend fun moveMany(folderIds: List<Id>, fileIds: List<Id>, destination: Id?, decider: ConflictDecider) =
         withOps { ops, keys, _ ->
             val tree = VaultTree.of(index, keys)
-            val folders = folderIds.filter { it in tree.folders && tree.parentOf(it) != destination }
-            val files = fileIds.filter { it in tree.files && tree.folderOf(it) != destination }
+            val (outer, loose) = tree.outermost(folderIds, fileIds)
+            val folders = outer.filter { it in tree.folders && tree.parentOf(it) != destination }
+            val files = loose.filter { it in tree.files && tree.folderOf(it) != destination }
             require(destination == null || folders.none { tree.isWithin(destination, it) }) { "folder cannot move into itself" }
             val incoming = folders.map { NameConflicts.incoming(tree, it) } + files.map { Incoming.File(tree.files.getValue(it).name, it) }
             val placed = NameConflicts(tree.without(hidden.value + deleting.value), decider, leaving = (folders + files).toSet()).place(destination, incoming)

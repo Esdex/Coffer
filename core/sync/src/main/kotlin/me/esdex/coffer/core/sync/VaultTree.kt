@@ -62,6 +62,18 @@ class VaultTree(val folders: Map<Id, LocalFolder>, val files: Map<Id, FileMeta>)
         return VaultTree(folders - goneFolders, files.filterKeys { it !in gone && folderOf(it) !in goneFolders })
     }
 
+    /**
+     * Of [folderIds] and [fileIds], picked together as a search allows, those not inside another of the
+     * folders: those go with it. Moved twice, a file inside a merged folder replaced a file in it and then
+     * left for the top (audit 3, Q3-6).
+     */
+    fun outermost(folderIds: List<Id>, fileIds: List<Id>): Pair<List<Id>, List<Id>> {
+        val picked = folderIds.toSet()
+        val folders = folderIds.distinct().filter { id -> picked.none { it != id && isWithin(id, it) } }
+        val files = fileIds.distinct().filter { id -> folderOf(id)?.let { f -> picked.any { isWithin(f, it) } } != true }
+        return folders to files
+    }
+
     companion object {
         /** Reads and opens the whole index; rows that do not open are left out. */
         suspend fun of(index: VaultIndex, keys: VaultKeys): VaultTree = VaultTree(

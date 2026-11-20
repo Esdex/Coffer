@@ -101,6 +101,29 @@ class MoveConflictsTest {
     }
 
     @Test
+    fun aFileInsideAFolderPickedWithItMovesWithItAlone() = runTest {
+        // Audit 3, Q3-6: a search lets both be picked; placed twice, the file replaced in the merge and then left for the top.
+        val a = here.ops.createFolder("report", null)
+        val b = here.ops.createFolder("B", null)
+        val bReport = here.ops.createFolder("report", b)
+        val deep = here.ops.createFolder("deep", a)
+        here.indexer.catchUp()
+        val file = here.upload("report.pdf", BytesSource("new".toByteArray()), folderId = a)
+        val deeper = here.upload("x.txt", BytesSource("x".toByteArray()), folderId = deep)
+        here.upload("report.pdf", BytesSource("old inner".toByteArray()), folderId = bReport)
+        here.upload("report.pdf", BytesSource("old top".toByteArray()), folderId = b)
+        here.indexer.catchUp()
+        val (folders, files) = here.tree().outermost(listOf(deep, a), listOf(file, deeper))
+        assertEquals(listOf(a) to emptyList<Id>(), folders to files)
+        // A file deeper down, its own folder not picked, goes with the outer one too.
+        assertEquals(listOf(a) to emptyList<Id>(), here.tree().outermost(listOf(a), listOf(deeper)))
+
+        move(folders, files, b, FileChoice.REPLACE, FolderChoice.MERGE)
+        assertEquals(setOf(ready("report.pdf", "report"), ready("report.pdf", "B"), ready("x.txt", "deep")), here.view().files)
+        assertRescanAgrees()
+    }
+
+    @Test
     fun keptBothIsMovedUnderANewNameAndSkippedStaysWhereItWas() = runTest {
         val docs = here.ops.createFolder("Docs", null)
         val a = here.ops.createFolder("A", null)
