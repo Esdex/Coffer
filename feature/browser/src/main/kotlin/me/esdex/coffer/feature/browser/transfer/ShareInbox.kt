@@ -105,7 +105,7 @@ class ShareInbox @Inject constructor(
                 for (uri in uris) {
                     val file = File(dir, UUID.randomUUID().toString())
                     items += Item(file, queryName(uri) ?: uri.lastPathSegment ?: "file", context.contentResolver.getType(uri) ?: typeHint, 0)
-                    val input = context.contentResolver.openInputStream(uri) ?: throw IOException("cannot open")
+                    val input = OtherAppsFiles.open(context, uri)
                     reading = input
                     var size = 0L
                     input.use { from ->
