@@ -47,6 +47,11 @@ https://telegram.org/privacy
   in Android's Keystore, and deleted once uploaded or cancelled
 - **Decrypted copies** you open in another app: removed about 10 minutes after opening, and at the
   latest when the vault locks or Coffer next starts
+- **Copies you edit in another app, or change through the system file picker**: kept decrypted on the
+  phone while you edit, also while the vault is locked, until what you saved is sent and for an hour
+  after. Signing out or deleting the vault removes them at once
+- **The system file picker**, if you turn Coffer on in it: it is part of Android and keeps the names of
+  the folders you open there, which Coffer cannot clear
 - **Biometric unlock**: the vault key is wrapped by a Keystore key that needs your fingerprint
   or face. Coffer never sees your biometric data
 - **Settings**: stored locally

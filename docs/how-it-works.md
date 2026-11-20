@@ -9,8 +9,9 @@ Coffer server: the app talks straight to Telegram with your account.
   random names like `cfr_1a2b3c4d5e6f.bin`. A large file is cut into parts of up to 512 MB.
 - **The vault header.** A pinned text note starting with `coffer:` that holds the vault's keys,
   locked with your password. The recovery key opens them too.
-- **Changes.** Short encrypted notes for every rename, move and delete. They are how your other
-  devices hear of them.
+- **Changes.** Encrypted notes that each carry one or more changes: new folders, renames, moves and
+  deletes. They are how your other devices hear of them. Every note has the same length, so Telegram
+  cannot tell how many changes it carries.
 - **Index snapshots.** The whole list of files and folders in one note, so a new device need not
   read every change. The last 3 are kept.
 

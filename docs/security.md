@@ -51,6 +51,11 @@ Settings, Security, **Hide exact file sizes** turns the file padding off.
   rename. A phone that has applied the change once does not apply it again, and a file it has seen
   deleted stays deleted. A phone that sets up the vault later may still take such a copy, if the
   original change is no longer there for it to see first.
+- **Copies being edited**: a file you edit in another app, or change through the system file picker,
+  stays decrypted on the phone until what you saved is sent and for an hour after, also while the
+  vault is locked.
+- **The system file picker**: it remembers the names of the folders you open there, and it is not kept
+  off screenshots.
 - **A phone that is compromised while the vault is open**: malware with full control of the phone
   can see what you see.
 - **What any connection shows**: Telegram sees when you upload and download, roughly how much, and

@@ -14,6 +14,9 @@ large vault opens quickly.
 Adding, renaming, moving and deleting on one phone shows up on the others. A device that was
 offline for a long time catches up when it next connects.
 
+Every device needs Coffer 1.1 or later. A device still on 1.0.0 does not see changes made with 1.1,
+shows files deleted on 1.1 as damaged, and leaves 1.1's changes behind if you delete the vault from it.
+
 ## Per device
 
 Some things belong to one phone only:
