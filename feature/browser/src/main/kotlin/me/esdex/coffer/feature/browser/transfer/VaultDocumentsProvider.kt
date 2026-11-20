@@ -120,9 +120,10 @@ class VaultDocumentsProvider : DocumentsProvider() {
         val key = PickerDocuments.forwardKey(doc) ?: return emptyList()
         val chain = view.forwards.chain(key)
         val end = chain.lastOrNull { it in view.ready }
-        if (end != null && chain.first() != end) {
+        // Only when it is more than a step away: opening a document is not to leave a trace (audit 3, DATA3-6).
+        if (end != null && chain.first() != end && view.forwards.target(key) != end) {
             val steps = chain.takeWhile { it != end }.map { EditSession.hex(it.toByteArray()) }
-            DocumentForwards.settle(EditSessions.forwardsFile(sessionsDir), (listOf(key) + steps).distinct(), end, System.currentTimeMillis())
+            DocumentForwards.settle(EditSessions.forwardsFile(sessionsDir), (listOf(key) + steps).distinct(), end)
         }
         return chain
     }
@@ -396,7 +397,10 @@ class VaultDocumentsProvider : DocumentsProvider() {
             val state = if (on) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
             val pm = context.packageManager
             if (pm.getComponentEnabledSetting(component) != state) pm.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
-            if (!on) forgetGrants(context)
+            if (!on) {
+                forgetGrants(context)
+                DocumentForwards.clear(EditSessions.forwardsFile(EditSessions.dir(context)))
+            }
         }
 
         /**

@@ -186,16 +186,18 @@ object EditSessions {
     }
 
     /**
-     * The upload of a save was prepared: [fileId] is the file it makes. A document another app holds for the
-     * file it replaces, or for the session itself, now leads to it (see [DocumentForwards]).
+     * The upload of a save was prepared: [fileId] is the file it makes. With the picker on ([forward]), a
+     * document another app holds for the file it replaces, or for the session itself, now leads to it (see
+     * [DocumentForwards]).
      */
-    fun prepared(root: File, uploadId: String, fileId: Id, now: Long) {
+    fun prepared(root: File, uploadId: String, fileId: Id, forward: Boolean) {
         for (session in all(root)) {
             if (session.upload != uploadId) continue
             session.update { it.setProperty(EditSession.UPLOAD_FILE, EditSession.hex(fileId.toByteArray())) }
+            if (!forward) continue
             val forwards = forwardsFile(root)
-            DocumentForwards.add(forwards, session.id, fileId, now)
-            session.original?.let { DocumentForwards.add(forwards, EditSession.hex(it.toByteArray()), fileId, now) }
+            DocumentForwards.add(forwards, session.id, fileId)
+            session.original?.let { DocumentForwards.add(forwards, EditSession.hex(it.toByteArray()), fileId) }
         }
     }
 

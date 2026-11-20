@@ -299,7 +299,7 @@ class VaultContent @Inject constructor(
                 val prepared = UploadPreparer(keys, index, store.hideSizes, System::currentTimeMillis)
                     .prepare(upload, request, inbox.source(request.source))
                 registry.put(prepared.upload.fileId!!, TransferRegistry.Entry(prepared.keys, source = request.source, displayName = request.name))
-                EditSessions.prepared(EditSessions.dir(context), upload.uploadId, prepared.upload.fileId!!, System.currentTimeMillis())
+                EditSessions.prepared(EditSessions.dir(context), upload.uploadId, prepared.upload.fileId!!, forward = store.showInFilePicker)
                 prepared.upload.fileId!!
             } catch (_: IOException) {
                 registry.fail(upload.uploadId, TransferRegistry.Failure.SOURCE_GONE)

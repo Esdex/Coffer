@@ -57,7 +57,7 @@ class PickerDocumentsTest {
         assertEquals(queued.id, PickerDocuments.writable(doc, listOf(file), listOf(queued), current = file)?.id)
         // Through, and the new file whole: the vault again, where the document went.
         val made = id()
-        EditSessions.prepared(root, "upload-1", made, now = 3)
+        EditSessions.prepared(root, "upload-1", made, forward = true)
         val chain = DocumentForwards.read(forwards).chain(hex(file))
         assertEquals(listOf(file, made), chain)
         val done = EditSessions.get(root, session.id)!!
@@ -77,7 +77,7 @@ class PickerDocumentsTest {
         assertEquals(session.id, PickerDocuments.writable(doc, emptyList(), listOf(session), current = null)?.id)
         EditSessions.queued(session, "upload-1", hash(2), original = null)
         val file = id()
-        EditSessions.prepared(root, "upload-1", file, now = 2)
+        EditSessions.prepared(root, "upload-1", file, forward = true)
         val chain = DocumentForwards.read(forwards).chain(session.id)
         assertEquals(listOf(file), chain)
         val sent = EditSessions.get(root, session.id)!!
@@ -93,14 +93,14 @@ class PickerDocumentsTest {
     @Test
     fun forwardsFollowEverySaveAndSettleOnTheFileTheyEndAt() {
         val (a, b, c) = List(3) { id() }
-        DocumentForwards.add(forwards, hex(a), b, now = 1)
-        DocumentForwards.add(forwards, hex(b), c, now = 2)
+        DocumentForwards.add(forwards, hex(a), b)
+        DocumentForwards.add(forwards, hex(b), c)
         assertEquals(listOf(a, b, c), DocumentForwards.read(forwards).chain(hex(a)))
         assertEquals(listOf(c), DocumentForwards.read(forwards).chain(hex(c)))
-        DocumentForwards.settle(forwards, listOf(hex(a), hex(b)), c, now = 3)
+        DocumentForwards.settle(forwards, listOf(hex(a), hex(b)), c)
         assertEquals(listOf(a, c), DocumentForwards.read(forwards).chain(hex(a)))
         // A loop, which nothing makes, ends the chain rather than the provider.
-        DocumentForwards.add(forwards, hex(c), a, now = 4)
+        DocumentForwards.add(forwards, hex(c), a)
         assertEquals(listOf(a, c), DocumentForwards.read(forwards).chain(hex(a)))
     }
 
@@ -108,13 +108,13 @@ class PickerDocumentsTest {
     fun forwardsAreKeptToTheLimitTheLeastUsedGoingFirst() {
         val kept = id()
         val first = id()
-        DocumentForwards.add(forwards, hex(first), kept, now = 0)
+        DocumentForwards.add(forwards, hex(first), kept)
         val start = id()
-        DocumentForwards.add(forwards, hex(start), kept, now = 1)
-        repeat(DocumentForwards.LIMIT - 1) { DocumentForwards.add(forwards, hex(id()), id(), now = 10L + it) }
+        DocumentForwards.add(forwards, hex(start), kept)
+        repeat(DocumentForwards.LIMIT - 1) { DocumentForwards.add(forwards, hex(id()), id()) }
         // Used again: settled, it counts as new.
-        DocumentForwards.settle(forwards, listOf(hex(start)), kept, now = 5_000)
-        DocumentForwards.add(forwards, hex(id()), id(), now = 6_000)
+        DocumentForwards.settle(forwards, listOf(hex(start)), kept)
+        DocumentForwards.add(forwards, hex(id()), id())
         val read = DocumentForwards.read(forwards)
         assertEquals(listOf(start, kept), read.chain(hex(start)))
         assertEquals(listOf(first), read.chain(hex(first)))
@@ -151,5 +151,23 @@ class PickerDocumentsTest {
         // Filled from a version that has been replaced since: not that one.
         val newer = id()
         assertNull(PickerDocuments.writable(Doc.File(file), listOf(file, newer), listOf(filled), current = newer))
+    }
+
+    @Test
+    fun forwardsKeepNoTimesAndAreWrittenOnlyWithThePickerOn() {
+        // Audit 3, DATA3-6: they were a log of every save and every open, to the millisecond.
+        val (a, b) = List(2) { id() }
+        DocumentForwards.add(forwards, hex(a), b)
+        assertEquals(b, DocumentForwards.read(forwards).target(hex(a)))
+        assertEquals(hex(b) + " 1", java.util.Properties().apply { forwards.inputStream().use(::load) }.getProperty(hex(a)))
+        DocumentForwards.clear(forwards)
+        assertNull(DocumentForwards.read(forwards).target(hex(a)))
+        // A save prepared with the picker off forwards nothing.
+        val session = EditSessions.begin(root, "a.txt", "text/plain", a, null, hash(1), now = 1)
+        EditSessions.queued(session, "upload-1", hash(2), original = a)
+        EditSessions.prepared(root, "upload-1", b, forward = false)
+        assertEquals(b, EditSessions.get(root, session.id)!!.uploadFile)
+        assertNull(DocumentForwards.read(forwards).target(hex(a)))
+        assertNull(DocumentForwards.read(forwards).target(session.id))
     }
 }

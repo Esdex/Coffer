@@ -98,11 +98,16 @@ object PickerDocuments {
  * kept, no names. A forward is written once the upload is prepared, before it is whole: following them,
  * a document stops at the last file that is (see [PickerDocuments.content]).
  *
- * Kept to [LIMIT], the forwards used least lately going first; [settle] points a chain followed at the
+ * Kept to [LIMIT], the forwards changed least lately going first; [settle] points a chain followed at the
  * file it ends at, so the documents in use stay one step from their file however often they are saved.
+ * Written only while the picker is on, cleared when it is turned off; in order, with no times, and not
+ * rewritten when a document is only opened: it was a log of every save and every open (audit 3, DATA3-6).
  */
 class DocumentForwards private constructor(private val links: Map<String, Link>) {
-    private class Link(val to: String, val at: Long)
+    private class Link(val to: String, val order: Long)
+
+    /** Where [from] leads now, one step. */
+    fun target(from: String): Id? = links[from]?.to?.takeIf(HEX_ID::matches)?.let { EditSession.idOf(it) }
 
     /** [from] itself if it is a file's id, then each file it was forwarded to, in order. */
     fun chain(from: String): List<Id> {
@@ -123,20 +128,22 @@ class DocumentForwards private constructor(private val links: Map<String, Link>)
 
         fun read(file: File): DocumentForwards = synchronized(lock) { DocumentForwards(load(file)) }
 
-        fun add(file: File, from: String, to: Id, now: Long) = change(file) { it[from] = Link(EditSession.hex(to.toByteArray()), now) }
+        fun add(file: File, from: String, to: Id) = change(file) { links, next -> links[from] = Link(EditSession.hex(to.toByteArray()), next) }
 
         /** Points each of [keys], the start of a chain and the steps it took, straight at [to], where it ends. */
-        fun settle(file: File, keys: List<String>, to: Id, now: Long) = change(file) { links ->
+        fun settle(file: File, keys: List<String>, to: Id) = change(file) { links, next ->
             val target = EditSession.hex(to.toByteArray())
-            for (key in keys) if (key != target) links[key] = Link(target, now)
+            for (key in keys) if (key != target) links[key] = Link(target, next)
         }
 
-        private fun change(file: File, edit: (MutableMap<String, Link>) -> Unit) = synchronized(lock) {
+        fun clear(file: File) = synchronized(lock) { file.delete() }
+
+        private fun change(file: File, edit: (MutableMap<String, Link>, next: Long) -> Unit) = synchronized(lock) {
             val links = load(file).toMutableMap()
-            edit(links)
-            val kept = links.entries.sortedByDescending { it.value.at }.take(LIMIT)
+            edit(links, (links.values.maxOfOrNull { it.order } ?: 0L) + 1)
+            val kept = links.entries.sortedByDescending { it.value.order }.take(LIMIT)
             val props = Properties()
-            for ((key, link) in kept) props.setProperty(key, "${link.to} ${link.at}")
+            for ((key, link) in kept) props.setProperty(key, "${link.to} ${link.order}")
             file.parentFile?.mkdirs()
             val temp = File(file.parentFile, file.name + ".tmp")
             temp.outputStream().use { props.store(it, null) }
@@ -147,8 +154,8 @@ class DocumentForwards private constructor(private val links: Map<String, Link>)
             if (!file.isFile) return emptyMap()
             val props = Properties().apply { file.inputStream().use(::load) }
             return props.stringPropertyNames().mapNotNull { key ->
-                val (to, at) = props.getProperty(key).split(' ').takeIf { it.size == 2 } ?: return@mapNotNull null
-                key to Link(to, at.toLongOrNull() ?: 0L)
+                val (to, order) = props.getProperty(key).split(' ').takeIf { it.size == 2 } ?: return@mapNotNull null
+                key to Link(to, order.toLongOrNull() ?: 0L)
             }.toMap()
         }
     }
