@@ -59,10 +59,14 @@ object PickerDocuments {
 
     /**
      * The session a write to [doc] goes into: one holding what was saved last, or for a file made here,
-     * its own. Null when a new one is to begin from the file in the vault.
+     * its own, or one filled from [current], the file in the vault now, and not written yet. Null when a
+     * new one is to begin from that file. Each open to write decrypted the whole file again into a copy
+     * of its own, so one app could fill the phone (audit 3, AND3-4).
      */
-    fun writable(doc: Doc, chain: List<Id>, sessions: List<EditSession>): EditSession? =
-        sessionsOf(doc, chain, sessions).filter { doc is Doc.Made || it.dirty || it.upload != null }.maxByOrNull { it.touched }
+    fun writable(doc: Doc, chain: List<Id>, sessions: List<EditSession>, current: Id?): EditSession? =
+        sessionsOf(doc, chain, sessions)
+            .filter { doc is Doc.Made || it.dirty || it.upload != null || (it.ready && it.original == current && current != null) }
+            .maxByOrNull { it.touched }
 
     // A broken copy (see EditSessions.failed) is nobody's document.
     private fun sessionsOf(doc: Doc, chain: List<Id>, sessions: List<EditSession>): List<EditSession> = when (doc) {

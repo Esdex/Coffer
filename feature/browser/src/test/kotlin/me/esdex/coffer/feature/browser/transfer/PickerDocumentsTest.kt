@@ -46,7 +46,7 @@ class PickerDocumentsTest {
         // Begun from the file and not written: the vault's is as new.
         val session = EditSessions.begin(root, "a.txt", "text/plain", file, null, hash(1), now = 1)
         assertEquals(Content.Stored(file), PickerDocuments.content(doc, listOf(file), listOf(session), ready, emptySet()))
-        assertNull(PickerDocuments.writable(doc, listOf(file), listOf(session)))
+        assertNull(PickerDocuments.writable(doc, listOf(file), listOf(session), current = null))
         // Written: the copy, until its upload is through.
         EditSessions.written(root, session.id, now = 2)
         val written = EditSessions.get(root, session.id)!!
@@ -54,7 +54,7 @@ class PickerDocumentsTest {
         EditSessions.queued(written, "upload-1", hash(2), original = file)
         val queued = EditSessions.get(root, session.id)!!
         assertEquals(Content.Copy(queued), PickerDocuments.content(doc, listOf(file), listOf(queued), ready, setOf("upload-1")))
-        assertEquals(queued.id, PickerDocuments.writable(doc, listOf(file), listOf(queued))?.id)
+        assertEquals(queued.id, PickerDocuments.writable(doc, listOf(file), listOf(queued), current = file)?.id)
         // Through, and the new file whole: the vault again, where the document went.
         val made = id()
         EditSessions.prepared(root, "upload-1", made, now = 3)
@@ -74,7 +74,7 @@ class PickerDocumentsTest {
         val session = EditSessions.begin(root, "new.kdbx", "application/octet-stream", null, null, Bytes.of(ByteArray(0)), now = 1)
         val doc = Doc.Made(session.id)
         assertEquals(Content.Copy(session), PickerDocuments.content(doc, emptyList(), listOf(session), { false }, emptySet()))
-        assertEquals(session.id, PickerDocuments.writable(doc, emptyList(), listOf(session))?.id)
+        assertEquals(session.id, PickerDocuments.writable(doc, emptyList(), listOf(session), current = null)?.id)
         EditSessions.queued(session, "upload-1", hash(2), original = null)
         val file = id()
         EditSessions.prepared(root, "upload-1", file, now = 2)
@@ -84,7 +84,7 @@ class PickerDocumentsTest {
         assertEquals(Content.Stored(file), PickerDocuments.content(doc, chain, listOf(sent), { it == file }, emptySet()))
         // Its session gone after the hour: the file still.
         assertEquals(Content.Stored(file), PickerDocuments.content(doc, chain, emptyList(), { it == file }, emptySet()))
-        assertNull(PickerDocuments.writable(doc, chain, emptyList()))
+        assertNull(PickerDocuments.writable(doc, chain, emptyList(), current = file))
         // Another session's copy is not this one's.
         val other = EditSessions.begin(root, "other.txt", "text/plain", null, null, Bytes.of(ByteArray(0)), now = 1)
         assertNull(PickerDocuments.content(Doc.Made(other.id), emptyList(), listOf(session), { false }, emptySet()))
@@ -131,11 +131,25 @@ class PickerDocumentsTest {
         EditSessions.failed(root, session.id, now = 3)
         val broken = listOf(EditSessions.get(root, session.id)!!)
         assertEquals(Content.Stored(file), PickerDocuments.content(Doc.File(file), listOf(file), broken, { it == file }, setOf("upload-1")))
-        assertNull(PickerDocuments.writable(Doc.File(file), listOf(file), broken))
+        assertNull(PickerDocuments.writable(Doc.File(file), listOf(file), broken, current = file))
         val made = EditSessions.begin(root, "new.txt", "text/plain", null, null, Bytes.of(ByteArray(0)), now = 1)
         EditSessions.failed(root, made.id, now = 2)
         val madeBroken = listOf(EditSessions.get(root, made.id)!!)
         assertNull(PickerDocuments.content(Doc.Made(made.id), emptyList(), madeBroken, { false }, emptySet()))
-        assertNull(PickerDocuments.writable(Doc.Made(made.id), emptyList(), madeBroken))
+        assertNull(PickerDocuments.writable(Doc.Made(made.id), emptyList(), madeBroken, current = null))
+    }
+
+    @Test
+    fun opensToWriteTheSameFileShareOneCopy() {
+        // Audit 3, AND3-4: each one decrypted the whole file again.
+        val file = id()
+        val filling = EditSessions.begin(root, "a.kdbx", "application/octet-stream", file, null, hash(1), now = 1, ready = false)
+        assertNull(PickerDocuments.writable(Doc.File(file), listOf(file), listOf(filling), current = file))
+        EditSessions.filled(root, filling.id, now = 2)
+        val filled = EditSessions.get(root, filling.id)!!
+        assertEquals(filled.id, PickerDocuments.writable(Doc.File(file), listOf(file), listOf(filled), current = file)?.id)
+        // Filled from a version that has been replaced since: not that one.
+        val newer = id()
+        assertNull(PickerDocuments.writable(Doc.File(file), listOf(file, newer), listOf(filled), current = newer))
     }
 }

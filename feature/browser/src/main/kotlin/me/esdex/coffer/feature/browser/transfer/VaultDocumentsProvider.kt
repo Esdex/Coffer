@@ -240,8 +240,9 @@ class VaultDocumentsProvider : DocumentsProvider() {
                 null -> throw FileNotFoundException()
             }
         }
-        val session = PickerDocuments.writable(doc, chain, view.sessions)
-            ?: begin(chain.lastOrNull { it in view.ready } ?: throw FileNotFoundException(), view, fill = access and ParcelFileDescriptor.MODE_TRUNCATE == 0, signal)
+        val current = chain.lastOrNull { it in view.ready }
+        val session = PickerDocuments.writable(doc, chain, view.sessions, current)
+            ?: begin(current ?: throw FileNotFoundException(), view, fill = access and ParcelFileDescriptor.MODE_TRUNCATE == 0, signal)
         val root = sessionsDir
         EditSessions.opened(root, session.id, Process.myPid(), System.currentTimeMillis())
         // Closed after writing: saved, as from an editor (see EditProvider). Whether anything changed is for the hash to tell.
