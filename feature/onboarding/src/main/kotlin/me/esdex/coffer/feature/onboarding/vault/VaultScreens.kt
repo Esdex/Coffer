@@ -8,6 +8,7 @@ import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -99,14 +100,15 @@ fun VaultGate(modifier: Modifier = Modifier, viewModel: VaultViewModel = hiltVie
     val open = state is VaultManager.State.Unlocked && !offer && !notice
     val flight = LocalLockFlight.current
     // Opening, the files come up with a slight zoom, as a viewer does. Locking goes at once, as nothing
-    // of the vault may linger on screen; only when the user locked it themselves, the padlock flying in
-    // from the Lock they tapped, the files fade out quickly under it.
+    // of the vault may linger on screen; only when the user locked it themselves, the files stay as they
+    // were (see BrowserScreen) while the padlock flies from the Lock they tapped, and give way to the unlock
+    // screen as it lands, so it lands on that screen whole (Esdex, 2026-11-20).
     AnimatedContent(
         open,
         transitionSpec = {
             when {
                 targetState -> (fadeIn(Motion.screen()) + scaleIn(Motion.screen(), initialScale = OPEN_SCALE)) togetherWith fadeOut(Motion.quick())
-                flight.flying -> fadeIn(Motion.standard()) togetherWith fadeOut(Motion.quick())
+                flight.flying -> fadeIn(LANDING) togetherWith fadeOut(LANDING)
                 else -> EnterTransition.None togetherWith ExitTransition.None
             }
         },
@@ -614,6 +616,9 @@ private fun vaultErrorText(error: VaultError): String = when (error) {
 
 /** The files coming up as the vault opens: from a little smaller, as a viewer opens. */
 private const val OPEN_SCALE = 0.96f
+
+/** Locked by hand: the files give way to the unlock screen over the end of the padlock's flight, done as it lands. */
+private val LANDING = tween<Float>(Motion.STANDARD, delayMillis = Motion.AMBIENT - Motion.STANDARD, easing = Motion.Easing)
 
 /** The padlock over the unlock screen: the size the other steps' animations have. */
 private val LOCK_HERO = 140.dp

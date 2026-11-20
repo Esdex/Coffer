@@ -18,6 +18,7 @@
 
 ### Fixed
 - In a PDF, a pinch zooms about the place between the fingers and moves with them, as in the gallery; it grew out of the top left corner. Zoomed in, a drag goes any way from the first move, a touch stops a fling, and zooming out after moving about works every time.
+- Locking with the padlock, the files stay as they were while it flies and give way to the unlock screen as it lands; they were seen emptying as they faded out.
 - In the normal theme the path under the top bar has the bar's background; the list no longer shows through it.
 
 ## [1.0.0] - 2026-11-15

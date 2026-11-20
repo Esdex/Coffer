@@ -224,7 +224,13 @@ fun BrowserScreen(
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
-    val listing by viewModel.listing.collectAsStateWithLifecycle()
+    val lockFlight = LocalLockFlight.current
+    val liveListing by viewModel.listing.collectAsStateWithLifecycle()
+    // While the padlock flies to the unlock screen the list stays as it was, then goes with the screen: the
+    // keys are gone at the tap, and the list would be seen emptying (Esdex, 2026-11-20).
+    val heldListing = remember { Held(liveListing) }
+    if (!lockFlight.flying) heldListing.value = liveListing
+    val listing = heldListing.value
     val tree by viewModel.tree.collectAsStateWithLifecycle()
     val transfers by viewModel.transfers.collectAsStateWithLifecycle()
     val run by viewModel.run.collectAsStateWithLifecycle()
@@ -242,7 +248,6 @@ fun BrowserScreen(
     var searching by rememberSaveable { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var lockIconRect by remember { mutableStateOf<Rect?>(null) }
-    val lockFlight = LocalLockFlight.current
     var sortOpen by remember { mutableStateOf(false) }
     var adding by remember { mutableStateOf(false) }
     var creatingFolder by remember { mutableStateOf(false) }
@@ -977,6 +982,9 @@ private fun AddSheet(onFiles: () -> Unit, onPhoneFolder: () -> Unit, onFolder: (
         }
     }
 }
+
+/** A value kept across recompositions without being state: what was last shown, held while the vault locks. */
+private class Held<T>(var value: T)
 
 /** A menu entry with its icon in front, as every menu in Arcanum has. A destructive one is red. */
 @Composable
