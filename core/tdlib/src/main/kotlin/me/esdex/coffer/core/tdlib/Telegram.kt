@@ -8,8 +8,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -40,6 +43,16 @@ class Telegram(
 
     private val stateFlow = MutableStateFlow<AuthState>(AuthState.Starting)
     val state: StateFlow<AuthState> = stateFlow.asStateFlow()
+
+    private val endedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+
+    /**
+     * The account's data on this phone is gone: signed out, or TDLib's data wiped (reset, other keys).
+     * What belongs to it goes too, queued work above all, which would otherwise be sent, and delete
+     * message ids, in whatever account signs in next. An event, not [state]: the next session's first
+     * state overwrote a Closed there before a collector saw it, and a reset never showed one (audit 3, Q3-4).
+     */
+    val ended: SharedFlow<Unit> = endedFlow.asSharedFlow()
 
     private val connectionFlow = MutableStateFlow(Connection.CONNECTING)
 
@@ -109,7 +122,10 @@ class Telegram(
             launch { started.connection.collect { connectionFlow.value = it } }
             started.state.collect { state ->
                 stateFlow.value = state
-                if (state == AuthState.Closed) scope.launch { restartAfter(started) }
+                if (state == AuthState.Closed) {
+                    endedFlow.emit(Unit)
+                    scope.launch { restartAfter(started) }
+                }
             }
         }
     }
@@ -149,6 +165,7 @@ class Telegram(
         check(stateFlow.value != AuthState.Ready) { "signed in: keys change only with a new sign-in" }
         stopLocked()
         root.deleteRecursively()
+        endedFlow.emit(Unit)
         secrets.clearApiCredentials()
         stateFlow.value = AuthState.NeedApiCredentials
     }
@@ -159,6 +176,7 @@ class Telegram(
         check(stateFlow.value != AuthState.Ready) { "signed in: keys change only with a new sign-in" }
         stopLocked()
         root.deleteRecursively()
+        endedFlow.emit(Unit)
         secrets.clearApiCredentials()
         startLocked()
     }
@@ -167,6 +185,7 @@ class Telegram(
     suspend fun resetTelegramData() = lock.withLock {
         stopLocked()
         root.deleteRecursively()
+        endedFlow.emit(Unit)
         secrets.resetDatabaseKey()
         startLocked()
     }

@@ -61,14 +61,18 @@ class VaultLifecycle @Inject constructor(
                         launch { runCatching { vault.locate(storage) } }
                         watchHeaders(storage)
                     }
-                    // Closed only follows a log out or a reset of Telegram's data. The next state comes at
-                    // once, and forgetting the vault must not be cut short by it.
-                    AuthState.Closed -> withContext(NonCancellable) {
-                        content.forget()
-                        device.disable()
-                        vault.forget()
-                    }
                     else -> Unit
+                }
+            }
+        }
+        // Signed out, or Telegram's data wiped: the vault of that account is forgotten, its queue with it
+        // (audit 3, Q3-4). Not cut short by the next session starting at once.
+        scope.launch {
+            telegram.ended.collect {
+                withContext(NonCancellable) {
+                    content.forget()
+                    device.disable()
+                    vault.forget()
                 }
             }
         }
