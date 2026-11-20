@@ -17,6 +17,7 @@
 - The path under the top bar shows at the root too, with the house marked as the place on screen, so going into a folder and back no longer moves the list.
 
 ### Fixed
+- The weekly check no longer deletes an operation that is in Saved Messages twice and keeps the copy; this phone then undid it, renames and moves, at its next full reread. A copy comes when Coffer is closed while sending.
 - In a PDF, a pinch zooms about the place between the fingers and moves with them, as in the gallery; it grew out of the top left corner. Zoomed in, a drag goes any way from the first move, a touch stops a fling, and zooming out after moving about works every time.
 - After unlocking, the files fade in once they are read, rather than popping up a moment later, at times after a flash of the empty vault picture.
 - Locking with the padlock, the files stay as they were while it flies and give way to the unlock screen as it lands; they were seen emptying as they faded out.

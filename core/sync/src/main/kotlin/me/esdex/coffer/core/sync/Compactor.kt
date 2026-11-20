@@ -40,11 +40,17 @@ class Compactor(private val storage: StorageBackend, private val keys: VaultKeys
 
     /** Messages of operations that can go: a pack only when every operation in it can (SPEC §4.6). */
     internal fun candidates(history: List<StoredMessage>, beforeId: MessageId, beforeDate: Long, folderMovesSupersede: Boolean): Set<MessageId> {
-        val ops = history.flatMap { message ->
+        val all = history.sortedBy { it.id }.flatMap { message ->
             val text = (message.content as? MessageContent.Text)?.text ?: return@flatMap emptyList()
             val record = Captions.parse(text) ?: return@flatMap emptyList()
             keys.meta.decodeOps(record)?.map { Entry(message, it) }.orEmpty()
         }
+        // An operation sent again under its op_id (the queue's resend after a kill mid-send, or a forward by
+        // anyone in the account) is applied from its first message only (audit 1, M4). Its copies are dead:
+        // they always go and decide nothing. Taken for the later write, a copy pushed out the original, which
+        // the device's rescans then still applied from, and found gone (audit 3, FMT3-2).
+        val seen = HashSet<Id>()
+        val (ops, copies) = all.partition { seen.add(it.op.opId) }
         val filesWithParts = history.mapNotNullTo(HashSet()) { message ->
             val caption = (message.content as? MessageContent.Blob)?.caption ?: return@mapNotNullTo null
             Captions.parse(caption)?.takeIf { it.kind == RecordKind.BLOB }?.let { keys.meta.decodeBlob(it)?.fileId }
@@ -78,14 +84,15 @@ class Compactor(private val storage: StorageBackend, private val keys: VaultKeys
             }
             if (goes && message.id < beforeId && message.date < beforeDate) going += entry
         }
-        val byMessage = ops.groupBy { it.message.id }
+        for (copy in copies) if (copy.message.id < beforeId && copy.message.date < beforeDate) going += copy
+        val byMessage = all.groupBy { it.message.id }
         fun removable() = byMessage.filterValues { entries -> entries.all { it in going } }.keys
         // A folder.delete may go only with every folder.create of its folder, or the folder would come back.
         val removable = removable()
         for (entry in ops) {
             val (message, op) = entry
             if (op !is Op.FolderDelete || message.id >= beforeId || message.date >= beforeDate) continue
-            val creates = ops.filter { (_, o) -> o is Op.FolderCreate && o.folderId == op.folderId }.map { it.message.id }
+            val creates = all.filter { (_, o) -> o is Op.FolderCreate && o.folderId == op.folderId }.map { it.message.id }
             if (creates.all { it in removable }) going += entry
         }
         return removable()

@@ -479,6 +479,33 @@ class MaintenanceTest {
     }
 
     @Test
+    fun aPackSentTwiceKeepsItsFirstCopyAndTheDeviceThatAppliedItAgrees() = runBlocking {
+        // Audit 3, FMT3-2: the queue sends a pack again after a kill mid-send (or anyone forwards one). The
+        // copy is never applied, so it is the one to go; the original stays for this device's rescans.
+        val here = device()
+        val fileId = here.upload("a.txt", bytes("a"))
+        val folder = here.ops.createFolder("Docs", null)
+        here.indexer.catchUp()
+        val caption = here.keys.meta.encodeOpPack(listOf(Op.FileRename(Id.random(sodium), 2, fileId, "b.txt"), Op.FileMove(Id.random(sodium), 3, fileId, folder)))
+        val original = here.storage.sendText(caption).id
+        val copy = here.storage.sendText(caption).id
+        here.upload("last.txt", bytes("l"))
+        here.indexer.catchUp()
+        val before = here.view()
+        assertTrue(Triple("b.txt", "Docs", FileStatus.READY) in before.files)
+
+        clock += days(31)
+        assertEquals(1, here.maintenance.run().operationsCompacted)
+        assertTrue(present(original))
+        assertFalse(present(copy))
+        here.indexer.rescan()
+        assertEquals(before, here.view())
+        val fresh = device()
+        fresh.indexer.rescan()
+        assertEquals(before, fresh.view())
+    }
+
+    @Test
     fun opsOnADeletedFileGoEvenWhileItsPartsRemainButTheDeleteStays() = runBlocking {
         // Maintenance deletes such parts first, so only the rules themselves can show this case.
         val here = device()
