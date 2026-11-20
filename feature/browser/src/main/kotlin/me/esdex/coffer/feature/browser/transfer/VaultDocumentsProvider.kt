@@ -154,9 +154,11 @@ class VaultDocumentsProvider : DocumentsProvider() {
         // Android 13 and older let any app ask a document's type, and its stream types, without the provider's
         // permission, and both come here; each answer opened the whole vault, which told by its time whether
         // Coffer is unlocked and roughly how much it holds, and worked Coffer at will (audit 3, AND3-6). A query
-        // itself has passed the permission already; this asks the same of those.
+        // itself has passed the permission already; this asks the same of those: the system's picker holds
+        // MANAGE_DOCUMENTS, an app the document it was given. A grant check alone turned the picker away too.
         val uri = DocumentsContract.buildDocumentUri(authority(context), documentId)
-        if (context.checkCallingOrSelfUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
+        val picker = context.checkCallingOrSelfPermission(MANAGE_DOCUMENTS) == PackageManager.PERMISSION_GRANTED
+        if (!picker && context.checkCallingOrSelfUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
             throw FileNotFoundException()
         }
         val cursor = MatrixCursor(projection ?: DOCUMENT_COLUMNS)
@@ -388,6 +390,8 @@ class VaultDocumentsProvider : DocumentsProvider() {
         )
 
         fun authority(context: Context) = "${context.packageName}.documents"
+
+        private const val MANAGE_DOCUMENTS = "android.permission.MANAGE_DOCUMENTS"
 
         private fun title(context: Context) = context.applicationInfo.loadLabel(context.packageManager).toString()
 
