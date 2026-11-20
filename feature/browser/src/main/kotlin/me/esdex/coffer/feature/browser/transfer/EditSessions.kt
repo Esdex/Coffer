@@ -91,7 +91,9 @@ class EditSession internal constructor(val id: String, private val dir: File) {
 }
 
 /** Where a saved edit goes: in place of [replaces], or as a new file; [cancel] is a save before it still queued. */
-data class EditSave(val name: String, val folderId: Id?, val replaces: Id?, val cancel: String?, val original: Id?)
+data class EditSave(val name: String, val folderId: Id?, val replaces: Id?, val cancel: String?, val original: Id?) {
+    override fun toString(): String = "EditSave(name=***, folderId=$folderId, replaces=$replaces, cancel=$cancel, original=$original)"
+}
 
 object EditSessions {
     /** How long a session stays once nothing is left to send and the editor stopped writing. */

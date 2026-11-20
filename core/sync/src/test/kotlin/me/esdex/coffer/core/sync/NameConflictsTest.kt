@@ -8,6 +8,7 @@ import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.crypto.format.LocalFolder
 import me.esdex.coffer.core.index.PendingUpload
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -260,5 +261,17 @@ class NameConflictsTest {
         val numbered = NameConflicts.numbered(long, isFile = true, setOf(NameConflicts.key(long)))
         assertTrue(FileNames.isValid(numbered))
         assertTrue(numbered.endsWith(" (1).pdf"))
+    }
+
+    @Test
+    fun noNameShowsInText() {
+        // Audit 3, DATA3-13: logs carry no names, and these are what a log line would print.
+        val texts = listOf(
+            Placed.File("Secret plan.pdf", "Secret plan.pdf").toString(),
+            Placed.Folder("Secret plans", "Secret plans", null, listOf(Placed.File("Secret plan.pdf", "Secret plan.pdf"))).toString(),
+            Conflict.File("Secret plan.pdf", null).toString(),
+            Conflict.Folder("Secret plans", null).toString(),
+        )
+        for (text in texts) assertFalse(text, "Secret" in text)
     }
 }

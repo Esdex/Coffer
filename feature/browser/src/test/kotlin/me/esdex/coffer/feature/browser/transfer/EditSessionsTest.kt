@@ -233,4 +233,9 @@ class EditSessionsTest {
             assertTrue(session.copy.exists())
         }
     }
+
+    @Test
+    fun noNameShowsInASavesText() {
+        assertFalse("Secret" in EditSave("Secret plan.docx", null, null, null, null).toString())
+    }
 }

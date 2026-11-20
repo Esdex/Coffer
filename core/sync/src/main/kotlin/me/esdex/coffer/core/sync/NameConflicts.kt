@@ -29,8 +29,14 @@ sealed interface Placed<T> {
     val name: String
     val item: T
 
-    data class File<T>(override val name: String, override val item: T, val replaces: Id? = null) : Placed<T>
-    data class Folder<T>(override val name: String, override val item: T, val existing: Id?, val children: List<Placed<T>>) : Placed<T>
+    // Not the name, nor what came in, in any text: logs carry no names (audit 3, DATA3-13).
+    data class File<T>(override val name: String, override val item: T, val replaces: Id? = null) : Placed<T> {
+        override fun toString(): String = "Placed.File(name=***, replaces=$replaces)"
+    }
+
+    data class Folder<T>(override val name: String, override val item: T, val existing: Id?, val children: List<Placed<T>>) : Placed<T> {
+        override fun toString(): String = "Placed.Folder(name=***, existing=$existing, children=${children.size})"
+    }
 }
 
 /** A name taken in [folderId] (null for the root), for the user to decide about. */
@@ -38,8 +44,13 @@ sealed interface Conflict {
     val name: String
     val folderId: Id?
 
-    data class File(override val name: String, override val folderId: Id?) : Conflict
-    data class Folder(override val name: String, override val folderId: Id?) : Conflict
+    data class File(override val name: String, override val folderId: Id?) : Conflict {
+        override fun toString(): String = "Conflict.File(name=***, folderId=$folderId)"
+    }
+
+    data class Folder(override val name: String, override val folderId: Id?) : Conflict {
+        override fun toString(): String = "Conflict.Folder(name=***, folderId=$folderId)"
+    }
 }
 
 /** The user's word on a conflict, and whether it goes for every other one of its kind too. */
