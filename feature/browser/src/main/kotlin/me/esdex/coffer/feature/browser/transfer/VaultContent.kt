@@ -210,9 +210,12 @@ class VaultContent @Inject constructor(
         OpenFiles.clear(context)
         WorkFiles.clear(context)
         scope.launch {
+            // Copies being edited too, locked or not: the sweep after a save needs the vault open (audit 3, DATA3-1).
+            if (EditSessionsSweeper.sweep(context, index)) EditSessionsSweeper.schedule(context)
             while (true) {
                 delay(60_000)
                 sweepOpenFiles()
+                EditSessionsSweeper.sweep(context, index)
             }
         }
         // The setting, which signing out clears with the rest: Coffer in the system file picker, or not.
@@ -466,6 +469,8 @@ class VaultContent @Inject constructor(
         val file = index.file(fileId)?.takeIf { it.status == FileStatus.READY } ?: return
         val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: return
         val session = EditSessions.begin(EditSessions.dir(context), meta.name, meta.mime, fileId, meta.folderId, meta.contentHash, System.currentTimeMillis())
+        // Swept in time even if the process is gone by then (audit 3, DATA3-1).
+        EditSessionsSweeper.schedule(context)
         val id = UUID.randomUUID().toString()
         index.putDownload(PendingDownload(id, fileId, keys.local.sealTarget(id, EDIT_TARGET + session.id)))
         pendingWork.trySend(Unit)

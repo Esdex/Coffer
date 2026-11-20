@@ -254,6 +254,7 @@ class VaultDocumentsProvider : DocumentsProvider() {
         val meta = view.tree.files[fileId] ?: throw FileNotFoundException()
         val root = sessionsDir
         val session = EditSessions.begin(root, meta.name, meta.mime, fileId, meta.folderId, meta.contentHash, System.currentTimeMillis())
+        EditSessionsSweeper.schedule(checkNotNull(context))
         if (!fill) return session
         try {
             runBlocking(Dispatchers.IO) {
@@ -333,6 +334,7 @@ class VaultDocumentsProvider : DocumentsProvider() {
         val name = if (NameConflicts.key(wanted) in taken) NameConflicts.numbered(wanted, isFile = true, taken) else wanted
         // No hash: whatever is written, an empty file too, is sent; nothing written, nothing is.
         val session = EditSessions.begin(sessionsDir, name, mime, null, folder, Bytes.of(ByteArray(0)), System.currentTimeMillis())
+        EditSessionsSweeper.schedule(checkNotNull(context))
         changed(checkNotNull(context))
         return PickerDocuments.id(Doc.Made(session.id))
     }
