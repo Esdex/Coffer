@@ -844,8 +844,9 @@ class VaultContent @Inject constructor(
         index.clear()
         // Files shared in and not uploaded are plain copies; none of them is to outlive the vault (audit 1, M10).
         inbox.discard()
-        // Nor copies being edited.
+        // Nor copies being edited, nor what other apps were given through the picker (audit 3, AND3-7).
         EditSessions.dir(context).deleteRecursively()
+        VaultDocumentsProvider.forgetGrants(context)
         ShareInbox.dir(context).deleteRecursively()
     }
 }

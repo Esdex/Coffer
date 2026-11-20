@@ -2,6 +2,7 @@ package me.esdex.coffer.feature.browser.transfer
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.database.MatrixCursor
@@ -387,6 +388,16 @@ class VaultDocumentsProvider : DocumentsProvider() {
             val state = if (on) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DEFAULT
             val pm = context.packageManager
             if (pm.getComponentEnabledSetting(component) != state) pm.setComponentEnabledSetting(component, state, PackageManager.DONT_KILL_APP)
+            if (!on) forgetGrants(context)
+        }
+
+        /**
+         * Takes back every document another app was given, kept ones too: turned on again later, the setting
+         * gave them all back without a new pick, and after a sign-out they outlived the vault (audit 3, AND3-7).
+         */
+        fun forgetGrants(context: Context) {
+            val root = Uri.Builder().scheme("content").authority(authority(context)).build()
+            runCatching { context.revokeUriPermission(root, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
         }
 
         /** Locked, unlocked or anything in the vault changed: the picker reads it again. */
