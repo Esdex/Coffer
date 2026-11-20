@@ -104,6 +104,20 @@ class LocalSealer(private val sodium: Sodium, private val localKey: SecretKey) {
     /** Null if [sealed] is damaged, from another vault, or belongs to another file. */
     fun openWaveform(fileId: Id, sealed: ByteArray): ByteArray? = open(sealed, WAVEFORM_AD + fileId.toByteArray())
 
+    /**
+     * What an edit session on the phone keeps of a version's content hash, to tell a save that changed
+     * nothing: BLAKE2b-256 of `"coffer/local/v1/edit" || hash`, keyed with a key derived from LocalKey for
+     * this alone. The hash as it is let anyone with the phone confirm a guess of the file (audit 3, DATA3-7).
+     */
+    fun editTag(contentHash: Bytes): Bytes {
+        val key = localKey.withBytes { sodium.kdfDerive(CofferFormat.KEY_BYTES, EDIT_KEY_ID, EDIT_KEY_CONTEXT, it) }
+        try {
+            return Bytes.of(sodium.genericHash(CofferFormat.CONTENT_HASH_BYTES, EDIT_AD + contentHash.toByteArray(), key))
+        } finally {
+            key.fill(0)
+        }
+    }
+
     private fun seal(plain: ByteArray, ad: ByteArray): ByteArray {
         val nonce = sodium.randomBytes(CofferFormat.NONCE_BYTES)
         return nonce + localKey.withBytes { sodium.aeadEncrypt(plain, ad, nonce, it) }
@@ -125,6 +139,9 @@ class LocalSealer(private val sodium: Sodium, private val localKey: SecretKey) {
         val TARGET_AD = "coffer/local/v1/target".toByteArray(Charsets.US_ASCII)
         val PREVIEW_AD = "coffer/local/v1/preview".toByteArray(Charsets.US_ASCII)
         val WAVEFORM_AD = "coffer/local/v1/waveform".toByteArray(Charsets.US_ASCII)
+        val EDIT_AD = "coffer/local/v1/edit".toByteArray(Charsets.US_ASCII)
+        val EDIT_KEY_CONTEXT = "cofedits".toByteArray(Charsets.US_ASCII)
+        const val EDIT_KEY_ID = 1L
     }
 }
 

@@ -479,7 +479,7 @@ class VaultContent @Inject constructor(
         val keys = keysFlow.value ?: return
         val file = index.file(fileId)?.takeIf { it.status == FileStatus.READY } ?: return
         val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: return
-        val session = EditSessions.begin(EditSessions.dir(context), meta.name, meta.mime, fileId, meta.folderId, meta.contentHash, System.currentTimeMillis(), ready = false)
+        val session = EditSessions.begin(EditSessions.dir(context), meta.name, meta.mime, fileId, meta.folderId, keys.local.editTag(meta.contentHash), System.currentTimeMillis(), ready = false)
         // Swept in time even if the process is gone by then (audit 3, DATA3-1).
         EditSessionsSweeper.schedule(context)
         val id = UUID.randomUUID().toString()
@@ -515,7 +515,7 @@ class VaultContent @Inject constructor(
     }
 
     private suspend fun saveEdit(session: EditSession, keys: VaultKeys) {
-        val hash = withContext(Dispatchers.IO) { session.copy.inputStream().use { ContentHasher.hash(sodium, it).first } }
+        val hash = keys.local.editTag(withContext(Dispatchers.IO) { session.copy.inputStream().use { ContentHasher.hash(sodium, it).first } })
         if (hash == session.savedHash) {
             EditSessions.unchanged(session)
             return

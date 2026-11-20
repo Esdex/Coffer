@@ -279,7 +279,9 @@ class TransferWorker @AssistedInject constructor(
         val open = entry.open
         if (open != null && vault.state.value !is VaultManager.State.Unlocked) {
             // Queued before the vault locked: its copy would be for nobody, and written decrypted onto a
-            // locked phone (audit 2, L-m).
+            // locked phone (audit 2, L-m). An edit's session goes too: an empty file under the real name and
+            // the version's hash were all it held (audit 3, DATA3-7).
+            open.edit?.let { EditSessions.get(EditSessions.dir(applicationContext), it) }?.let { File(EditSessions.dir(applicationContext), it.id).deleteRecursively() }
             index.removeDownload(id)
             registry.remove(download.fileId)
             return true

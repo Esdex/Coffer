@@ -144,4 +144,17 @@ class LocalSealTest {
         // A sealed target cannot pass for an upload with the same id, or the other way round.
         assertNull(sealer.openUpload("d1", target))
     }
+
+    @Test
+    fun anEditsTagMatchesTheOracleAndHidesTheHash() {
+        val localKey = LocalKeys.derive(realSodium, key(master))
+        val ev = local.getValue("editTag").jsonObject
+        val hash = Bytes.of(hex(ev.str("contentHash")))
+        val tag = LocalSealer(realSodium, localKey).editTag(hash)
+        assertEquals(ev.str("tag"), tag.toByteArray().toHex())
+        assertNotEquals(hash, tag)
+        // Another vault's key, another tag.
+        val other = LocalKeys.derive(realSodium, key(ByteArray(32) { 7 }))
+        assertNotEquals(tag, LocalSealer(realSodium, other).editTag(hash))
+    }
 }

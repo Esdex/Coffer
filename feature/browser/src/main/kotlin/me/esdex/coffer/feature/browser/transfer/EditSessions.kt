@@ -17,8 +17,8 @@ import java.util.UUID
  * A vault file decrypted for editing in another app (decision 2026-11-19): its copy, handed out with
  * write access by [EditProvider], and what Coffer knows about it, in `session.properties` beside it.
  * Unlike a copy to open, it stays when the vault locks: the editor may save after that, and the change
- * waits for the next unlock to be encrypted and sent. Nothing secret is in the properties, only ids,
- * the type and the hash of what was last saved; the name is the copy's own.
+ * waits for the next unlock to be encrypted and sent. In the properties: ids, the type, and the keyed hash
+ * of what was last saved, which confirms no guess of the file (audit 3, DATA3-7); the name is the copy's own.
  */
 class EditSession internal constructor(val id: String, private val dir: File) {
     private val props = Properties().apply { File(dir, PROPS).takeIf { it.exists() }?.inputStream()?.use(::load) }
@@ -34,7 +34,7 @@ class EditSession internal constructor(val id: String, private val dir: File) {
 
     val mime: String get() = props.getProperty(MIME) ?: "application/octet-stream"
 
-    /** The content hash of the vault's version: a save that changed nothing is not sent. */
+    /** The vault's version's content hash, keyed (see LocalSealer.editTag): a save that changed nothing is not sent. */
     val savedHash: Bytes get() = Bytes.of(bytesOf(props.getProperty(HASH)))
 
     /** The upload of the last save, and the file it makes, once it is prepared. */

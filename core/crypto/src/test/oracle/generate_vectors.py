@@ -305,6 +305,11 @@ def main(out_path):
     v["local"]["preview"] = {"nonce": n_preview.hex(), "plain": preview_body.hex(),
                              "sealed": (n_preview + xchacha_seal(local_key, n_preview, preview_body,
                                                                  b"coffer/local/v1/preview" + file_id)).hex()}
+    # What an edit session keeps to tell a save that changed nothing (audit 3, DATA3-7): the content hash keyed
+    # with a key of its own from LocalKey, so it confirms no guess of the file's content without the vault.
+    edit_key = kdf(local_key, 1, b"cofedits")
+    v["local"]["editTag"] = {"contentHash": content_hash.hex(),
+                             "tag": hashlib.blake2b(b"coffer/local/v1/edit" + content_hash, digest_size=32, key=edit_key).hexdigest()}
     # A song's waveform for the player: 80 bar heights, sealed under the file's id.
     waveform_body = bytes((i * 37) % 256 for i in range(80))
     n_waveform = nonce(0x98)
