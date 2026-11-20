@@ -178,8 +178,10 @@ class UploadRunner(
         }
         if (hasher.finish() != keys.contentHash) throw abandon(upload, fileId)
         index.setStatus(fileId, FileStatus.READY)
-        replaceAfter(upload)
+        // Out of the queue before the old file is held for deleting: cut in between, both files stay. The
+        // other way round, the upload left to cancel took the new file, and the held delete the old (audit 3, Q3-3).
         index.removeUpload(upload.uploadId)
+        replaceAfter(upload)
     }
 
     /**

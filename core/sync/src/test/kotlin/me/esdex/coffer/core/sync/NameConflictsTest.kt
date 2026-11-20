@@ -8,6 +8,8 @@ import me.esdex.coffer.core.crypto.format.FileNames
 import me.esdex.coffer.core.crypto.format.LocalFolder
 import me.esdex.coffer.core.index.PendingUpload
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -158,6 +160,29 @@ class NameConflictsTest {
         assertEquals(setOf(Triple("a.txt", null, me.esdex.coffer.core.index.FileStatus.READY)), here.view().files)
         assertTrue(oldParts.none { it in blobs() })
         assertEquals(null, here.index.file(old))
+    }
+
+    @Test
+    fun anUploadCutOffAsItEndsLeavesBothFilesNeverNeither() = runTest {
+        // Audit 3, Q3-3: killed between the old file's hold and the upload's removal, cancelling took both.
+        val here = Device(cloud, keysOf(me.esdex.coffer.core.crypto.MasterKeys.generate(sodium)), temp.newFolder())
+        val old = here.upload("a.txt", BytesSource("old".toByteArray()))
+        here.indexer.catchUp()
+        val (queued, request) = here.queued("a.txt")
+        val prepared = here.preparer.prepare(PendingUpload(queued.uploadId, queued.sealedRequest, null, emptyList(), null, replaces = old), request, BytesSource("new".toByteArray()))
+        val killed = object : me.esdex.coffer.core.index.VaultIndex by here.index {
+            override suspend fun removeUpload(uploadId: String) = throw IllegalStateException("killed")
+        }
+        assertThrows(IllegalStateException::class.java) {
+            kotlinx.coroutines.runBlocking { UploadRunner(sodium, here.storage, killed, temp.newFolder()).run(prepared.upload, prepared.keys, BytesSource("new".toByteArray())) }
+        }
+        // After the restart the upload is still there; the user cancels it.
+        here.runner.cancel(here.index.uploads().single())
+        OpQueue(here.index).sealHeld(here.keys) { 1_762_531_200_000 }
+        OpQueue(here.index).drain(here.storage, pause = {})
+        here.indexer.catchUp()
+        assertNotNull(here.index.file(old))
+        assertTrue(here.index.ops().isEmpty())
     }
 
     @Test
