@@ -173,6 +173,9 @@ class NameConflicts(
         fun numbered(name: String, isFile: Boolean, taken: Set<String>): String {
             val dot = if (isFile) name.lastIndexOf('.') else -1
             val extension = if (dot > 0) name.substring(dot) else ""
+            // An "extension" too long to leave the name any room is part of the name: kept whole, the number
+            // came on top and the name went past 255 bytes, which stopped an import halfway (audit 3, Q3-10).
+            if (FileNames.utf8Size(LONGEST_SUFFIX + extension) >= CofferFormat.MAX_NAME_BYTES) return numbered(name, isFile = false, taken)
             val whole = name.substring(0, name.length - extension.length)
             val match = NUMBERED.matchEntire(whole)
             val stem = match?.groupValues?.get(1) ?: whole
@@ -187,6 +190,7 @@ class NameConflicts(
         }
 
         private val NUMBERED = Regex("(.+) \\((\\d{1,9})\\)")
+        private const val LONGEST_SUFFIX = " (999999999)"
 
         private fun shortened(text: String, maxBytes: Int): String {
             var bytes = 0

@@ -249,6 +249,12 @@ class NameConflictsTest {
         assertEquals("file (2).pdf", NameConflicts.numbered("file (1).pdf", isFile = true, setOf("file (1).pdf")))
         assertEquals(".bashrc (1)", NameConflicts.numbered(".bashrc", isFile = true, setOf(".bashrc")))
         assertEquals("v1.2 (1)", NameConflicts.numbered("v1.2", isFile = false, setOf("v1.2")))
+        // Audit 3, Q3-10: an "extension" that leaves no room is part of the name, and the result stays within 255 bytes.
+        val allExtension = "a." + "x".repeat(253)
+        val renamed = NameConflicts.numbered(allExtension, isFile = true, setOf(allExtension))
+        assertTrue(FileNames.utf8Size(renamed) <= 255)
+        assertTrue(renamed.endsWith(" (1)"))
+        assertTrue(FileNames.isValid(renamed))
         val long = "я".repeat(125) + ".pdf"
         assertEquals(254, FileNames.utf8Size(long))
         val numbered = NameConflicts.numbered(long, isFile = true, setOf(NameConflicts.key(long)))
