@@ -150,6 +150,14 @@ class VaultDocumentsProvider : DocumentsProvider() {
 
     override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor {
         val context = checkNotNull(context)
+        // Android 13 and older let any app ask a document's type, and its stream types, without the provider's
+        // permission, and both come here; each answer opened the whole vault, which told by its time whether
+        // Coffer is unlocked and roughly how much it holds, and worked Coffer at will (audit 3, AND3-6). A query
+        // itself has passed the permission already; this asks the same of those.
+        val uri = DocumentsContract.buildDocumentUri(authority(context), documentId)
+        if (context.checkCallingOrSelfUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
+            throw FileNotFoundException()
+        }
         val cursor = MatrixCursor(projection ?: DOCUMENT_COLUMNS)
         val doc = PickerDocuments.parse(documentId) ?: throw FileNotFoundException()
         val keys = keys()
