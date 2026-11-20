@@ -1,6 +1,7 @@
 package me.esdex.coffer.feature.browser.transfer
 
 import android.content.Context
+import android.os.Process
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -39,7 +40,7 @@ class EditSessionsSweeper(context: Context, params: WorkerParameters) : Coroutin
         /** Sweeps now; true if any session is left, to be swept later. */
         suspend fun sweep(context: Context, index: VaultIndex): Boolean {
             val root = EditSessions.dir(context)
-            EditSessions.sweep(root, index.uploads().mapTo(HashSet()) { it.uploadId }, System.currentTimeMillis())
+            EditSessions.sweep(root, index.uploads().mapTo(HashSet()) { it.uploadId }, System.currentTimeMillis(), Process.myPid())
             return EditSessions.all(root).isNotEmpty()
         }
 

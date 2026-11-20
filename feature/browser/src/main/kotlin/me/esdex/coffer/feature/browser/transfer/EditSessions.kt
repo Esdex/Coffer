@@ -47,6 +47,15 @@ class EditSession internal constructor(val id: String, private val dir: File) {
     /** When it was last written, or begun: an idle session goes after a while (see [EditSessions.sweep]). */
     val touched: Long get() = props.getProperty(TOUCHED)?.toLongOrNull() ?: 0L
 
+    /** The copy holds the vault's version or what an editor wrote; false while a download fills it. */
+    val ready: Boolean get() = props.getProperty(READY) != "false"
+
+    /** The copy's time of change when Coffer last knew what it held: a later one is a save it did not hear. */
+    val modified: Long get() = props.getProperty(MODIFIED)?.toLongOrNull() ?: 0L
+
+    /** The process of Coffer's that handed the copy out for writing and has not heard it closed. */
+    val writer: Int? get() = props.getProperty(WRITER)?.toIntOrNull()
+
     internal fun update(change: (Properties) -> Unit) {
         change(props)
         val temp = File(dir, PROPS_TEMP)
@@ -67,6 +76,9 @@ class EditSession internal constructor(val id: String, private val dir: File) {
         const val UPLOAD_FILE = "uploadFile"
         const val DIRTY = "dirty"
         const val TOUCHED = "touched"
+        const val READY = "ready"
+        const val MODIFIED = "modified"
+        const val WRITER = "writer"
 
         fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
         fun bytesOf(hex: String?): ByteArray = (hex ?: "").let { h -> ByteArray(h.length / 2) { h.substring(it * 2, it * 2 + 2).toInt(16).toByte() } }
@@ -88,12 +100,15 @@ object EditSessions {
     /** An editor wrote a copy: time to look for saves. */
     val changes: SharedFlow<Unit> = changesFlow.asSharedFlow()
 
-    fun begin(root: File, name: String, mime: String, original: Id?, folder: Id?, hash: Bytes, now: Long): EditSession {
+    /** A new session; not [ready] when a download is to fill its copy (see [filled]). */
+    fun begin(root: File, name: String, mime: String, original: Id?, folder: Id?, hash: Bytes, now: Long, ready: Boolean = true): EditSession {
         val id = UUID.randomUUID().toString()
         val dir = File(root, id).apply { mkdirs() }
-        File(dir, OpenFiles.safeName(name)).createNewFile()
+        val copy = File(dir, OpenFiles.safeName(name)).apply { createNewFile() }
         return EditSession(id, dir).apply {
             update {
+                it.setProperty(EditSession.READY, ready.toString())
+                it.setProperty(EditSession.MODIFIED, copy.lastModified().toString())
                 it.setProperty(EditSession.ORIGINAL, original?.let { o -> EditSession.hex(o.toByteArray()) }.orEmpty())
                 it.setProperty(EditSession.FOLDER, folder?.let { f -> EditSession.hex(f.toByteArray()) }.orEmpty())
                 it.setProperty(EditSession.MIME, mime)
@@ -112,11 +127,34 @@ object EditSessions {
 
     fun all(root: File): List<EditSession> = root.listFiles()?.mapNotNull { get(root, it.name) }.orEmpty()
 
+    /** The copy holds the vault's version now, downloaded or decrypted into it. */
+    fun filled(root: File, id: String, now: Long) {
+        get(root, id)?.let { session ->
+            session.update {
+                it.setProperty(EditSession.READY, "true")
+                it.setProperty(EditSession.MODIFIED, session.copy.lastModified().toString())
+                it.setProperty(EditSession.TOUCHED, now.toString())
+            }
+        }
+    }
+
+    /** Handed out for writing by this process [pid]: kept while it is open, however long (see [sweep]). */
+    fun opened(root: File, id: String, pid: Int, now: Long) {
+        get(root, id)?.update {
+            it.setProperty(EditSession.WRITER, pid.toString())
+            it.setProperty(EditSession.TOUCHED, now.toString())
+        }
+    }
+
     /** The editor closed the copy after writing to it. */
     fun written(root: File, id: String, now: Long) {
-        get(root, id)?.update {
-            it.setProperty(EditSession.DIRTY, "true")
-            it.setProperty(EditSession.TOUCHED, now.toString())
+        get(root, id)?.let { session ->
+            session.update {
+                it.setProperty(EditSession.DIRTY, "true")
+                it.setProperty(EditSession.TOUCHED, now.toString())
+                it.setProperty(EditSession.MODIFIED, session.copy.lastModified().toString())
+                it.remove(EditSession.WRITER)
+            }
         }
         changesFlow.tryEmit(Unit)
     }
@@ -181,13 +219,37 @@ object EditSessions {
         return if (NameConflicts.key(fitted) in taken) NameConflicts.numbered(fitted, isFile = true, taken) else fitted
     }
 
-    /** Deletes the sessions with nothing left to send that no editor wrote to for [IDLE_MILLIS]. */
-    fun sweep(root: File, pending: Set<String>, now: Long) {
+    /**
+     * Deletes the sessions with nothing left to send that no editor wrote to for [IDLE_MILLIS]. Not one this
+     * process [pid] handed out for writing and has not heard closed, for a day: an editor may keep a copy
+     * open for long before it saves (audit 3, DATA3-2). A copy changed since Coffer last knew it, written
+     * while the process that would have heard it was gone, is a save: marked written, not deleted. A copy
+     * still being filled by a download is left to it for [FILLING_MILLIS].
+     */
+    fun sweep(root: File, pending: Set<String>, now: Long, pid: Int) {
         for (session in all(root)) {
+            val dir = File(root, session.id)
+            if (!session.ready) {
+                if (now - session.touched > FILLING_MILLIS) dir.deleteRecursively()
+                continue
+            }
+            val writer = session.writer
+            if (writer == pid && now - session.touched <= WRITING_MILLIS) continue
+            if (writer != null) session.update { it.remove(EditSession.WRITER) }
+            if (!session.dirty && session.copy.lastModified() != session.modified) {
+                written(root, session.id, now)
+                continue
+            }
             val sending = session.upload?.let { it in pending } == true
-            if (!session.dirty && !sending && now - session.touched > IDLE_MILLIS) File(root, session.id).deleteRecursively()
+            if (!session.dirty && !sending && now - session.touched > IDLE_MILLIS) dir.deleteRecursively()
         }
     }
+
+    /** How long a copy handed out for writing is kept without a word from its editor. */
+    const val WRITING_MILLIS = 24 * 60 * 60 * 1000L
+
+    /** How long a download may take to fill a copy. */
+    const val FILLING_MILLIS = 24 * 60 * 60 * 1000L
 
     private const val EDITED = " (edited)"
     private const val FORWARDS = "forwards.properties"

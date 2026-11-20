@@ -332,6 +332,8 @@ class TransferWorker @AssistedInject constructor(
             } else if (openFile != null && open != null) {
                 // Finished after the vault locked, which cleared the copies: this one is not to stay either (audit 1, M11).
                 if (vault.state.value is VaultManager.State.Unlocked) {
+                    // Whole: from now on a change to it is the editor's (see EditSessions.sweep).
+                    editing?.let { EditSessions.filled(EditSessions.dir(applicationContext), it.id, System.currentTimeMillis()) }
                     registry.readyToOpen(openFile, open.mime, editing)
                     if (editing == null) OpenFilesSweeper.schedule(applicationContext)
                     handedOver = true

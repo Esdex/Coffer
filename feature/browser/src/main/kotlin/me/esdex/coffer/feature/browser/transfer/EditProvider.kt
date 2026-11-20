@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
+import android.os.Process
 import android.provider.OpenableColumns
 import java.io.FileNotFoundException
 
@@ -33,6 +34,8 @@ class EditProvider : ContentProvider() {
         val access = ParcelFileDescriptor.parseMode(mode)
         if (access == ParcelFileDescriptor.MODE_READ_ONLY) return ParcelFileDescriptor.open(session.copy, access)
         val root = EditSessions.dir(checkNotNull(context))
+        // Kept while open, however long before the editor saves (audit 3, DATA3-2).
+        EditSessions.opened(root, session.id, Process.myPid(), System.currentTimeMillis())
         // Closed after writing: saved. Whether anything changed is for the hash to tell.
         return ParcelFileDescriptor.open(session.copy, access, Handler(Looper.getMainLooper())) {
             EditSessions.written(root, session.id, System.currentTimeMillis())

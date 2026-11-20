@@ -243,6 +243,7 @@ class VaultDocumentsProvider : DocumentsProvider() {
         val session = PickerDocuments.writable(doc, chain, view.sessions)
             ?: begin(chain.lastOrNull { it in view.ready } ?: throw FileNotFoundException(), view, fill = access and ParcelFileDescriptor.MODE_TRUNCATE == 0, signal)
         val root = sessionsDir
+        EditSessions.opened(root, session.id, Process.myPid(), System.currentTimeMillis())
         // Closed after writing: saved, as from an editor (see EditProvider). Whether anything changed is for the hash to tell.
         return ParcelFileDescriptor.open(session.copy, access, Handler(Looper.getMainLooper())) {
             EditSessions.written(root, session.id, System.currentTimeMillis())
@@ -253,7 +254,7 @@ class VaultDocumentsProvider : DocumentsProvider() {
     private fun begin(fileId: Id, view: View, fill: Boolean, signal: CancellationSignal?): EditSession {
         val meta = view.tree.files[fileId] ?: throw FileNotFoundException()
         val root = sessionsDir
-        val session = EditSessions.begin(root, meta.name, meta.mime, fileId, meta.folderId, meta.contentHash, System.currentTimeMillis())
+        val session = EditSessions.begin(root, meta.name, meta.mime, fileId, meta.folderId, meta.contentHash, System.currentTimeMillis(), ready = !fill)
         EditSessionsSweeper.schedule(checkNotNull(context))
         if (!fill) return session
         try {
@@ -269,6 +270,7 @@ class VaultDocumentsProvider : DocumentsProvider() {
             File(root, session.id).deleteRecursively()
             throw FileNotFoundException().apply { initCause(e) }
         }
+        EditSessions.filled(root, session.id, System.currentTimeMillis())
         return session
     }
 

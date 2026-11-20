@@ -25,6 +25,11 @@ class EditSessionsTest {
     private fun meta(name: String, folder: Id?) =
         FileMeta(name, folder, "application/msword", 1, 1, hash(0), Bytes.of(ByteArray(CofferFormat.WRAPPED_KEY_BYTES)))
 
+    private companion object {
+        const val HERE = 4242
+        const val HOUR = EditSessions.IDLE_MILLIS
+    }
+
     private val docs = id()
     private val work = id()
     private val report = id()
@@ -141,12 +146,60 @@ class EditSessionsTest {
         val dirty = session().also { EditSessions.written(root, it.id, now = 1_000) }
         val sending = session().also { EditSessions.queued(it, "upload-9", hash(3), original = null) }
         val recent = EditSessions.begin(root, "a.txt", "text/plain", id(), null, hash(1), now = 1_000 + EditSessions.IDLE_MILLIS)
-        EditSessions.sweep(root, pending = setOf("upload-9"), now = 2_000 + EditSessions.IDLE_MILLIS)
+        EditSessions.sweep(root, pending = setOf("upload-9"), now = 2_000 + EditSessions.IDLE_MILLIS, pid = HERE)
         val left = EditSessions.all(root).map { it.id }.toSet()
         assertEquals(setOf(dirty.id, sending.id, recent.id), left)
         assertFalse(idle.id in left)
         // Its upload done, the sending one goes too.
-        EditSessions.sweep(root, pending = emptySet(), now = 2_000 + EditSessions.IDLE_MILLIS)
+        EditSessions.sweep(root, pending = emptySet(), now = 2_000 + EditSessions.IDLE_MILLIS, pid = HERE)
         assertEquals(setOf(dirty.id, recent.id), EditSessions.all(root).map { it.id }.toSet())
+    }
+
+    @Test
+    fun aCopyHandedOutForWritingStaysWhileOpenUpToADay() {
+        // Audit 3, DATA3-2: an editor may keep the copy open an hour and more before it saves.
+        val open = session().also { EditSessions.opened(root, it.id, HERE, now = 1_000) }
+        EditSessions.sweep(root, emptySet(), now = 1_000 + 2 * HOUR, pid = HERE)
+        assertEquals(listOf(open.id), EditSessions.all(root).map { it.id })
+        // Past a day without a word, or held by a process that is gone, it is idle like any other.
+        EditSessions.sweep(root, emptySet(), now = 2_000 + EditSessions.WRITING_MILLIS, pid = HERE)
+        assertEquals(emptyList<String>(), EditSessions.all(root).map { it.id })
+        val other = session().also { EditSessions.opened(root, it.id, HERE + 1, now = 1_000) }
+        EditSessions.sweep(root, emptySet(), now = 1_000 + 2 * HOUR, pid = HERE)
+        assertFalse(other.id in EditSessions.all(root).map { it.id })
+    }
+
+    @Test
+    fun aSaveNobodyHeardIsSentNotSwept() {
+        // Coffer killed while the editor held the copy: the close never came, the change is on disk.
+        val session = session().also { EditSessions.opened(root, it.id, HERE + 1, now = 1_000) }
+        session.copy.writeText("edited")
+        session.copy.setLastModified(session.modified + 5_000)
+        EditSessions.sweep(root, emptySet(), now = 1_000 + 2 * HOUR, pid = HERE)
+        val after = EditSessions.get(root, session.id)!!
+        assertTrue(after.dirty)
+        assertNull(after.writer)
+        // Saved, and nothing changed since: it goes in its time.
+        EditSessions.queued(after, "upload-1", hash(2), original = null)
+        EditSessions.sweep(root, emptySet(), now = 2_000 + 4 * HOUR, pid = HERE)
+        assertNull(EditSessions.get(root, session.id))
+    }
+
+    @Test
+    fun aCopyBeingFilledIsNoSaveAndIsLeftToItsDownload() {
+        val filling = EditSessions.begin(root, "big.mkv", "video/x-matroska", report, docs, hash(1), now = 1_000, ready = false)
+        filling.copy.writeText("half of it")
+        filling.copy.setLastModified(filling.modified + 5_000)
+        EditSessions.sweep(root, emptySet(), now = 1_000 + 2 * HOUR, pid = HERE)
+        val still = EditSessions.get(root, filling.id)!!
+        assertFalse(still.dirty)
+        // Filled: what it holds now is the vault's, no save either.
+        EditSessions.filled(root, filling.id, now = 1_000 + 3 * HOUR)
+        EditSessions.sweep(root, emptySet(), now = 1_000 + 3 * HOUR + 1, pid = HERE)
+        assertFalse(EditSessions.get(root, filling.id)!!.dirty)
+        // A download that never ends gives it up after a day.
+        val stuck = EditSessions.begin(root, "stuck.bin", "application/octet-stream", report, docs, hash(1), now = 1_000, ready = false)
+        EditSessions.sweep(root, emptySet(), now = 2_000 + EditSessions.FILLING_MILLIS, pid = HERE)
+        assertNull(EditSessions.get(root, stuck.id))
     }
 }

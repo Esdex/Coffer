@@ -468,7 +468,7 @@ class VaultContent @Inject constructor(
         val keys = keysFlow.value ?: return
         val file = index.file(fileId)?.takeIf { it.status == FileStatus.READY } ?: return
         val meta = keys.local.openFileMeta(fileId, file.sealedMeta) ?: return
-        val session = EditSessions.begin(EditSessions.dir(context), meta.name, meta.mime, fileId, meta.folderId, meta.contentHash, System.currentTimeMillis())
+        val session = EditSessions.begin(EditSessions.dir(context), meta.name, meta.mime, fileId, meta.folderId, meta.contentHash, System.currentTimeMillis(), ready = false)
         // Swept in time even if the process is gone by then (audit 3, DATA3-1).
         EditSessionsSweeper.schedule(context)
         val id = UUID.randomUUID().toString()
@@ -497,7 +497,7 @@ class VaultContent @Inject constructor(
                 val uploadId = queue(listOf(UploadRequest(Uri.fromFile(session.copy), save.name, session.mime, save.folderId, save.replaces))).single()
                 EditSessions.queued(session, uploadId, hash, save.original)
             }
-            EditSessions.sweep(root, index.uploads().mapTo(HashSet()) { it.uploadId }, System.currentTimeMillis())
+            EditSessions.sweep(root, index.uploads().mapTo(HashSet()) { it.uploadId }, System.currentTimeMillis(), android.os.Process.myPid())
         }
     }
 
