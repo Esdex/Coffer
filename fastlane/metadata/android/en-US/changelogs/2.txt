@@ -1,0 +1,1 @@
+Coffer in the system file picker, for apps such as KeePassDX. Edit a file in another app and save it back. A name already taken asks what to do. Changes keep going when Coffer is closed, with far fewer of Telegram's pauses. Lock in the top bar, and What's new in About. A new vault format: update every device that opens the vault.

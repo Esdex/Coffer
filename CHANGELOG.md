@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.0] - 2026-11-20
 
 ### Added
 - What's new, in Settings, About: the changes of this version, and of those before it behind a button.
