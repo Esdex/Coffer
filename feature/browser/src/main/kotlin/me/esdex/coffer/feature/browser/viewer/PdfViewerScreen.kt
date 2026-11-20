@@ -7,10 +7,12 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.ScrollableDefaults
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,7 +56,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.ContentScale
@@ -103,16 +108,42 @@ fun PdfViewerScreen(
     var scale by remember { mutableFloatStateOf(1f) }
     val density = LocalDensity.current
 
-    // Zoom only. Moving about a zoomed page is a real horizontal scroll below rather than a moved
-    // layer: a moved layer stops dead where the finger lifts, a scroll flings on like the list does.
-    val transformState = rememberTransformableState { zoomChange, _, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
-    }
     val sideways = rememberScrollState()
     val scope = rememberCoroutineScope()
     val fling = ScrollableDefaults.flingBehavior()
     LaunchedEffect(scale) { if (scale <= 1.01f) sideways.scrollTo(0) }
     var zooming: Job? by remember { mutableStateOf(null) }
+    // The flings a drag let go with: a finger coming down again stops them, or they pull against it.
+    var flings: List<Job> by remember { mutableStateOf(emptyList()) }
+    fun stopFlings() {
+        flings.forEach { it.cancel() }
+        flings = emptyList()
+    }
+
+    // Where the sideways scroll should be during a pinch: the real one cannot go past the room the last
+    // frame laid out, which grows a frame behind the scale, so it catches up when the pinch ends.
+    var pinchSideways: Float? by remember { mutableStateOf(null) }
+
+    // Zoom about the point between the fingers, and move with them, as the gallery does. Only the scale
+    // changed, the page grew out of its top left corner and the place pinched slid away. Moving about a
+    // zoomed page is a real horizontal scroll below rather than a moved layer: a moved layer stops dead
+    // where the finger lifts, a scroll flings on like the list does.
+    var pinching by remember { mutableStateOf(false) }
+    fun pinchBy(centroid: Offset, zoomChange: Float, pan: Offset) {
+        if (!pinching) {
+            zooming?.cancel()
+            stopFlings()
+            pinching = true
+        }
+        val next = (scale * zoomChange).coerceIn(1f, MAX_ZOOM)
+        val base = (pinchSideways ?: sideways.value.toFloat()) - pan.x
+        val shift = zoomShift(centroid, base, scale, next)
+        // The list is drawn scaled: a finger's worth of screen is that much less document.
+        listState.dispatchRawDelta(-pan.y / scale + shift.y)
+        scale = next
+        pinchSideways = base + shift.x
+        sideways.dispatchRawDelta(base + shift.x - sideways.value)
+    }
 
     // A double tap glides to the new size and keeps what was under the finger under it, as a pinch does,
     // instead of jumping and growing out of the top left corner.
@@ -138,7 +169,15 @@ fun PdfViewerScreen(
     // gesture, and only for the page in focus. A page half again the screen's width is fifteen
     // megabytes; drawing one for each page in view in the middle of a pinch made panning stutter.
     val zoomedIn by remember { derivedStateOf { scale > ZOOM_FOR_DETAIL } }
-    val transforming = transformState.isTransformInProgress
+    val transforming = pinching
+    LaunchedEffect(transforming) {
+        val wanted = pinchSideways
+        if (!transforming && wanted != null) {
+            withFrameNanos { }
+            sideways.scrollTo(wanted.roundToInt().coerceIn(0, sideways.maxValue))
+            pinchSideways = null
+        }
+    }
     var detailWidth by remember { mutableIntStateOf(0) }
     LaunchedEffect(transforming, zoomedIn, viewportWidth) {
         if (!transforming) detailWidth = if (zoomedIn && viewportWidth > 0) minOf((viewportWidth * DETAIL_FACTOR).roundToInt(), MAX_RENDER_WIDTH) else 0
@@ -197,32 +236,63 @@ fun PdfViewerScreen(
                     else -> Box(
                         Modifier
                             .fillMaxSize()
-                            // At rest a one-finger drag belongs to the list, which scrolls and flings.
-                            .transformable(state = transformState, canPan = { false })
                             .pointerInput(Unit) {
                                 detectTapGestures(onDoubleTap = { at -> zoomAround(if (scale > 1.01f) 1f else ZOOM_ON_TAP, at) })
                             }
-                            // Zoomed, one drag has to go any way and change its mind mid-way; two stacked
-                            // scrolls cannot, the first to claim an axis keeps the finger. So the drag is
-                            // read here and pushed into both, and let go with the platform's fling on each.
-                            .pointerInput(scale > 1.01f) {
-                                if (scale <= 1.01f) return@pointerInput
+                            // Pinch and drag in one place, seen before the list does. Apart, a drag that got going
+                            // before the second finger came down took the gesture, the pinch gave up until every
+                            // finger was off, and zooming out after moving about worked one time in two. Two
+                            // fingers zoom and move; one, while zoomed, goes any way and changes its mind mid-way,
+                            // which two stacked scrolls cannot, and is let go with the platform's fling on each.
+                            // At rest one finger belongs to the list, which scrolls and flings by itself.
+                            .pointerInput(Unit) {
                                 val velocity = VelocityTracker()
-                                detectDragGestures(
-                                    onDragStart = { velocity.resetTracking() },
-                                    onDrag = { change, delta ->
-                                        change.consume()
-                                        velocity.addPointerInputChange(change)
-                                        sideways.dispatchRawDelta(-delta.x)
-                                        // The list is drawn scaled: a finger's worth of screen is that much less document.
-                                        listState.dispatchRawDelta(-delta.y / scale)
-                                    },
-                                    onDragEnd = {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                                    stopFlings()
+                                    velocity.resetTracking()
+                                    var dragging = false
+                                    var travelled = Offset.Zero
+                                    var multi = false
+                                    do {
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                        val pressed = event.changes.filter { it.pressed }
+                                        if (pressed.size >= 2) {
+                                            pinchBy(event.calculateCentroid(useCurrent = true), event.calculateZoom(), event.calculatePan())
+                                            event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                            multi = true
+                                            dragging = false
+                                        } else if (pressed.size == 1 && scale > 1.01f) {
+                                            val change = pressed.single()
+                                            // Back to one finger after a pinch: a fresh drag from here, no slop to cross.
+                                            if (multi) {
+                                                multi = false
+                                                dragging = true
+                                                velocity.resetTracking()
+                                            }
+                                            velocity.addPointerInputChange(change)
+                                            val delta = change.positionChange()
+                                            if (!dragging) {
+                                                travelled += delta
+                                                dragging = travelled.getDistance() > viewConfiguration.touchSlop
+                                            }
+                                            if (dragging) {
+                                                change.consume()
+                                                sideways.dispatchRawDelta(-delta.x)
+                                                // The list is drawn scaled: a finger's worth of screen is that much less document.
+                                                listState.dispatchRawDelta(-delta.y / scale)
+                                            }
+                                        }
+                                    } while (event.changes.any { it.pressed })
+                                    pinching = false
+                                    if (dragging && scale > 1.01f) {
                                         val speed = velocity.calculateVelocity()
-                                        scope.launch { sideways.scroll { with(fling) { performFling(-speed.x) } } }
-                                        scope.launch { listState.scroll { with(fling) { performFling(-speed.y / scale) } } }
-                                    },
-                                )
+                                        flings = listOf(
+                                            scope.launch { sideways.scroll { with(fling) { performFling(-speed.x) } } },
+                                            scope.launch { listState.scroll { with(fling) { performFling(-speed.y / scale) } } },
+                                        )
+                                    }
+                                }
                             }
                             // Off, because the drag above moves it; on, it would take the gesture the moment it went sideways.
                             .horizontalScroll(sideways, enabled = false),
@@ -230,6 +300,9 @@ fun PdfViewerScreen(
                         Box(Modifier.width(with(density) { (viewportWidth * scale).toDp() }).fillMaxHeight()) {
                             LazyColumn(
                                 state = listState,
+                                // Zoomed, the drag above moves the list. Left on, the list's own scroll took every drag
+                                // that began a little up or down, and the page would then not go sideways at all.
+                                userScrollEnabled = scale <= 1.01f,
                                 contentPadding = PaddingValues(vertical = 12.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp),
                                 modifier = Modifier

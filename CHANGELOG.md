@@ -15,6 +15,7 @@
 - The path under the top bar shows at the root too, with the house marked as the place on screen, so going into a folder and back no longer moves the list.
 
 ### Fixed
+- In a PDF, a pinch zooms about the place between the fingers and moves with them, as in the gallery; it grew out of the top left corner. Zoomed in, a drag goes any way from the first move, a touch stops a fling, and zooming out after moving about works every time.
 - In the normal theme the path under the top bar has the bar's background; the list no longer shows through it.
 
 ## [1.0.0] - 2026-11-15
