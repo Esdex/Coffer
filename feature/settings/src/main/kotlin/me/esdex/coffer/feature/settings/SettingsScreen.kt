@@ -77,6 +77,7 @@ private enum class Screen(val depth: Int) {
     RECOVERY(2),
     DELETE(2),
     LICENSES(2),
+    WHATS_NEW(2),
     KIND(2),
     OPERATION(3),
     ;
@@ -84,7 +85,7 @@ private enum class Screen(val depth: Int) {
     val parent: Screen
         get() = when (this) {
             PASSWORD, RECOVERY, DELETE -> VAULT
-            LICENSES -> ABOUT
+            LICENSES, WHATS_NEW -> ABOUT
             KIND -> STORAGE
             else -> MAIN
         }
@@ -170,8 +171,15 @@ fun SettingsScreen(
             Screen.PHONE -> PhoneSection(viewModel, back)
             Screen.MAINTENANCE -> MaintenanceSection(viewModel, back)
             Screen.ACCOUNT -> AccountSection(viewModel, back)
-            Screen.ABOUT -> AboutSection(back, onLicenses = { current = Screen.LICENSES }, onUnlockDebug = unlockDebug, debugUnlocked = state.debugTools)
+            Screen.ABOUT -> AboutSection(
+                back,
+                onLicenses = { current = Screen.LICENSES },
+                onWhatsNew = { current = Screen.WHATS_NEW },
+                onUnlockDebug = unlockDebug,
+                debugUnlocked = state.debugTools,
+            )
             Screen.LICENSES -> LicensesPage(back)
+            Screen.WHATS_NEW -> WhatsNewPage(back)
             Screen.DEBUG -> DebugSection(back, onHide = { viewModel.setDebugTools(false); current = Screen.MAIN }) { debugTools?.invoke() }
             Screen.PASSWORD -> ChangePasswordPage(onBack = back, viewModel = viewModel)
             Screen.RECOVERY -> RecoveryKeyPage(onBack = back, viewModel = viewModel)

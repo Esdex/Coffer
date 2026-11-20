@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.coffer.android.library)
     alias(libs.plugins.coffer.android.compose)
     alias(libs.plugins.coffer.hilt)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // Which store the build is for: the Play build carries no donation page (src/playstore), as Arcanum's.
@@ -26,4 +27,5 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.hilt.lifecycle.viewmodel.compose)
+    implementation(libs.kotlinx.serialization.json)
 }

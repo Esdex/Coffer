@@ -1,45 +1,20 @@
 package me.esdex.coffer.feature.settings
 
-import android.os.Build
 import android.content.Intent
 import android.graphics.BitmapFactory
+import android.os.Build
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.automirrored.outlined.OpenInNew
-import androidx.compose.material.icons.filled.Star
-import androidx.compose.material.icons.outlined.Code
-import androidx.compose.material.icons.outlined.Language
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
-import kotlinx.coroutines.delay
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.text.font.FontWeight
-import androidx.core.graphics.drawable.toBitmap
-import androidx.core.net.toUri
-import kotlinx.coroutines.launch
-import me.esdex.coffer.core.tdlib.TelegramAccount
-import me.esdex.coffer.core.ui.components.ActionCapsule
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
@@ -48,11 +23,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.Code
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
@@ -60,21 +44,40 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
+import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import me.esdex.coffer.core.tdlib.TelegramAccount
+import me.esdex.coffer.core.ui.components.ActionCapsule
 import me.esdex.coffer.core.ui.components.AppDialog
 import me.esdex.coffer.core.ui.components.CofferScaffold
 import me.esdex.coffer.core.ui.components.GroupedBox
@@ -575,6 +578,7 @@ internal fun bugReportUrl(version: String, android: String, manufacturer: String
 internal fun AboutSection(
     onBack: () -> Unit,
     onLicenses: () -> Unit,
+    onWhatsNew: () -> Unit,
     /** Null where there are no debug tools to unlock (release builds). Asks for the screen lock first. */
     onUnlockDebug: ((onResult: (Boolean) -> Unit) -> Unit)?,
     debugUnlocked: Boolean,
@@ -657,7 +661,7 @@ internal fun AboutSection(
                     shape,
                     title = stringResource(R.string.settings_about_whats_new),
                     subtitle = stringResource(R.string.settings_about_whats_new_desc),
-                    onClick = { open(null) },
+                    onClick = onWhatsNew,
                 )
             }
         }
@@ -708,6 +712,80 @@ internal fun LicensesPage(onBack: () -> Unit) {
         SettingsGroup(title = null) {
             for ((name, licence) in LICENSES) {
                 row { shape -> GroupedRow(shape, title = name, subtitle = licence) }
+            }
+        }
+    }
+}
+
+/** What changed in this version, as Arcanum shows it; the versions before it behind a button. */
+@Composable
+internal fun WhatsNewPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val whatsNew = remember { WhatsNew.load(context) }
+    val info = remember { runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull() }
+    val versionCode = info?.longVersionCode ?: 0L
+    var showOlder by rememberSaveable { mutableStateOf(false) }
+    SectionScaffold(stringResource(R.string.settings_about_whats_new), onBack) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 20.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                stringResource(R.string.settings_whats_new_version, info?.versionName.orEmpty()),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+            )
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(6.dp)) {
+                Text(
+                    stringResource(R.string.settings_whats_new_current),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
+        }
+        WhatsNewEntries(whatsNew.current(versionCode)?.entries.orEmpty())
+        val older = whatsNew.older(versionCode)
+        if (older.isNotEmpty()) {
+            if (!showOlder) {
+                TextButton(onClick = { showOlder = true }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Text(stringResource(R.string.settings_whats_new_show_older))
+                }
+            } else {
+                for (version in older) {
+                    Row(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        HorizontalDivider(Modifier.weight(1f))
+                        Text(
+                            stringResource(R.string.settings_whats_new_version, version.version),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        HorizontalDivider(Modifier.weight(1f))
+                    }
+                    WhatsNewEntries(version.entries)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WhatsNewEntries(entries: List<WhatsNewEntry>) {
+    if (entries.isEmpty()) return
+    SettingsGroup(title = null) {
+        for (entry in entries.inDisplayOrder()) {
+            row { shape ->
+                GroupedBox(shape) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        val (icon, color) = entry.visuals()
+                        Box(Modifier.size(32.dp).background(color.copy(alpha = 0.15f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                            Icon(icon, null, modifier = Modifier.size(18.dp), tint = color)
+                        }
+                        Column(Modifier.weight(1f)) {
+                            Text(entry.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                            entry.description?.let {
+                                Text(linkified(it), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

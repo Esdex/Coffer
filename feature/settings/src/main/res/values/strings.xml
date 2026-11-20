@@ -149,6 +149,9 @@
     <string name="settings_about_licenses">Open-source licences</string>
     <string name="settings_about_whats_new">What\'s new</string>
     <string name="settings_about_whats_new_desc">Changes in this version</string>
+    <string name="settings_whats_new_version">Version %1$s</string>
+    <string name="settings_whats_new_current">Current</string>
+    <string name="settings_whats_new_show_older">Show older versions</string>
     <string name="settings_about_connect">Connect</string>
     <string name="settings_about_privacy">Privacy policy</string>
     <string name="settings_about_report">Report a problem</string>
