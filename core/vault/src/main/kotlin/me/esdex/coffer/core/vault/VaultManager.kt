@@ -50,8 +50,9 @@ class VaultManager(
         /**
          * A vault exists; [masterId] tells which, so a device-unlocked key can be checked against it.
          * [passwordChangedElsewhere]: it was open here and locked because another device changed the password.
+         * [byHand]: locked with the Lock button, so fingerprint unlock waits to be asked for (Esdex, 2026-11-20).
          */
-        data class Locked(val masterId: Bytes, val passwordChangedElsewhere: Boolean = false) : State
+        data class Locked(val masterId: Bytes, val passwordChangedElsewhere: Boolean = false, val byHand: Boolean = false) : State
 
         data class Unlocked(val vault: UnlockedVault) : State
     }
@@ -485,10 +486,10 @@ class VaultManager(
         return PasswordChange.Changed
     }
 
-    /** Wipes the keys from memory (SPEC §3.8). */
-    suspend fun lockVault() = lock.withLock {
+    /** Wipes the keys from memory (SPEC §3.8); [byHand] when the user locked it (see [State.Locked]). */
+    suspend fun lockVault(byHand: Boolean = false) = lock.withLock {
         (stateFlow.value as? State.Unlocked)?.vault?.close()
-        stateFlow.value = lockedOrUnknown()
+        stateFlow.value = lockedOrUnknown().let { if (byHand && it is State.Locked) it.copy(byHand = true) else it }
     }
 
     /** After signing out of Telegram: lock and forget the vault on this device. */

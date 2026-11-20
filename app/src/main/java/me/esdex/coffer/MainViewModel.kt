@@ -51,6 +51,6 @@ class MainViewModel @Inject constructor(
     }
 
     fun lock() {
-        viewModelScope.launch { vault.lockVault() }
+        viewModelScope.launch { vault.lockVault(byHand = true) }
     }
 }

@@ -147,7 +147,7 @@ private fun Steps(modifier: Modifier, viewModel: VaultViewModel, state: VaultMan
                         VaultManager.State.Unknown -> Searching(null, errorText)
                         is VaultManager.State.Searching -> Searching(s.scanned, errorText)
                         VaultManager.State.NotFound -> CreateFlow(viewModel, busy, errorText)
-                        is VaultManager.State.Locked -> LockedSteps(viewModel, busy, errorText, s.passwordChangedElsewhere)
+                        is VaultManager.State.Locked -> LockedSteps(viewModel, busy, errorText, s.passwordChangedElsewhere, promptAtOnce = !s.byHand)
                         is VaultManager.State.Unlocked -> OfferDeviceUnlock(viewModel, errorText)
                     }
                 }
@@ -206,18 +206,18 @@ private tailrec fun Context.fragmentActivity(): FragmentActivity? = when (this) 
  * its own vault back with a new password, as on the screen that offers a new vault (audit 2, N1).
  */
 @Composable
-private fun LockedSteps(viewModel: VaultViewModel, busy: Boolean, errorText: String?, passwordChangedElsewhere: Boolean) {
+private fun LockedSteps(viewModel: VaultViewModel, busy: Boolean, errorText: String?, passwordChangedElsewhere: Boolean, promptAtOnce: Boolean) {
     val step by viewModel.createStep.collectAsStateWithLifecycle()
     val restoring = step == CreateStep.RestorePassword || step == CreateStep.Publishing
     AnimatedContent(restoring, transitionSpec = { stepSlide(forward = targetState) }, label = "restore from unlock") { r ->
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            if (r) CreateFlow(viewModel, busy, errorText) else UnlockStep(viewModel, busy, errorText, passwordChangedElsewhere)
+            if (r) CreateFlow(viewModel, busy, errorText) else UnlockStep(viewModel, busy, errorText, passwordChangedElsewhere, promptAtOnce)
         }
     }
 }
 
 @Composable
-private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean, errorText: String?, passwordChangedElsewhere: Boolean = false) {
+private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean, errorText: String?, passwordChangedElsewhere: Boolean = false, promptAtOnce: Boolean = true) {
     var useRecoveryKey by remember { mutableStateOf(false) }
     // The recovery key is a step of its own within the unlock: it slides in, and back out.
     AnimatedContent(useRecoveryKey, transitionSpec = { stepSlide(forward = targetState) }, label = "unlock way") { recovery ->
@@ -227,7 +227,7 @@ private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean, errorText: Stri
                 NoScreenshots(keepAfter = viewModel.blockScreenshots)
                 RecoveryKeyUnlock(viewModel, busy, errorText) { useRecoveryKey = false }
             } else {
-                PasswordUnlock(viewModel, busy, errorText, passwordChangedElsewhere) {
+                PasswordUnlock(viewModel, busy, errorText, passwordChangedElsewhere, promptAtOnce) {
                     viewModel.dismissError()
                     useRecoveryKey = true
                 }
@@ -237,7 +237,7 @@ private fun UnlockStep(viewModel: VaultViewModel, busy: Boolean, errorText: Stri
 }
 
 @Composable
-private fun PasswordUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: String?, passwordChangedElsewhere: Boolean, onRecoveryKey: () -> Unit) {
+private fun PasswordUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: String?, passwordChangedElsewhere: Boolean, promptAtOnce: Boolean, onRecoveryKey: () -> Unit) {
     val activity = LocalContext.current.fragmentActivity()
     val promptTitle = stringResource(R.string.vault_unlock_prompt)
     val promptCancel = stringResource(R.string.vault_use_password)
@@ -247,8 +247,8 @@ private fun PasswordUnlock(viewModel: VaultViewModel, busy: Boolean, errorText: 
             activity.authenticate(cipher, promptTitle, promptCancel) { done -> done?.let(viewModel::completeDeviceUnlock) }
         }
     }
-    // Biometric unlock, when enabled, comes up by itself.
-    LaunchedEffect(Unit) { if (viewModel.deviceUnlockEnabled) promptDevice() }
+    // Biometric unlock, when enabled, comes up by itself; not after the Lock button, which would only bring it back.
+    LaunchedEffect(Unit) { if (viewModel.deviceUnlockEnabled && promptAtOnce) promptDevice() }
 
     var password by remember { mutableStateOf("") }
     // A padlock, shut: where the one that flies in from Lock lands (see LockFlight).

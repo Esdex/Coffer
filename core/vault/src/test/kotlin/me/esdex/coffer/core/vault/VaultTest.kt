@@ -298,8 +298,14 @@ class VaultManagerTest {
         assertNotNull(manager.lastKdfMillis)
         assertTrue(manager.unlockWithPassword("a password for the manager"))
 
+        // Locked with the Lock button: said so, for the unlock screen to wait for a fingerprint until asked.
+        manager.lockVault(byHand = true)
+        assertEquals(VaultManager.State.Locked(created.vault.masterId, byHand = true), manager.state.value)
+        assertTrue(manager.unlockWithPassword("a password for the manager"))
+
         // A second launch remembers the header and starts locked, without a search.
         manager.lockVault()
+        assertEquals(VaultManager.State.Locked(created.vault.masterId), manager.state.value)
         val again = manager(VaultStore(temp.root))
         assertEquals(VaultManager.State.Locked(created.vault.masterId), again.state.value)
         assertTrue(again.unlockWithPassword("a password for the manager"))

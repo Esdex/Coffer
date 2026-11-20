@@ -451,6 +451,17 @@ fun BrowserScreen(
                                 AnimatedVisibility(!searching, enter = fadeIn(Motion.standard()), exit = fadeOut(Motion.quick())) {
                                   Row {
                                     IconButton(onClick = { searching = true }) { Icon(Icons.Outlined.Search, stringResource(R.string.browser_search)) }
+                                    // In sight, one tap away (Esdex, 2026-11-20); the padlock flies from this icon to the unlock screen.
+                                    IconButton(onClick = {
+                                        lockIconRect?.let(lockFlight::launch)
+                                        viewModel.lock(onLock)
+                                    }) {
+                                        Icon(
+                                            Icons.Outlined.Lock,
+                                            stringResource(R.string.browser_lock),
+                                            Modifier.onGloballyPositioned { lockIconRect = it.screenRect() },
+                                        )
+                                    }
                                     AnimatedVisibility(
                                         transfers.isNotEmpty(),
                                         enter = fadeIn(Motion.standard()) + scaleIn(Motion.standard(), initialScale = 0.6f),
@@ -472,12 +483,6 @@ fun BrowserScreen(
                                         AppMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                                             MenuItem(Icons.AutoMirrored.Outlined.Sort, R.string.browser_sort) { menuOpen = false; sortOpen = true }
                                             MenuItem(Icons.Outlined.SwapVert, R.string.browser_transfers) { menuOpen = false; showTransfers = true }
-                                            // The padlock flies from this item's icon to the unlock screen.
-                                            MenuItem(Icons.Outlined.Lock, R.string.browser_lock, onIconPlaced = { lockIconRect = it }) {
-                                                menuOpen = false
-                                                lockIconRect?.let(lockFlight::launch)
-                                                viewModel.lock(onLock)
-                                            }
                                             MenuItem(Icons.Outlined.Settings, R.string.browser_settings) { menuOpen = false; onSettings() }
                                         }
                                     }
@@ -980,19 +985,13 @@ private fun MenuItem(
     label: Int,
     enabled: Boolean = true,
     destructive: Boolean = false,
-    onIconPlaced: ((Rect) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val red = destructive && enabled
     DropdownMenuItem(
         text = { Text(stringResource(label), color = if (red) MaterialTheme.colorScheme.error else Color.Unspecified) },
         leadingIcon = {
-            Icon(
-                icon,
-                null,
-                tint = if (red) MaterialTheme.colorScheme.error else LocalContentColor.current,
-                modifier = if (onIconPlaced != null) Modifier.onGloballyPositioned { onIconPlaced(it.screenRect()) } else Modifier,
-            )
+            Icon(icon, null, tint = if (red) MaterialTheme.colorScheme.error else LocalContentColor.current)
         },
         enabled = enabled,
         onClick = onClick,
