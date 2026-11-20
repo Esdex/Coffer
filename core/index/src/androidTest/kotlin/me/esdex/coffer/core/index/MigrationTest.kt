@@ -91,4 +91,33 @@ class MigrationTest {
         runBlocking { assertArrayEquals(byteArrayOf(4, 5), RoomVaultIndex(context, key, name).uploads().single().sealedRequest) }
         context.deleteDatabase(name)
     }
+
+    @Test
+    fun queuedOperationsAndUploadsGoThroughVersions7To11() {
+        // Audit 3, Q3-12: rows of the queue itself, not only its columns, through every step since 7.
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        context.deleteDatabase(name)
+        helper.createDatabase(name, 7).use { db ->
+            db.execSQL("INSERT INTO pending_ops (batch, batchSize, kind, caption) VALUES ('b1', 2, 'RENAME', 'coffer:v2:op:x')")
+            db.execSQL("INSERT INTO uploads VALUES ('u7', ?, NULL, '', NULL)", arrayOf(byteArrayOf(7)))
+        }
+        helper.runMigrationsAndValidate(name, 11, true).close()
+        val index = RoomVaultIndex(context, ByteArray(32) { 5 }, name)
+        runBlocking {
+            val op = index.ops().single()
+            assertEquals("coffer:v2:op:x", op.caption)
+            assertEquals("RENAME", op.kind)
+            assertEquals(2, op.batchSize)
+            // Columns that came later take their defaults: one operation, nothing deleted, not sent.
+            assertEquals(1, op.opCount)
+            assertEquals(emptyList<Id>(), op.deletedFiles)
+            assertEquals(emptyList<Id>(), op.deletedFolders)
+            assertEquals(emptyList<MessageId>(), op.parts)
+            assertEquals(false, op.sent)
+            val upload = index.uploads().single()
+            assertEquals("u7", upload.uploadId)
+            assertEquals(null, upload.replaces)
+        }
+        context.deleteDatabase(name)
+    }
 }
