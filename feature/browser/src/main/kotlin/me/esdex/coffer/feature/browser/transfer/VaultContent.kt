@@ -34,7 +34,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -213,6 +215,16 @@ class VaultContent @Inject constructor(
                 sweepOpenFiles()
             }
         }
+        // The setting, which signing out clears with the rest: Coffer in the system file picker, or not.
+        scope.launch {
+            store.changes.map { store.showInFilePicker }.distinctUntilChanged().collect { VaultDocumentsProvider.show(context, it) }
+        }
+        // The picker shows what the vault holds now, and nothing once it locks.
+        scope.launch {
+            combine(keysFlow, index.observeFiles(), index.observeFolders(), deleting, EditSessions.changes.onStart { emit(Unit) }) { _, _, _, _, _ -> }
+                .debounce(PICKER_REFRESH_MS)
+                .collect { VaultDocumentsProvider.changed(context) }
+        }
         scope.launch {
             vault.state.collect { state ->
                 if (state is VaultManager.State.Unlocked) {
@@ -283,7 +295,7 @@ class VaultContent @Inject constructor(
                 val prepared = UploadPreparer(keys, index, store.hideSizes, System::currentTimeMillis)
                     .prepare(upload, request, inbox.source(request.source))
                 registry.put(prepared.upload.fileId!!, TransferRegistry.Entry(prepared.keys, source = request.source, displayName = request.name))
-                EditSessions.prepared(EditSessions.dir(context), upload.uploadId, prepared.upload.fileId!!)
+                EditSessions.prepared(EditSessions.dir(context), upload.uploadId, prepared.upload.fileId!!, System.currentTimeMillis())
                 prepared.upload.fileId!!
             } catch (_: IOException) {
                 registry.fail(upload.uploadId, TransferRegistry.Failure.SOURCE_GONE)
@@ -802,6 +814,9 @@ class VaultContent @Inject constructor(
 }
 
 private const val SNAPSHOT_DELAY_MS = 90_000L
+
+/** A burst of changes, as a catch-up brings, makes one refresh of the system file picker. */
+private const val PICKER_REFRESH_MS = 300L
 
 internal fun transferConstraints() = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 

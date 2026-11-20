@@ -44,6 +44,20 @@
             android:authorities="${applicationId}.edit"
             android:exported="false"
             android:grantUriPermissions="true" />
+
+        <!-- Coffer in the system file picker (2026-11-20): off until the setting turns it on, and then only
+             the system's picker lists it; an app gets the files picked there. -->
+        <provider
+            android:name=".transfer.VaultDocumentsProvider"
+            android:authorities="${applicationId}.documents"
+            android:enabled="false"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
     </application>
 
 </manifest>

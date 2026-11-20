@@ -189,6 +189,15 @@ internal fun SecuritySection(
                     onCheckedChange = viewModel::setEditInOtherApps,
                 )
             }
+            row { shape ->
+                GroupedSwitch(
+                    shape,
+                    title = stringResource(R.string.settings_file_picker),
+                    checked = state.showInFilePicker,
+                    info = stringResource(R.string.settings_file_picker_summary),
+                    onCheckedChange = viewModel::setShowInFilePicker,
+                )
+            }
         }
     }
 }

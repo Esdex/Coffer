@@ -58,6 +58,7 @@ data class SettingsState(
     val hideSizes: Boolean = true,
     val nameConflicts: NameConflictPolicy = NameConflictPolicy.ASK,
     val editInOtherApps: Boolean = true,
+    val showInFilePicker: Boolean = false,
     val deviceUnlockAvailable: Boolean = false,
     val deviceUnlockOn: Boolean = false,
     val debugTools: Boolean = false,
@@ -220,7 +221,7 @@ class SettingsViewModel @Inject constructor(
 
     val state: StateFlow<SettingsState> = combine(store.changes, deviceTick) { _, _ ->
         SettingsState(
-            store.autoLockMinutes, store.blockScreenshots, store.weeklyCheck, store.hideSizes, store.nameConflicts, store.editInOtherApps,
+            store.autoLockMinutes, store.blockScreenshots, store.weeklyCheck, store.hideSizes, store.nameConflicts, store.editInOtherApps, store.showInFilePicker,
             device.isAvailable(), device.isEnabled, store.debugTools,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsState())
@@ -252,6 +253,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setEditInOtherApps(on: Boolean) {
         store.editInOtherApps = on
+    }
+
+    fun setShowInFilePicker(on: Boolean) {
+        store.showInFilePicker = on
     }
 
     fun setNameConflicts(policy: NameConflictPolicy) {

@@ -121,6 +121,15 @@ class VaultStore(private val dir: File, private val sealer: DeviceSealer = Devic
 
         @Synchronized set(value) = updatePrefs { it.setProperty(EDIT_IN_OTHER_APPS, value.toString()) }
 
+    /**
+     * Coffer in the system file picker (decision 2026-11-20): other apps open and save vault files through
+     * it. Off by default.
+     */
+    var showInFilePicker: Boolean
+        @Synchronized get() = prefs().getProperty(SHOW_IN_FILE_PICKER) == "true"
+
+        @Synchronized set(value) = updatePrefs { it.setProperty(SHOW_IN_FILE_PICKER, value.toString()) }
+
     /** Debug builds: the Debug section of Settings, shown after six taps on the icon in About and the screen lock. */
     var debugTools: Boolean
         @Synchronized get() = prefs().getProperty(DEBUG_TOOLS) == "true"
@@ -161,6 +170,7 @@ class VaultStore(private val dir: File, private val sealer: DeviceSealer = Devic
         const val HIDE_SIZES = "hideSizes"
         const val NAME_CONFLICTS = "nameConflicts"
         const val EDIT_IN_OTHER_APPS = "editInOtherApps"
+        const val SHOW_IN_FILE_PICKER = "showInFilePicker"
         const val DEBUG_TOOLS = "debugTools"
         const val DEFAULT_AUTO_LOCK_MINUTES = 5
     }

@@ -275,4 +275,6 @@
     <string name="browser_date_yesterday">Yesterday</string>
     <string name="browser_status_incomplete_short">Incomplete</string>
     <string name="browser_status_damaged_short">Damaged</string>
+    <string name="picker_locked_summary">Locked</string>
+    <string name="picker_locked_info">Coffer is locked. Open Coffer to unlock it.</string>
 </resources>

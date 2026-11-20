@@ -26,8 +26,8 @@ class EditSession internal constructor(val id: String, private val dir: File) {
     /** The decrypted copy, under the file's name. */
     val copy: File get() = dir.listFiles()?.firstOrNull { it.name != PROPS && it.name != PROPS_TEMP } ?: File(dir, "file")
 
-    /** The vault file a save takes the place of. */
-    val original: Id get() = idOf(props.getProperty(ORIGINAL))
+    /** The vault file a save takes the place of; none for a file made in the system file picker, not saved yet. */
+    val original: Id? get() = props.getProperty(ORIGINAL)?.takeIf { it.isNotEmpty() }?.let(::idOf)
 
     /** Where the file was when the edit began, for a save that finds it gone. */
     val folder: Id? get() = props.getProperty(FOLDER)?.takeIf { it.isNotEmpty() }?.let(::idOf)
@@ -88,13 +88,13 @@ object EditSessions {
     /** An editor wrote a copy: time to look for saves. */
     val changes: SharedFlow<Unit> = changesFlow.asSharedFlow()
 
-    fun begin(root: File, name: String, mime: String, original: Id, folder: Id?, hash: Bytes, now: Long): EditSession {
+    fun begin(root: File, name: String, mime: String, original: Id?, folder: Id?, hash: Bytes, now: Long): EditSession {
         val id = UUID.randomUUID().toString()
         val dir = File(root, id).apply { mkdirs() }
         File(dir, OpenFiles.safeName(name)).createNewFile()
         return EditSession(id, dir).apply {
             update {
-                it.setProperty(EditSession.ORIGINAL, EditSession.hex(original.toByteArray()))
+                it.setProperty(EditSession.ORIGINAL, original?.let { o -> EditSession.hex(o.toByteArray()) }.orEmpty())
                 it.setProperty(EditSession.FOLDER, folder?.let { f -> EditSession.hex(f.toByteArray()) }.orEmpty())
                 it.setProperty(EditSession.MIME, mime)
                 it.setProperty(EditSession.HASH, EditSession.hex(hash.toByteArray()))
@@ -121,12 +121,22 @@ object EditSessions {
         changesFlow.tryEmit(Unit)
     }
 
-    /** The upload of a save was prepared: [fileId] is the file it makes. */
-    fun prepared(root: File, uploadId: String, fileId: Id) {
+    /**
+     * The upload of a save was prepared: [fileId] is the file it makes. A document another app holds for the
+     * file it replaces, or for the session itself, now leads to it (see [DocumentForwards]).
+     */
+    fun prepared(root: File, uploadId: String, fileId: Id, now: Long) {
         for (session in all(root)) {
-            if (session.upload == uploadId) session.update { it.setProperty(EditSession.UPLOAD_FILE, EditSession.hex(fileId.toByteArray())) }
+            if (session.upload != uploadId) continue
+            session.update { it.setProperty(EditSession.UPLOAD_FILE, EditSession.hex(fileId.toByteArray())) }
+            val forwards = forwardsFile(root)
+            DocumentForwards.add(forwards, session.id, fileId, now)
+            session.original?.let { DocumentForwards.add(forwards, EditSession.hex(it.toByteArray()), fileId, now) }
         }
     }
+
+    /** Where documents of the system file picker went, beside the sessions (see [DocumentForwards]). */
+    fun forwardsFile(root: File) = File(root, FORWARDS)
 
     /** A save went to the queue as [uploadId], with content [hash]. */
     fun queued(session: EditSession, uploadId: String, hash: Bytes, original: Id?) = session.update {
@@ -144,20 +154,23 @@ object EditSessions {
      * Where a save of [session] goes. A save before it still in the queue ([pending]) is cancelled, and
      * this one takes the place of the same file; one that went through ([ready] for its file) made the
      * file this one replaces. The file is followed where it was renamed or moved; gone, the save comes in
-     * beside where it was, as "name (edited).ext", the folder gone too, at the top level.
+     * beside where it was, as "name (edited).ext", the folder gone too, at the top level. A file made in the
+     * system file picker comes in under its own name until it is in the vault.
      */
     fun plan(session: EditSession, tree: VaultTree, pending: Set<String>, ready: (Id) -> Boolean): EditSave {
         val upload = session.upload
         val cancel = upload?.takeIf { it in pending }
         val previous = session.uploadFile?.takeIf { upload != null && cancel == null && ready(it) }
         val original = previous ?: session.original
-        if (original in tree.files) {
+        if (original != null && original in tree.files) {
             return EditSave(tree.files.getValue(original).name, tree.folderOf(original), original, cancel, original)
         }
         val folder = session.folder?.takeIf { it in tree.folders }
         val taken = (tree.childFiles(folder).map { tree.files.getValue(it).name } + tree.childFolders(folder).map { tree.folders.getValue(it).name })
             .mapTo(HashSet(), NameConflicts::key)
-        return EditSave(editedName(session.copy.name, taken), folder, null, cancel, null)
+        val name = if (original == null) session.copy.name.let { if (NameConflicts.key(it) in taken) NameConflicts.numbered(it, isFile = true, taken) else it }
+        else editedName(session.copy.name, taken)
+        return EditSave(name, folder, null, cancel, null)
     }
 
     /** "report.docx" as "report (edited).docx", numbered after that if [taken]. */
@@ -177,5 +190,6 @@ object EditSessions {
     }
 
     private const val EDITED = " (edited)"
+    private const val FORWARDS = "forwards.properties"
     private val ID = Regex("[0-9a-f-]{36}")
 }

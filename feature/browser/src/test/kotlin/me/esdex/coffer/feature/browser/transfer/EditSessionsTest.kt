@@ -68,7 +68,7 @@ class EditSessionsTest {
         val session = session()
         val made = id()
         EditSessions.queued(session, "upload-1", hash(2), original = null)
-        EditSessions.prepared(root, "upload-1", made)
+        EditSessions.prepared(root, "upload-1", made, now = 2_000)
         val vault = tree(mapOf(report to meta("report.docx", docs)))
         assertEquals(EditSave("report.docx", docs, report, cancel = "upload-1", original = report), EditSessions.plan(EditSessions.get(root, session.id)!!, vault, setOf("upload-1")) { true })
     }
@@ -78,7 +78,7 @@ class EditSessionsTest {
         val session = session()
         val made = id()
         EditSessions.queued(session, "upload-1", hash(2), original = null)
-        EditSessions.prepared(root, "upload-1", made)
+        EditSessions.prepared(root, "upload-1", made, now = 2_000)
         val vault = tree(mapOf(made to meta("report.docx", docs)))
         val reloaded = EditSessions.get(root, session.id)!!
         assertEquals(EditSave("report.docx", docs, made, cancel = null, original = made), EditSessions.plan(reloaded, vault, emptySet()) { it == made })
@@ -94,6 +94,38 @@ class EditSessionsTest {
         assertEquals(EditSave("report (edited) (1).docx", docs, null, cancel = null, original = null), EditSessions.plan(session(), vault, emptySet()) { false })
         // Its folder gone too: at the top level.
         assertEquals(EditSave("report (edited).docx", null, null, cancel = null, original = null), EditSessions.plan(session(), tree(emptyMap(), emptyMap()), emptySet()) { false })
+    }
+
+    @Test
+    fun aFileMadeInThePickerComesInUnderItsOwnNameThenReplacesWhatItMade() {
+        val made = EditSessions.begin(root, "notes.kdbx", "application/octet-stream", null, docs, Bytes.of(ByteArray(0)), now = 1_000)
+        assertNull(made.original)
+        // Taken meanwhile: numbered, never "(edited)".
+        val taken = tree(mapOf(report to meta("Notes.kdbx", docs)))
+        assertEquals(EditSave("notes (1).kdbx", docs, null, cancel = null, original = null), EditSessions.plan(made, taken, emptySet()) { false })
+        assertEquals(EditSave("notes.kdbx", docs, null, cancel = null, original = null), EditSessions.plan(made, tree(emptyMap()), emptySet()) { false })
+
+        EditSessions.queued(made, "upload-1", hash(2), original = null)
+        val file = id()
+        EditSessions.prepared(root, "upload-1", file, now = 2_000)
+        val vault = tree(mapOf(file to meta("notes.kdbx", docs)))
+        assertEquals(EditSave("notes.kdbx", docs, file, cancel = null, original = file), EditSessions.plan(EditSessions.get(root, made.id)!!, vault, emptySet()) { it == file })
+    }
+
+    @Test
+    fun aPreparedSaveForwardsTheFileItReplacesAndItsSession() {
+        val session = session()
+        EditSessions.queued(session, "upload-1", hash(2), original = report)
+        val made = id()
+        EditSessions.prepared(root, "upload-1", made, now = 2_000)
+        val forwards = DocumentForwards.read(EditSessions.forwardsFile(root))
+        assertEquals(listOf(report, made), forwards.chain(EditSession.hex(report.toByteArray())))
+        assertEquals(listOf(made), forwards.chain(session.id))
+        // Another upload's preparing forwards nothing of this one.
+        EditSessions.prepared(root, "upload-2", id(), now = 3_000)
+        assertEquals(listOf(report, made), DocumentForwards.read(EditSessions.forwardsFile(root)).chain(EditSession.hex(report.toByteArray())))
+        // The forwards file is no session.
+        assertEquals(listOf(session.id), EditSessions.all(root).map { it.id })
     }
 
     @Test
