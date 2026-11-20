@@ -119,4 +119,23 @@ class PickerDocumentsTest {
         assertEquals(listOf(start, kept), read.chain(hex(start)))
         assertEquals(listOf(first), read.chain(hex(first)))
     }
+
+    @Test
+    fun aBrokenCopyIsNeitherReadNorWrittenTo() {
+        // Audit 3, Q3-2: a write that failed left no save; the document is the vault's file again.
+        val file = id()
+        val session = EditSessions.begin(root, "a.txt", "text/plain", file, null, hash(1), now = 1)
+        // A save still on its way, then a write that failed over it.
+        EditSessions.written(root, session.id, now = 2)
+        EditSessions.queued(EditSessions.get(root, session.id)!!, "upload-1", hash(2), original = file)
+        EditSessions.failed(root, session.id, now = 3)
+        val broken = listOf(EditSessions.get(root, session.id)!!)
+        assertEquals(Content.Stored(file), PickerDocuments.content(Doc.File(file), listOf(file), broken, { it == file }, setOf("upload-1")))
+        assertNull(PickerDocuments.writable(Doc.File(file), listOf(file), broken))
+        val made = EditSessions.begin(root, "new.txt", "text/plain", null, null, Bytes.of(ByteArray(0)), now = 1)
+        EditSessions.failed(root, made.id, now = 2)
+        val madeBroken = listOf(EditSessions.get(root, made.id)!!)
+        assertNull(PickerDocuments.content(Doc.Made(made.id), emptyList(), madeBroken, { false }, emptySet()))
+        assertNull(PickerDocuments.writable(Doc.Made(made.id), emptyList(), madeBroken))
+    }
 }

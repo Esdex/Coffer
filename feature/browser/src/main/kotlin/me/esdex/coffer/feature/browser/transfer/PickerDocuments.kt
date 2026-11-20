@@ -64,9 +64,10 @@ object PickerDocuments {
     fun writable(doc: Doc, chain: List<Id>, sessions: List<EditSession>): EditSession? =
         sessionsOf(doc, chain, sessions).filter { doc is Doc.Made || it.dirty || it.upload != null }.maxByOrNull { it.touched }
 
+    // A broken copy (see EditSessions.failed) is nobody's document.
     private fun sessionsOf(doc: Doc, chain: List<Id>, sessions: List<EditSession>): List<EditSession> = when (doc) {
-        is Doc.Made -> sessions.filter { it.id == doc.session }
-        is Doc.File -> sessions.filter { it.original in chain || it.uploadFile in chain }
+        is Doc.Made -> sessions.filter { it.id == doc.session && !it.broken }
+        is Doc.File -> sessions.filter { (it.original in chain || it.uploadFile in chain) && !it.broken }
         else -> emptyList()
     }
 

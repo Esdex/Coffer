@@ -484,7 +484,7 @@ class VaultContent @Inject constructor(
     private fun CoroutineScope.saveEdits(keys: VaultKeys) = launch {
         EditSessions.changes.onStart { emit(Unit) }.collect {
             val root = EditSessions.dir(context)
-            for (session in EditSessions.all(root).filter { it.dirty }) {
+            for (session in EditSessions.all(root).filter { it.dirty && !it.broken }) {
                 val hash = withContext(Dispatchers.IO) { session.copy.inputStream().use { ContentHasher.hash(sodium, it).first } }
                 if (hash == session.savedHash) {
                     EditSessions.unchanged(session)

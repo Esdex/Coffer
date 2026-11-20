@@ -202,4 +202,24 @@ class EditSessionsTest {
         EditSessions.sweep(root, emptySet(), now = 2_000 + EditSessions.FILLING_MILLIS, pid = HERE)
         assertNull(EditSessions.get(root, stuck.id))
     }
+
+    @Test
+    fun aWriteThatFailedIsNoSaveAndItsCopyGoes() {
+        // Audit 3, Q3-2: an editor that crashed mid-write left the copy cut short.
+        val session = session().also { EditSessions.opened(root, it.id, HERE, now = 1_000) }
+        // Written and closed once, not sent yet (locked), then opened again and cut short.
+        EditSessions.written(root, session.id, now = 1_500)
+        session.copy.writeText("half")
+        EditSessions.failed(root, session.id, now = 2_000)
+        val after = EditSessions.get(root, session.id)!!
+        assertTrue(after.broken)
+        assertFalse(after.dirty)
+        assertNull(after.writer)
+        // Not while an earlier save still reads the copy; then at once, not after the hour.
+        EditSessions.queued(after, "upload-1", hash(2), original = null)
+        EditSessions.sweep(root, setOf("upload-1"), now = 2_001, pid = HERE)
+        assertTrue(EditSessions.get(root, session.id)!!.broken)
+        EditSessions.sweep(root, emptySet(), now = 2_001, pid = HERE)
+        assertNull(EditSessions.get(root, session.id))
+    }
 }

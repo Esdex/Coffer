@@ -56,6 +56,9 @@ class EditSession internal constructor(val id: String, private val dir: File) {
     /** The process of Coffer's that handed the copy out for writing and has not heard it closed. */
     val writer: Int? get() = props.getProperty(WRITER)?.toIntOrNull()
 
+    /** Its editor failed while writing: what the copy holds is no save, and it is never sent or handed out. */
+    val broken: Boolean get() = props.getProperty(BROKEN) == "true"
+
     internal fun update(change: (Properties) -> Unit) {
         change(props)
         val temp = File(dir, PROPS_TEMP)
@@ -79,6 +82,7 @@ class EditSession internal constructor(val id: String, private val dir: File) {
         const val READY = "ready"
         const val MODIFIED = "modified"
         const val WRITER = "writer"
+        const val BROKEN = "broken"
 
         fun hex(bytes: ByteArray) = bytes.joinToString("") { "%02x".format(it) }
         fun bytesOf(hex: String?): ByteArray = (hex ?: "").let { h -> ByteArray(h.length / 2) { h.substring(it * 2, it * 2 + 2).toInt(16).toByte() } }
@@ -143,6 +147,23 @@ object EditSessions {
         get(root, id)?.update {
             it.setProperty(EditSession.WRITER, pid.toString())
             it.setProperty(EditSession.TOUCHED, now.toString())
+        }
+    }
+
+    /**
+     * The editor's side closed with an error, as when it crashed mid-write: a copy cut short, or emptied
+     * by a truncating open, is no save. Sent, it took the place of the file and the file went for good
+     * (audit 3, Q3-2). The vault's version stays; the copy goes at the next sweep.
+     */
+    fun failed(root: File, id: String, now: Long) {
+        get(root, id)?.let { session ->
+            session.update {
+                it.setProperty(EditSession.BROKEN, "true")
+                it.setProperty(EditSession.DIRTY, "false")
+                it.setProperty(EditSession.TOUCHED, now.toString())
+                it.setProperty(EditSession.MODIFIED, session.copy.lastModified().toString())
+                it.remove(EditSession.WRITER)
+            }
         }
     }
 
@@ -229,6 +250,12 @@ object EditSessions {
     fun sweep(root: File, pending: Set<String>, now: Long, pid: Int) {
         for (session in all(root)) {
             val dir = File(root, session.id)
+            val sending = session.upload?.let { it in pending } == true
+            if (session.broken) {
+                // Not while an earlier save still reads it: its hash no longer matching, that upload fails alone.
+                if (!sending) dir.deleteRecursively()
+                continue
+            }
             if (!session.ready) {
                 if (now - session.touched > FILLING_MILLIS) dir.deleteRecursively()
                 continue
@@ -240,7 +267,6 @@ object EditSessions {
                 written(root, session.id, now)
                 continue
             }
-            val sending = session.upload?.let { it in pending } == true
             if (!session.dirty && !sending && now - session.touched > IDLE_MILLIS) dir.deleteRecursively()
         }
     }

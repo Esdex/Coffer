@@ -245,8 +245,9 @@ class VaultDocumentsProvider : DocumentsProvider() {
         val root = sessionsDir
         EditSessions.opened(root, session.id, Process.myPid(), System.currentTimeMillis())
         // Closed after writing: saved, as from an editor (see EditProvider). Whether anything changed is for the hash to tell.
-        return ParcelFileDescriptor.open(session.copy, access, Handler(Looper.getMainLooper())) {
-            EditSessions.written(root, session.id, System.currentTimeMillis())
+        return ParcelFileDescriptor.open(session.copy, access, Handler(Looper.getMainLooper())) { error ->
+            // Closed with an error, as by an app that crashed mid-write: no save (audit 3, Q3-2).
+            if (error == null) EditSessions.written(root, session.id, System.currentTimeMillis()) else EditSessions.failed(root, session.id, System.currentTimeMillis())
         }
     }
 

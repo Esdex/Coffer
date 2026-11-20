@@ -37,8 +37,9 @@ class EditProvider : ContentProvider() {
         // Kept while open, however long before the editor saves (audit 3, DATA3-2).
         EditSessions.opened(root, session.id, Process.myPid(), System.currentTimeMillis())
         // Closed after writing: saved. Whether anything changed is for the hash to tell.
-        return ParcelFileDescriptor.open(session.copy, access, Handler(Looper.getMainLooper())) {
-            EditSessions.written(root, session.id, System.currentTimeMillis())
+        return ParcelFileDescriptor.open(session.copy, access, Handler(Looper.getMainLooper())) { error ->
+            // Closed with an error, as by an editor that crashed mid-write: no save (audit 3, Q3-2).
+            if (error == null) EditSessions.written(root, session.id, System.currentTimeMillis()) else EditSessions.failed(root, session.id, System.currentTimeMillis())
         }
     }
 
