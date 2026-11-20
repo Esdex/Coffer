@@ -279,7 +279,7 @@ def main(out_path):
 
     v["v3"]["index"] = v3_index({1: folder_id, 2: 123456789012, 3: 1762531200789, 4: 98765}, 0xA4)
     assert len(v["v3"]["index"]["caption"]) == len(v["v2"]["records"]["index"]["caption"])
-    assert worst_count == 8 and delete_count >= 24, (worst_count, delete_count)
+    assert worst_count == 8 and delete_count == 49, (worst_count, delete_count)
 
     # Device-only sealing of the local index (SPEC §8): not part of the Telegram format, checked all the same.
     local_key = kdf(master, 1, b"coflocal")

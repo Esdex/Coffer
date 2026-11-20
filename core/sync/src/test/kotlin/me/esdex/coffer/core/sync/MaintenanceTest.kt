@@ -459,6 +459,40 @@ class MaintenanceTest {
     }
 
     @Test
+    fun aFolderDeleteInAPackWaitsForEveryCreateOfItsFolder() = runBlocking {
+        // Audit 3, FMT3-8: the browser deletes folders in packs; the test above sends a single delete.
+        val here = device()
+        val queued = VaultOps(here.storage, here.keys, OpQueue(here.index)) { 1_762_531_200_000 }
+        val (a, b) = here.ops.createFolders { create -> create("A", null) to create("B", null) }
+        val pack = lastId()
+        here.indexer.catchUp()
+        queued.deleteMany(here.tree(), listOf(a), emptyList(), partsOf = { here.index.parts(it).values })
+        OpQueue(here.index).drain(here.storage, pause = {})
+        val deleteA = lastId()
+        here.upload("last.txt", bytes("l"))
+        here.indexer.catchUp()
+        clock += days(31)
+        assertEquals(0, here.maintenance.run().operationsCompacted)
+        assertTrue(present(pack))
+        assertTrue(present(deleteA))
+
+        queued.deleteMany(here.tree(), listOf(b), emptyList(), partsOf = { here.index.parts(it).values })
+        OpQueue(here.index).drain(here.storage, pause = {})
+        val deleteB = lastId()
+        here.upload("later.txt", bytes("l"))
+        here.indexer.catchUp()
+        val before = here.view()
+        clock += days(31)
+        assertEquals(2, here.maintenance.run().operationsCompacted)
+        assertFalse(present(pack))
+        assertFalse(present(deleteA))
+        assertTrue(present(deleteB))
+        val fresh = device()
+        fresh.indexer.rescan()
+        assertEquals(before, fresh.view())
+    }
+
+    @Test
     fun anEarlierRenameInAPackIsSupersededButThePackStaysForTheLaterOne() = runBlocking {
         val here = device()
         val fileId = here.upload("a.txt", bytes("a"))

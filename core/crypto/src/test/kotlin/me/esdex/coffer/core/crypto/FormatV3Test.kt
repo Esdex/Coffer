@@ -96,6 +96,8 @@ class FormatV3Test {
             for ((name, count) in listOf("worstFull" to v3.getValue("worstCount"), "deletesFull" to v3.getValue("deleteCount"))) {
                 val full = opsOf(packs.obj(name))
                 assertEquals(name, count.jsonPrimitive.int, full.size)
+                // As SPEC §4.6 says: 8 folders with the longest names in a folder, 49 deletes.
+                assertEquals(name, if (name == "worstFull") 8 else 49, full.size)
                 // One more than fits goes on into a second pack, in order.
                 val more = full + full.first().let { first ->
                     when (first) {
@@ -150,6 +152,13 @@ class FormatV3Test {
             val oneOp = one.copyOfRange(3, one.size)
             assertNotNull(read(byteArrayOf(0xA1.toByte(), 0x01, 0x81.toByte()) + oneOp))
             assertNull(read(byteArrayOf(0xA1.toByte(), 0x01, 0x98.toByte(), 0x01) + oneOp))
+            // A count in two bytes where one would do; an item that is no map, or one under a tag (audit 3, FMT3-8).
+            assertNull(read(byteArrayOf(0xA1.toByte(), 0x01, 0x99.toByte(), 0x00, 0x01) + oneOp))
+            assertNull(read(byteArrayOf(0xA1.toByte(), 0x01, 0x81.toByte(), 0x01)))
+            assertNull(read(byteArrayOf(0xA1.toByte(), 0x01, 0x81.toByte(), 0xC1.toByte()) + oneOp))
+            // 24, the first count with a head of its own byte, reads.
+            val many = opsOf(packs.obj("deletesFull")).take(24)
+            assertEquals(many, codec.decodeOpPack(Captions.parse(codec.encodeOpPack(many))!!))
             // A list of indefinite length.
             assertNull(read(byteArrayOf(0xA1.toByte(), 0x01, 0x9F.toByte()) + oneOp + byteArrayOf(0xFF.toByte())))
             // A count past what is there, or bytes after the list.
