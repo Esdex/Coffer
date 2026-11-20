@@ -26,9 +26,11 @@ class VaultOps(
      * minutes, and a folder brought in with its subfolders was one message a folder.
      */
     private suspend fun send(kind: OpKind, ops: List<Op>) {
-        val messages = keys.meta.packOps(ops).map { OpMessage(keys.meta.encodeOpPack(it), it.size) }
+        val messages = packed(ops)
         if (queue != null) queue.enqueue(kind, messages) else messages.forEach { storage.sendText(it.caption) }
     }
+
+    private fun packed(ops: List<Op>) = keys.meta.packOps(ops).map { OpMessage(keys.meta.encodeOpPack(it), it.size) }
 
     /**
      * Folders with everything in them and files, as one batch of deletes in packs: each file first,
@@ -48,10 +50,21 @@ class VaultOps(
         handled: suspend (Id) -> Boolean = { false },
     ) {
         val queue = checkNotNull(queue) { "deletes go through the queue" }
+        queue.enqueue(OpKind.DELETE, deletes(tree, folderIds, fileIds, partsOf, expand, handled))
+    }
+
+    private suspend fun deletes(
+        tree: VaultTree,
+        folderIds: List<Id>,
+        fileIds: List<Id>,
+        partsOf: suspend (Id) -> Collection<MessageId>,
+        expand: Boolean = true,
+        handled: suspend (Id) -> Boolean = { false },
+    ): List<OpMessage> {
         val (folders, all) = if (expand) Companion.contents(tree, folderIds, fileIds) else folderIds.distinct() to fileIds.distinct()
         val files = all.filterNot { handled(it) }
         val ops = files.map { Op.FileDelete(newId(), clock(), it) } + folders.map { Op.FolderDelete(newId(), clock(), it) }
-        val messages = keys.meta.packOps(ops).map { pack ->
+        return keys.meta.packOps(ops).map { pack ->
             val deletedFiles = pack.mapNotNull { (it as? Op.FileDelete)?.fileId }
             OpMessage(
                 keys.meta.encodeOpPack(pack),
@@ -61,14 +74,15 @@ class VaultOps(
                 parts = deletedFiles.flatMap { partsOf(it) },
             )
         }
-        queue.enqueue(OpKind.DELETE, messages)
     }
 
     /**
      * Moves what [placed] says into [destination] (see [NameConflicts]): renamed where its name was taken,
      * in place of a file it replaces, or into a folder of the same name, merged. Three batches, in this
-     * order: the replaced files deleted, everything moved, then the folders a merge left empty deleted;
-     * one that kept something skipped stays. Needs [queue].
+     * order: everything moved, the replaced files deleted, then the folders a merge left empty deleted;
+     * one that kept something skipped stays. All of them are sealed before any is queued, and the moves go
+     * first: a lock or a kill in between used to leave a replaced file deleted with nothing in its place;
+     * now it leaves both (audit 3, Q3-5). Needs [queue].
      */
     suspend fun movePlaced(tree: VaultTree, placed: List<Placed<Id>>, destination: Id?, partsOf: suspend (Id) -> Collection<MessageId>) {
         val queue = checkNotNull(queue) { "moves go through the queue" }
@@ -97,11 +111,13 @@ class VaultOps(
             }
         }
         visit(placed, destination)
-        if (replaced.isNotEmpty()) deleteMany(tree, emptyList(), replaced, partsOf)
-        send(OpKind.MOVE, moves)
+        val moved = packed(moves)
+        val replacedGone = if (replaced.isEmpty()) emptyList() else deletes(tree, emptyList(), replaced, partsOf)
         val removals = keys.meta.packOps(emptied.map { Op.FolderDelete(newId(), clock(), it) }).map { pack ->
             OpMessage(keys.meta.encodeOpPack(pack), pack.size, deletedFolders = pack.map { (it as Op.FolderDelete).folderId })
         }
+        queue.enqueue(OpKind.MOVE, moved)
+        queue.enqueue(OpKind.DELETE, replacedGone)
         queue.enqueue(OpKind.DELETE, removals)
     }
 

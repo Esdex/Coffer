@@ -75,6 +75,32 @@ class MoveConflictsTest {
     }
 
     @Test
+    fun aMoveWithReplaceCutOffBetweenItsBatchesLeavesBothFiles() = runTest {
+        // Audit 3, Q3-5: the replaced file's delete was queued first; a lock or kill then left it gone, nothing in its place.
+        val docs = here.ops.createFolder("Docs", null)
+        here.indexer.catchUp()
+        val incoming = here.upload("Report.pdf", BytesSource("new".toByteArray()))
+        here.upload("report.pdf", BytesSource("old".toByteArray()), folderId = docs)
+        here.indexer.catchUp()
+        var batches = 0
+        val cut = object : me.esdex.coffer.core.index.VaultIndex by here.index {
+            override suspend fun putOps(batch: String, kind: String, messages: List<me.esdex.coffer.core.index.OpMessage>) {
+                if (++batches > 1) throw IllegalStateException("killed")
+                here.index.putOps(batch, kind, messages)
+            }
+        }
+        val tree = here.tree()
+        val placed = NameConflicts(tree, ConflictDecider.always(FileChoice.REPLACE, FolderChoice.MERGE), leaving = setOf(incoming))
+            .place(docs, listOf(Incoming.File(tree.files.getValue(incoming).name, incoming)))
+        org.junit.Assert.assertThrows(IllegalStateException::class.java) {
+            kotlinx.coroutines.runBlocking { VaultOps(here.storage, here.keys, OpQueue(cut)) { 1_762_531_200_000 }.movePlaced(tree, placed, docs, partsOf = { here.index.parts(it).values }) }
+        }
+        OpQueue(here.index).drain(here.storage, pause = {})
+        here.indexer.catchUp()
+        assertEquals(setOf(ready("Report.pdf", "Docs"), ready("report.pdf", "Docs")), here.view().files)
+    }
+
+    @Test
     fun keptBothIsMovedUnderANewNameAndSkippedStaysWhereItWas() = runTest {
         val docs = here.ops.createFolder("Docs", null)
         val a = here.ops.createFolder("A", null)
