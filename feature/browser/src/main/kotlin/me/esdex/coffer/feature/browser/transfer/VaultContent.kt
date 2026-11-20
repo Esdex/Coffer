@@ -392,15 +392,25 @@ class VaultContent @Inject constructor(
     private val deferred = DeferredDeletes(
         scope,
         UNDO_MILLIS,
-        send = { deleteMany(it.folders, it.files) },
+        send = { deleteMany(it.folders, it.files, expand = false) },
         onFailure = { deleteFailuresFlow.tryEmit(Unit) },
     )
 
     /** Deleted on screen and waiting for the chance to undo to pass; the browser leaves them out. */
     val hidden: StateFlow<Set<Id>> = deferred.hidden
 
-    /** A delete that can be taken back for [UNDO_MILLIS]; see [DeferredDeletes]. */
-    suspend fun deleteLater(folderIds: List<Id>, fileIds: List<Id>) = deferred.schedule(DeferredDeletes.Batch(folderIds, fileIds))
+    /**
+     * A delete that can be taken back for [UNDO_MILLIS]; see [DeferredDeletes]. What the folders hold is
+     * taken now: something moved or merged into one meanwhile stays (audit 3, Q3-1).
+     */
+    suspend fun deleteLater(folderIds: List<Id>, fileIds: List<Id>) {
+        val keys = keysFlow.value ?: return
+        val (folders, files) = VaultOps.contents(VaultTree.of(index, keys), folderIds, fileIds)
+        deferred.schedule(DeferredDeletes.Batch(folders, files))
+    }
+
+    /** The vault as names are settled against: without what is being deleted or waits for its Undo (audit 3, Q3-1). */
+    private suspend fun settling(keys: VaultKeys): VaultTree = VaultTree.of(index, keys).without(hidden.value + deleting.value)
 
     suspend fun undoDelete(): Boolean = deferred.undo()
 
@@ -439,7 +449,7 @@ class VaultContent @Inject constructor(
      */
     suspend fun upload(requests: List<UploadRequest>, decider: ConflictDecider) {
         val keys = keysFlow.value ?: return
-        val conflicts = NameConflicts(VaultTree.of(index, keys), decider)
+        val conflicts = NameConflicts(settling(keys), decider)
         val placed = requests.groupBy { it.folderId }.flatMap { (folderId, group) ->
             val incoming = group.map { Incoming.File(vaultName(it.displayName, FILE_FALLBACK_NAME), it) }
             conflicts.place(folderId, incoming).map { (it as Placed.File).let { p -> p.item.copy(displayName = p.name, replaces = p.replaces) } }
@@ -510,7 +520,7 @@ class VaultContent @Inject constructor(
         val keys = keysFlow.value ?: return 0
         val items = (inbox.state.value as? ShareInbox.State.Ready)?.items.orEmpty()
         val incoming = items.map { Incoming.File(vaultName(it.name, FILE_FALLBACK_NAME), it) }
-        val placed = NameConflicts(VaultTree.of(index, keys), decider).place(folderId, incoming).map { it as Placed.File }
+        val placed = NameConflicts(settling(keys), decider).place(folderId, incoming).map { it as Placed.File }
         inbox.take()
         queue(placed.map { UploadRequest(Uri.fromFile(it.item.file), it.name, it.item.mime, folderId, it.replaces) })
         return placed.size
@@ -587,13 +597,13 @@ class VaultContent @Inject constructor(
      * are cancelled instead, which takes back what they sent. Every row says Deleting from the start, and
      * each one disappears once Telegram has its delete.
      */
-    suspend fun deleteMany(folderIds: List<Id>, fileIds: List<Id>) {
+    suspend fun deleteMany(folderIds: List<Id>, fileIds: List<Id>, expand: Boolean = true) {
         val all = folderIds + fileIds
         deletingFlow.update { it + all }
         try {
             withOps { ops, keys, _ ->
                 val files = fileIds.filter { index.file(it) != null }
-                ops.deleteMany(VaultTree.of(index, keys), folderIds, files, partsOf = { index.parts(it).values }) { fileId ->
+                ops.deleteMany(VaultTree.of(index, keys), folderIds, files, partsOf = { index.parts(it).values }, expand = expand) { fileId ->
                     val upload = index.uploads().find { it.fileId == fileId }
                     upload?.let { cancelUpload(it.uploadId) }
                     upload != null
@@ -615,7 +625,7 @@ class VaultContent @Inject constructor(
             val files = fileIds.filter { it in tree.files && tree.folderOf(it) != destination }
             require(destination == null || folders.none { tree.isWithin(destination, it) }) { "folder cannot move into itself" }
             val incoming = folders.map { NameConflicts.incoming(tree, it) } + files.map { Incoming.File(tree.files.getValue(it).name, it) }
-            val placed = NameConflicts(tree, decider, leaving = (folders + files).toSet()).place(destination, incoming)
+            val placed = NameConflicts(tree.without(hidden.value + deleting.value), decider, leaving = (folders + files).toSet()).place(destination, incoming)
             ops.movePlaced(tree, placed, destination, partsOf = { index.parts(it).values })
         }
 
@@ -670,7 +680,7 @@ class VaultContent @Inject constructor(
         // Every new folder as one batch for the queue, their ids known at once; the files follow them into
         // the transfer queue straight away, which sends the folders first. Nothing waits on Telegram here.
         val files = withOps { ops, keys, _ ->
-            val placed = NameConflicts(VaultTree.of(index, keys), decider).place(parentId, listOf(folder.incoming()))
+            val placed = NameConflicts(settling(keys), decider).place(parentId, listOf(folder.incoming()))
             ops.createFolders { create -> bringIn(placed, parentId) { name, parent -> create(name, parent) } }
         } ?: return 0
         queue(files.map { UploadRequest(it.file.uri.toUri(), it.name, it.file.mime, it.folderId, it.replaces) })

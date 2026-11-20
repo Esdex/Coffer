@@ -17,6 +17,7 @@
 - The path under the top bar shows at the root too, with the house marked as the place on screen, so going into a folder and back no longer moves the list.
 
 ### Fixed
+- Moving or merging into a folder within the seconds its delete can still be undone no longer deletes what was moved in; a folder being deleted is no longer offered to merge into.
 - An app that crashes while saving a file opened from Coffer no longer replaces it with what it wrote so far; the file in the vault stays as it was.
 - The weekly check no longer deletes an operation that is in Saved Messages twice and keeps the copy; this phone then undid it, renames and moves, at its next full reread. A copy comes when Coffer is closed while sending.
 - In a PDF, a pinch zooms about the place between the fingers and moves with them, as in the gallery; it grew out of the top left corner. Zoomed in, a drag goes any way from the first move, a touch stops a fling, and zooming out after moving about works every time.

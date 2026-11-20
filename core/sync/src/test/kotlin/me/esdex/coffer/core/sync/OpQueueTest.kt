@@ -225,4 +225,44 @@ class OpQueueTest {
         fresh.indexer.rescan()
         assertEquals(setOf("D" to null, "C" to "D"), fresh.view().folders)
     }
+
+    @Test
+    fun aDeleteTakesWhatTheFolderHeldWhenItWasDeletedNotWhatItHoldsWhenItGoes() = runTest {
+        // Audit 3, Q3-1: a merge into a folder during its Undo went with the folder.
+        val here = device()
+        val docs = here.ops.createFolder("Docs", null)
+        here.indexer.catchUp()
+        val old = here.upload("old.txt", BytesSource("o".toByteArray()), folderId = docs)
+        val merged = here.upload("merged.txt", BytesSource("m".toByteArray()))
+        here.indexer.catchUp()
+        val (folders, files) = VaultOps.contents(here.tree(), listOf(docs), emptyList())
+        assertEquals(listOf(docs) to listOf(old), folders to files)
+        // Moved in while the delete waits for its Undo to pass.
+        here.ops.moveFile(merged, docs)
+        here.indexer.catchUp()
+
+        here.queued().deleteMany(here.tree(), folders, files, partsOf = { here.index.parts(it).values }, expand = false)
+        OpQueue(here.index).drain(here.storage, pause = {})
+        here.indexer.catchUp()
+        assertEquals(View(emptySet(), setOf(Triple("merged.txt", null, me.esdex.coffer.core.index.FileStatus.READY))), here.view())
+    }
+
+    @Test
+    fun namesAreSettledWithoutWhatIsGoing() = runTest {
+        val here = device()
+        val docs = here.ops.createFolder("Docs", null)
+        val inner = here.ops.createFolder("Inner", docs)
+        val other = here.ops.createFolder("Other", null)
+        here.indexer.catchUp()
+        val a = here.upload("a.txt", BytesSource("a".toByteArray()), folderId = inner)
+        val b = here.upload("b.txt", BytesSource("b".toByteArray()))
+        val c = here.upload("c.txt", BytesSource("c".toByteArray()), folderId = other)
+        here.indexer.catchUp()
+        val tree = here.tree()
+        assertEquals(tree.folders.keys, tree.without(emptySet()).folders.keys)
+        val left = tree.without(setOf(docs, b))
+        assertEquals(setOf(other), left.folders.keys)
+        assertEquals(setOf(c), left.files.keys)
+        assertTrue(a in tree.files)
+    }
 }

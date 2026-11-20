@@ -35,19 +35,21 @@ class VaultOps(
      * then the folders deepest first, so no `folder.delete` goes while something is still inside (SPEC
      * §4.3). Each message carries the [partsOf] its files, deleted once it is in Telegram (see
      * [OpQueue.drain]). [handled] takes a file out of the batch when it deals with it itself, as with an
-     * upload of this device's, cancelled instead. Needs [queue].
+     * upload of this device's, cancelled instead. With [expand] off, [folderIds] and [fileIds] are already
+     * everything to go, folders deepest first, as taken when the user deleted them (see [contents]).
+     * Needs [queue].
      */
     suspend fun deleteMany(
         tree: VaultTree,
         folderIds: List<Id>,
         fileIds: List<Id>,
         partsOf: suspend (Id) -> Collection<MessageId>,
+        expand: Boolean = true,
         handled: suspend (Id) -> Boolean = { false },
     ) {
         val queue = checkNotNull(queue) { "deletes go through the queue" }
-        val subtrees = folderIds.map(tree::subtree)
-        val folders = subtrees.flatMap { it.first }.distinct()
-        val files = (subtrees.flatMap { it.second } + fileIds).distinct().filterNot { handled(it) }
+        val (folders, all) = if (expand) Companion.contents(tree, folderIds, fileIds) else folderIds.distinct() to fileIds.distinct()
+        val files = all.filterNot { handled(it) }
         val ops = files.map { Op.FileDelete(newId(), clock(), it) } + folders.map { Op.FolderDelete(newId(), clock(), it) }
         val messages = keys.meta.packOps(ops).map { pack ->
             val deletedFiles = pack.mapNotNull { (it as? Op.FileDelete)?.fileId }
@@ -147,5 +149,17 @@ class VaultOps(
         val (folders, files) = tree.subtree(folderId)
         for (fileId in files) deleteFile(fileId)
         for (id in folders) sendNow(Op.FolderDelete(newId(), clock(), id))
+    }
+
+    companion object {
+        /**
+         * [folderIds] with every folder inside them, deepest first, and every file in them with [fileIds]: what
+         * a delete takes. Taken when the user deletes, not when the delete goes out after its Undo: a merge
+         * into a folder meanwhile would have gone with it (audit 3, Q3-1).
+         */
+        fun contents(tree: VaultTree, folderIds: List<Id>, fileIds: List<Id>): Pair<List<Id>, List<Id>> {
+            val subtrees = folderIds.map(tree::subtree)
+            return subtrees.flatMap { it.first }.distinct() to (subtrees.flatMap { it.second } + fileIds).distinct()
+        }
     }
 }

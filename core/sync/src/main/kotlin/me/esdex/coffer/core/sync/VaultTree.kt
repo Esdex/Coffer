@@ -52,6 +52,16 @@ class VaultTree(val folders: Map<Id, LocalFolder>, val files: Map<Id, FileMeta>)
         return order to files.keys.filter { folderOf(it) in inside }
     }
 
+    /**
+     * This tree without [gone] and all inside the folders among them: what is being deleted, or waits for
+     * its Undo to pass, holds no name a new thing must give way to (audit 3, Q3-1).
+     */
+    fun without(gone: Set<Id>): VaultTree {
+        if (gone.isEmpty()) return this
+        val goneFolders = folders.keys.filterTo(HashSet()) { id -> gone.any { it in folders && isWithin(id, it) } }
+        return VaultTree(folders - goneFolders, files.filterKeys { it !in gone && folderOf(it) !in goneFolders })
+    }
+
     companion object {
         /** Reads and opens the whole index; rows that do not open are left out. */
         suspend fun of(index: VaultIndex, keys: VaultKeys): VaultTree = VaultTree(
