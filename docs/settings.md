@@ -53,6 +53,10 @@ colours, and opening Markdown formatted.
 
 ## Storage
 
+**When a name is taken**: what happens when something you add or move meets a name that is
+already there. Ask (the default), Keep both, Skip or Replace. See
+[Files and folders](files-and-folders.md#when-a-name-is-taken).
+
 What the vault holds by kind (pictures, videos, music, documents, other), each kind opening its
 files largest first, and what Coffer keeps in Saved Messages: parts of files, changes, index
 snapshots, the vault header, and how many messages are your own.

@@ -31,6 +31,32 @@ Tap a file to open it in Coffer's viewers: see [Viewers](viewers.md). The menu o
 Other apps can also open and save vault files themselves, through the system file picker. See
 [Files in other apps](other-apps.md).
 
+## When a name is taken
+
+When you add, share or move something into a folder that already has something of the same name,
+Coffer asks what to do. Names that differ only in capital letters count as the same.
+
+For a file:
+
+- **Replace**: the file coming in takes the place of the one there, which is deleted on all your
+  devices. A file being uploaded replaces the old one only once it is uploaded whole; until then
+  both are there.
+- **Keep both**: the file coming in gets a number, as in report (1).pdf
+- **Skip**: the file coming in is left out, and what is there stays
+
+For a folder, **Merge** puts what comes in into the folder that is there, and asks again about any
+name taken inside it. **Keep both** and **Skip** work as for a file. A whole folder is never
+replaced.
+
+Tick **Do the same for other files** (or folders) to answer once for the rest. Leaving the
+question unanswered cancels the whole action, and nothing of it is done.
+
+To stop the questions, choose a fixed answer in Settings, Storage, **When a name is taken**: Keep
+both, Skip or Replace. With Replace, folders are merged.
+
+Renaming, or making a new folder, under a name that is taken is not allowed: Coffer says something
+there already has that name.
+
 ## Several at once
 
 Long-press a file or folder to start a selection, then tap others, or **Select all**. Move, save or
