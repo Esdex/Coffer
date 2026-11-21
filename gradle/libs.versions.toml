@@ -32,6 +32,11 @@ androidxHilt = "1.4.0"
 zxing = "3.5.4"
 zxcvbn = "1.9.0"
 
+# Desktop (branch desktop, 2026-11-21): Compose for the tray and windows, jfuse (LGPL-3.0, Cryptomator) for the drive.
+composeMultiplatform = "1.12.2"
+jfuse = "0.8.0"
+dbusJava = "5.2.2"
+
 [libraries]
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
 media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
@@ -85,6 +90,11 @@ kotlin-gradlePlugin = { group = "org.jetbrains.kotlin", name = "kotlin-gradle-pl
 compose-gradlePlugin = { group = "org.jetbrains.kotlin", name = "compose-compiler-gradle-plugin", version.ref = "kotlin" }
 ksp-gradlePlugin = { group = "com.google.devtools.ksp", name = "com.google.devtools.ksp.gradle.plugin", version.ref = "ksp" }
 
+jfuse = { group = "org.cryptomator", name = "jfuse", version.ref = "jfuse" }
+# The tray on Plasma: StatusNotifierItem over D-Bus (MIT).
+dbus-java-core = { group = "com.github.hypfvieh", name = "dbus-java-core", version.ref = "dbusJava" }
+dbus-java-unixsocket = { group = "com.github.hypfvieh", name = "dbus-java-transport-native-unixsocket", version.ref = "dbusJava" }
+
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
@@ -94,6 +104,7 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 room = { id = "androidx.room", version.ref = "room" }
+compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "composeMultiplatform" }
 
 # Convention plugins from build-logic
 coffer-android-application = { id = "coffer.android.application" }
