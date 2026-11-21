@@ -1,6 +1,5 @@
 package me.esdex.coffer.core.sync
 
-import android.annotation.SuppressLint
 import me.esdex.coffer.core.crypto.CofferFormat
 import me.esdex.coffer.core.crypto.ContentEncryptor
 import me.esdex.coffer.core.crypto.ContentDecryptor
@@ -123,7 +122,6 @@ enum class TransferStage {
     MOVING,
 }
 
-@SuppressLint("UsableSpace")
 class UploadRunner(
     private val sodium: Sodium,
     private val storage: StorageBackend,
