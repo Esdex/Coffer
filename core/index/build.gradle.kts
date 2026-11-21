@@ -1,27 +1,9 @@
 plugins {
-    alias(libs.plugins.coffer.android.library)
-    alias(libs.plugins.ksp)
-    alias(libs.plugins.room)
+    alias(libs.plugins.coffer.jvm.library)
 }
 
-room {
-    schemaDirectory("$projectDir/schemas")
-}
-
-android {
-    defaultConfig {
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-}
-
+// What the vault's index is, without how it is kept: the Room database for Android is :core:database.
 dependencies {
     api(project(":core:crypto"))
     api(project(":core:storage"))
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    implementation(libs.sqlcipher)
-    ksp(libs.androidx.room.compiler)
-    androidTestImplementation(libs.androidx.room.testing)
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(libs.androidx.test.ext.junit)
 }

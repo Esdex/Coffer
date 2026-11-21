@@ -175,7 +175,7 @@ dependencies {
     implementation(project(":core:storage"))
     implementation(project(":core:tdlib"))
     implementation(project(":core:vault"))
-    implementation(project(":core:index"))
+    implementation(project(":core:database"))
     implementation(project(":core:sync"))
     implementation(project(":core:ui"))
     implementation(project(":feature:onboarding"))
