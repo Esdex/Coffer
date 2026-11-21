@@ -19,6 +19,11 @@ want to.
   Wherever the recovery key shows, screenshots are blocked anyway.
 - **Hide exact file sizes**: new uploads are padded inside the encryption, so Telegram cannot tell a
   file by its exact size. About 1 to 2 percent more traffic and space. On by default.
+- **Edit in another app**: files offer Edit in another app in their menu. On by default.
+- **Show Coffer in the system file picker**: other apps can open vault files through Android's file
+  picker and save them back. Off by default.
+
+For these two, see [Files in other apps](other-apps.md).
 
 ## Vault
 

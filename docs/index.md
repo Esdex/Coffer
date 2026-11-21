@@ -14,6 +14,7 @@ names and folders are encrypted on your phone before anything is sent, and only 
 
 - [Files and folders](files-and-folders.md): adding, moving, deleting, saving and sharing
 - [Viewers](viewers.md): photos, videos, music, PDFs, text and Markdown
+- [Files in other apps](other-apps.md): opening, editing, and Coffer in the system file picker
 - [Offline files and the cache](offline.md): keeping files on the phone
 - [More than one phone](devices.md): the same vault on several devices
 - [Settings](settings.md): every setting, section by section

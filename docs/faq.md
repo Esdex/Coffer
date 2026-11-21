@@ -73,6 +73,12 @@ much free space on the phone as the file takes.
 Files kept on the phone open with no network: see [Offline files and the cache](offline.md).
 Everything else needs a connection to Telegram.
 
+## An app opened a file from Coffer but cannot save it
+
+Opening a file from Coffer gives the app a copy to read. Use **Edit in another app** from the file's
+menu, or open the file from the app itself through the system file picker: see
+[Files in other apps](other-apps.md).
+
 ## Something else went wrong
 
 Please open an issue on [GitHub](https://github.com/Esdex/Coffer/issues). Do not include

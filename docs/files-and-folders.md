@@ -23,9 +23,13 @@ Tap a file to open it in Coffer's viewers: see [Viewers](viewers.md). The menu o
 - **Save to phone** for a folder: the folder with its subfolders
 - **Cache on this phone**: keep it on the phone for opening with no network, see
   [Offline files and the cache](offline.md)
-- **Open in another app**, from a viewer's menu: Coffer hands over a decrypted copy and removes it
-  about 10 minutes after opening, at the latest when the vault locks or Coffer next starts
+- **Edit in another app**: an editor changes a decrypted copy, and each save goes back into the vault
+- **Open in another app**, from a viewer's menu: Coffer hands over a decrypted copy to read and
+  removes it about 10 minutes after opening, at the latest when the vault locks or Coffer next starts
 - **Delete**
+
+Other apps can also open and save vault files themselves, through the system file picker. See
+[Files in other apps](other-apps.md).
 
 ## Several at once
 
