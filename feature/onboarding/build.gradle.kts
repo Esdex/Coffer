@@ -8,6 +8,7 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:tdlib"))
     implementation(project(":core:vault"))
+    implementation(project(":core:device"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.fragment)

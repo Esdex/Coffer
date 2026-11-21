@@ -17,6 +17,7 @@ android {
 dependencies {
     implementation(project(":core:ui"))
     implementation(project(":core:vault"))
+    implementation(project(":core:device"))
     implementation(project(":core:sync"))
     implementation(project(":core:tdlib"))
     // The integrity check and the rescan run on the browser's open session.
