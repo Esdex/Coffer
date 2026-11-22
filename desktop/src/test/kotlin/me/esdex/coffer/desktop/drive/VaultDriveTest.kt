@@ -61,10 +61,12 @@ class VaultDriveTest {
             tree = build()
         }
 
-        override suspend fun move(entry: DriveTree.Entry, from: DriveTree.Folder, shownName: String, to: DriveTree.Folder, name: String) {
+        override suspend fun move(entry: DriveTree.Entry, from: DriveTree.Folder, shownName: String, to: DriveTree.Folder, name: String, replacing: DriveTree.Entry?) {
+            replacing?.let { delete(it) }
             when (entry) {
                 is DriveTree.File -> files[entry.fileId] = files.getValue(entry.fileId).copy(name = name, folderId = to.folderId)
                 is DriveTree.Folder -> folders[entry.folderId!!] = LocalFolder(name, to.folderId)
+                is DriveTree.Draft -> error("no drafts here")
             }
             tree = build()
         }
@@ -73,9 +75,17 @@ class VaultDriveTest {
             when (entry) {
                 is DriveTree.File -> files.remove(entry.fileId)
                 is DriveTree.Folder -> folders.remove(entry.folderId)
+                is DriveTree.Draft -> error("no drafts here")
             }
             tree = build()
         }
+
+        // Writing files is DriveWritingTest's, against the real writer.
+        override suspend fun createFile(parentId: Id?, name: String): OpenFile = error("not here")
+        override suspend fun editFile(file: DriveTree.File, truncate: Boolean): OpenFile = error("not here")
+        override suspend fun openDraft(draft: DriveTree.Draft, write: Boolean, truncate: Boolean): OpenFile = error("not here")
+        override suspend fun resize(draft: DriveTree.Draft, size: Long) = error("not here")
+        override fun copyOf(draft: DriveTree.Draft): java.io.File = error("not here")
     }
 
     private lateinit var at: Path
@@ -105,6 +115,7 @@ class VaultDriveTest {
                 )
             },
             edits = { if (unlocked) edits else null },
+            space = at,
         )
     }
 
@@ -210,17 +221,12 @@ class VaultDriveTest {
     }
 
     @Test
-    fun filesCannotBeMadeOrWrittenYet() {
-        assertReadOnly { Files.write(at.resolve("new.txt"), small) }
-        assertReadOnly { Files.newOutputStream(at.resolve("small.txt"), StandardOpenOption.APPEND).use { it.write(1) } }
-        assertArrayEquals(small, Files.readAllBytes(at.resolve("small.txt")))
-    }
-
-    @Test
     fun aLockedVaultChangesNothing() {
         unlocked = false
         assertReadOnly { Files.createDirectory(at.resolve("New folder")) }
         assertReadOnly { Files.delete(at.resolve("small.txt")) }
+        assertReadOnly { Files.write(at.resolve("new.txt"), small) }
+        assertReadOnly { Files.newOutputStream(at.resolve("small.txt"), StandardOpenOption.APPEND).use { it.write(1) } }
         assertEquals(setOf("Docs", "small.txt"), names())
     }
 

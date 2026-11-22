@@ -44,10 +44,14 @@ class VaultWriterTest {
     private val index = InMemoryVaultIndex()
     private val indexer = Indexer(storage, index, keys)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val writer = VaultWriter(scope, index, keys, storage = { storage }, clock = { 1_762_531_200_000 })
+    private val drafts = java.nio.file.Files.createTempDirectory("drafts").toFile()
+    private val writer = VaultWriter(scope, index, keys, storage = { storage }, draftsDir = drafts, clock = { 1_762_531_200_000 })
 
     @After
-    fun stop() = scope.cancel()
+    fun stop() {
+        scope.cancel()
+        drafts.deleteRecursively()
+    }
 
     private fun texts() = cloud.allMessages().count { it.content is MessageContent.Text }
 
@@ -85,7 +89,7 @@ class VaultWriterTest {
         until("listed") { writer.tree.value["/a.txt"] != null }
         writer.createFolder(null, "Docs")
         val tree = writer.tree.value
-        writer.move(tree["/a.txt"]!!, tree["/"] as DriveTree.Folder, "a.txt", tree["/Docs"] as DriveTree.Folder, "b.txt")
+        writer.move(tree["/a.txt"]!!, tree["/"] as DriveTree.Folder, "a.txt", tree["/Docs"] as DriveTree.Folder, "b.txt", replacing = null)
         assertEquals(fileId, (writer.tree.value["/Docs/b.txt"] as DriveTree.File).fileId)
         assertNull(writer.tree.value["/a.txt"])
         until("sent") { index.ops().isEmpty() }

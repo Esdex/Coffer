@@ -37,12 +37,18 @@ class TrashProbeTest {
                 tree = build(files, folders)
             }
 
-            override suspend fun move(entry: DriveTree.Entry, from: DriveTree.Folder, shownName: String, to: DriveTree.Folder, name: String) = Unit
+            override suspend fun move(entry: DriveTree.Entry, from: DriveTree.Folder, shownName: String, to: DriveTree.Folder, name: String, replacing: DriveTree.Entry?) = Unit
 
             override suspend fun delete(entry: DriveTree.Entry) {
                 files.clear()
                 tree = build(files, folders)
             }
+
+            override suspend fun createFile(parentId: Id?, name: String): OpenFile = error("KIO writes no file here")
+            override suspend fun editFile(file: DriveTree.File, truncate: Boolean): OpenFile = error("KIO writes no file here")
+            override suspend fun openDraft(draft: DriveTree.Draft, write: Boolean, truncate: Boolean): OpenFile = error("KIO writes no file here")
+            override suspend fun resize(draft: DriveTree.Draft, size: Long) = error("KIO writes no file here")
+            override fun copyOf(draft: DriveTree.Draft): java.io.File = error("KIO writes no file here")
         }
         val at = Files.createTempDirectory(Path.of("build").toAbsolutePath().also(Files::createDirectories), "trash-probe")
         val trash = Path.of(System.getProperty("user.home"), ".local/share/Trash")
@@ -53,7 +59,7 @@ class TrashProbeTest {
                 if (position >= probe.size) -1 else minOf(length, probe.size - position.toInt()).also { probe.copyInto(buffer, offset, position.toInt(), position.toInt() + it) }
             }, onClose = {})
         }
-        val mounted = VaultDrive.mount(at, tree = { tree }, open = open, edits = { edits })
+        val mounted = VaultDrive.mount(at, tree = { tree }, open = open, edits = { edits }, space = at)
         try {
             val process = ProcessBuilder("kioclient", "--noninteractive", "--platform", "offscreen", "move", at.resolve(name).toUri().toString(), "trash:/")
                 .redirectErrorStream(true).start()

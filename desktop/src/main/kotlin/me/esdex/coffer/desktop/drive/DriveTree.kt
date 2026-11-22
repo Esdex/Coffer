@@ -10,7 +10,8 @@ import me.esdex.coffer.core.sync.VaultTree
  * an unknown or looping parent puts a folder in the root, SPEC §5.2) and the files that are whole, as the
  * Android file picker lists them. A path must name one thing, where the vault may hold two with one name:
  * the second gets " (2)" before its extension, in the order of their ids, so names stay put as the vault
- * changes elsewhere.
+ * changes elsewhere. Files being written on the drive show as [Draft]s until their upload is whole; a file a
+ * draft takes the place of no longer shows.
  */
 class DriveTree private constructor(private val entries: Map<String, Entry>) {
 
@@ -24,6 +25,12 @@ class DriveTree private constructor(private val entries: Map<String, Entry>) {
 
     class File(val fileId: Id, val size: Long, val createdAt: Long, override val modifiedAt: Long) : Entry
 
+    /** A file being written here: its bytes in a copy on this computer until its upload is whole. */
+    class Draft(val uploadId: String, val size: Long, override val modifiedAt: Long) : Entry
+
+    /** Where a draft shows: its folder (the root when null or gone), its name, and what it holds so far. */
+    class DraftInfo(val uploadId: String, val folderId: Id?, val name: String, val size: Long, val modifiedAt: Long, val replaces: Id?)
+
     /** What [path] names, "/" being the root; null if nothing. */
     operator fun get(path: String): Entry? = entries[path]
 
@@ -32,23 +39,31 @@ class DriveTree private constructor(private val entries: Map<String, Entry>) {
 
         private const val ROOT = "/"
 
-        /** The tree of [vault], showing of its files those in [whole]. */
-        fun of(vault: VaultTree, whole: Map<Id, IndexedFile>): DriveTree {
+        /** The tree of [vault], showing of its files those in [whole], and the [drafts] being written. */
+        fun of(vault: VaultTree, whole: Map<Id, IndexedFile>, drafts: List<DraftInfo> = emptyList()): DriveTree {
             val entries = HashMap<String, Entry>()
+            val replaced = drafts.mapNotNullTo(HashSet()) { it.replaces }
+            val draftsIn = drafts.groupBy { draft -> draft.folderId?.takeIf { it in vault.folders } }
 
             /** Lays out the folder [folderId] (null: the root) at [path]; its newest file's time is the folder's. */
             fun layOut(folderId: Id?, path: String): Long {
                 val folders = vault.childFolders(folderId).map { Item(vault.folders.getValue(it).name, it, folder = true) }
-                val files = vault.childFiles(folderId).filter { it in whole }.map { Item(vault.files.getValue(it).name, it, folder = false) }
-                val names = uniqueNames(folders + files)
+                val files = vault.childFiles(folderId).filter { it in whole && it !in replaced }.map { Item(vault.files.getValue(it).name, it, folder = false) }
+                val drafts = draftsIn[folderId].orEmpty().map { Item(it.name, null, folder = false, draft = it) }
+                val names = uniqueNames(folders + files + drafts)
                 var newest = 0L
                 for ((item, name) in names) {
                     val childPath = if (path == ROOT) "$ROOT$name" else "$path/$name"
+                    val draft = item.draft
                     val time = if (item.folder) {
                         layOut(item.id, childPath)
+                    } else if (draft != null) {
+                        entries[childPath] = Draft(draft.uploadId, draft.size, draft.modifiedAt)
+                        draft.modifiedAt
                     } else {
-                        val meta = vault.files.getValue(item.id)
-                        entries[childPath] = File(item.id, whole.getValue(item.id).plainSize, meta.createdAt, meta.modifiedAt)
+                        val fileId = checkNotNull(item.id)
+                        val meta = vault.files.getValue(fileId)
+                        entries[childPath] = File(fileId, whole.getValue(fileId).plainSize, meta.createdAt, meta.modifiedAt)
                         meta.modifiedAt
                     }
                     newest = maxOf(newest, time)
@@ -60,8 +75,9 @@ class DriveTree private constructor(private val entries: Map<String, Entry>) {
             return DriveTree(entries)
         }
 
-        private class Item(val name: String, val id: Id, val folder: Boolean) {
-            val key: String = id.toByteArray().joinToString("") { "%02x".format(it) }
+        /** A folder, a file (by [id]) or a [draft]. Drafts come after what the vault holds under the same name. */
+        private class Item(val name: String, val id: Id?, val folder: Boolean, val draft: DraftInfo? = null) {
+            val key: String = id?.toByteArray()?.joinToString("") { "%02x".format(it) } ?: "~${draft?.uploadId}"
         }
 
         /** Each item with the name it shows under: first come by id keeps its own, the others are numbered. */

@@ -50,6 +50,9 @@ class DesktopVault(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val store = VaultStore(File(dataDir, "vault"), secrets)
 
+    /** Copies of files written on the drive until they are uploaded, plain, in the 0700 data folder (Esdex, 2026-11-22). */
+    val draftsDir = File(dataDir, "staging")
+
     val manager = VaultManager(
         sodium,
         store,
@@ -177,7 +180,7 @@ class DesktopVault(
         keysFlow.value = keys
         log("unlocked")
         session = scope.launch {
-            val current = VaultWriter(this, index, keys, storage = { telegram.state.first { it == AuthState.Ready }; telegram.storage() })
+            val current = VaultWriter(this, index, keys, storage = { telegram.state.first { it == AuthState.Ready }; telegram.storage() }, draftsDir)
             writer = current
             launch { current.tree.collect { treeFlow.value = it } }
             current.start()
@@ -224,6 +227,8 @@ class DesktopVault(
     private suspend fun forget() {
         close()
         index.clear()
+        // Files written and not uploaded are plain copies: none outlives the vault (as audit 1, M10 on the phone).
+        draftsDir.deleteRecursively()
         runCatching { secrets.forgetMaster() }
         manager.forget()
     }

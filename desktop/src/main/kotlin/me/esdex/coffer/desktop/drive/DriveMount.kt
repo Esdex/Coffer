@@ -28,7 +28,7 @@ class DriveMount(val at: Path, private val vault: DesktopVault) {
     private fun mount() {
         if (mounted != null) return
         mounted = try {
-            VaultDrive.mount(at, tree = { vault.tree.value }, open = { runBlocking { vault.openFile(it) } }, edits = { vault.edits }).also { log("drive mounted") }
+            VaultDrive.mount(at, tree = { vault.tree.value }, open = { runBlocking { vault.openFile(it) } }, edits = { vault.edits }, space = vault.draftsDir.toPath().parent).also { log("drive mounted") }
         } catch (e: Exception) {
             log("mounting the drive failed (${e.javaClass.simpleName})")
             null
