@@ -1,6 +1,5 @@
 package me.esdex.coffer.core.index
 
-import android.content.Context
 import androidx.room.AutoMigration
 import androidx.room.ColumnInfo
 import androidx.room.Dao
@@ -12,20 +11,16 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
-import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.execSQL
+import androidx.room.immediateTransaction
+import androidx.room.useWriterConnection
 import androidx.room.migration.AutoMigrationSpec
-import androidx.room.withTransaction
-import java.io.File
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.storage.MessageId
-import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 // Ids are stored as lowercase hex: readable in a debugger, and the same everywhere.
 private fun Id.hex(): String = toByteArray().joinToString("") { "%02x".format(it) }
@@ -195,20 +190,34 @@ internal interface IndexDao {
         AutoMigration(from = 10, to = 11, spec = DropReplaceOp::class),
     ],
 )
-internal abstract class IndexDatabase : RoomDatabase() {
-    abstract fun dao(): IndexDao
+/** Public for the platforms to open it, each with its own SQLCipher: :core:device on Android, :desktop. */
+abstract class IndexDatabase : RoomDatabase() {
+    internal abstract fun dao(): IndexDao
 }
 
-/** The app's [VaultIndex], in Room. */
-class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultIndex {
+/**
+ * How the platform runs a transaction: Android keeps room-ktx's withTransaction, which the app has always
+ * used; it is not in Room for the JVM.
+ */
+interface IndexPlatform {
+    suspend fun <R> transaction(block: suspend () -> R): R
+}
+
+/** Every table of [IndexDatabase], for [RoomVaultIndex.clear]; IndexTablesTest checks it against the schema. */
+internal val INDEX_TABLES = listOf(
+    "files", "parts", "deleted_files", "folders", "deleted_folders", "snapshots", "sync_state", "uploads",
+    "downloads", "applied_ops", "pending_ops",
+)
+
+/**
+ * The app's [VaultIndex], in Room. Each platform opens [db] encrypted with SQLCipher (audit 1, M9): file
+ * sizes, part counts, access times and the transfer queue are not readable from a copy of the device's
+ * storage. On Android see androidVaultIndex in :core:device.
+ */
+class RoomVaultIndex(private val db: IndexDatabase, private val platform: IndexPlatform) : VaultIndex {
     private val dao = db.dao()
 
-    /**
-     * The index, encrypted with [key] by SQLCipher (audit 1, M9): file sizes, part counts, access times
-     * and the transfer queue are not readable from a copy of the phone's storage. A database left plain
-     * by an older version is turned into an encrypted one first, its rows kept.
-     */
-    constructor(context: Context, key: ByteArray, name: String = "index.db") : this(open(context, key, name))
+    private suspend fun <R> withTransactionCompat(block: suspend () -> R): R = platform.transaction(block)
 
 
     private fun FileRow.indexed(parts: List<PartRow>) = IndexedFile(
@@ -240,7 +249,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
 
     override suspend fun setStatus(fileId: Id, status: FileStatus) = dao.setStatus(fileId.hex(), status.name)
 
-    override suspend fun removeFile(fileId: Id) = db.withTransactionCompat {
+    override suspend fun removeFile(fileId: Id) = withTransactionCompat {
         dao.deleteFile(fileId.hex())
         dao.deleteParts(fileId.hex())
     }
@@ -251,7 +260,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
     override suspend fun parts(fileId: Id): Map<Int, MessageId> =
         dao.parts(fileId.hex()).associate { it.partIndex to MessageId(it.messageId) }
 
-    override suspend fun removePart(messageId: MessageId): Pair<Id, Int>? = db.withTransactionCompat {
+    override suspend fun removePart(messageId: MessageId): Pair<Id, Int>? = withTransactionCompat {
         val part = dao.partOf(messageId.value) ?: return@withTransactionCompat null
         dao.deletePart(messageId.value)
         idOf(part.fileId) to part.partIndex
@@ -301,7 +310,7 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
     override suspend fun oldestRecord(): MessageId? = dao.syncValue(OLDEST_RECORD)?.let(::MessageId)
     override suspend fun setOldestRecord(messageId: MessageId) = dao.putSync(SyncRow(OLDEST_RECORD, messageId.value))
 
-    override suspend fun replaceContent(content: IndexContent): Unit = db.withTransactionCompat {
+    override suspend fun replaceContent(content: IndexContent): Unit = withTransactionCompat {
         dao.deleteAllFiles()
         dao.deleteAllParts()
         dao.deleteAllDeletedFiles()
@@ -366,53 +375,20 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
         dao.putDownload(DownloadRow(download.downloadId, download.fileId.hex(), download.sealedTarget))
     override suspend fun removeDownload(downloadId: String) = dao.deleteDownload(downloadId)
 
-    // clearAllTables blocks and runs its own transaction.
-    override suspend fun clear() = withContext(Dispatchers.IO) { db.clearAllTables() }
+    /**
+     * What Room's clearAllTables does on Android (2.8.5, performClear), which Room for the JVM does not have:
+     * every table emptied in one transaction, then the log folded back and the file compacted, so deleted
+     * rows do not linger in free pages. Observers hear of it from the transaction itself (MigrationTest).
+     */
+    override suspend fun clear() = db.useWriterConnection { connection ->
+        connection.immediateTransaction { INDEX_TABLES.forEach { execSQL("DELETE FROM `$it`") } }
+        connection.execSQL("PRAGMA wal_checkpoint(FULL)")
+        connection.execSQL("VACUUM")
+    }
 
     companion object {
-        private fun open(context: Context, key: ByteArray, name: String): IndexDatabase {
-            // sqlcipher-android does not load its own native library (as Arcanum found).
-            System.loadLibrary("sqlcipher")
-            // A raw key, so SQLCipher skips its own key derivation: the key is random already.
-            val passphrase = "x'${key.joinToString("") { "%02x".format(it) }}'".toByteArray(Charsets.US_ASCII)
-            val factory = SupportOpenHelperFactory(passphrase)
-            encryptIfPlain(context, name, factory)
-            return Room.databaseBuilder(context, IndexDatabase::class.java, name).openHelperFactory(factory).build()
-        }
-
-        /** True if [file] is a plain SQLite database: its first 16 bytes say so. Encrypted ones look random. */
-        fun isPlain(file: File): Boolean {
-            if (!file.exists() || file.length() < PLAIN_HEADER.size) return false
-            val head = ByteArray(PLAIN_HEADER.size)
-            file.inputStream().use { it.read(head) }
-            return head.contentEquals(PLAIN_HEADER)
-        }
-
-        /**
-         * Copies a plain index, as an older version left it, row by row into an encrypted one, then puts
-         * that in its place. Through Room on both sides: it brings the plain one up to the current schema
-         * first, and SQLCipher's own export runs its statements on whichever connection of its pool is
-         * free, where the attached database may not be (seen on the emulator).
-         */
-        private fun encryptIfPlain(context: Context, name: String, factory: SupportOpenHelperFactory) {
-            val file = context.getDatabasePath(name)
-            if (!isPlain(file)) return
-            val temporary = "$name.encrypting"
-            context.deleteDatabase(temporary)
-            val plain = Room.databaseBuilder(context, IndexDatabase::class.java, name).build()
-            val encrypted = Room.databaseBuilder(context, IndexDatabase::class.java, temporary).openHelperFactory(factory).build()
-            try {
-                runBlocking { copy(plain.dao(), encrypted.dao()) }
-            } finally {
-                plain.close()
-                encrypted.close()
-            }
-            context.deleteDatabase(name)
-            for (suffix in listOf("", "-wal", "-shm", "-journal")) {
-                val from = context.getDatabasePath(temporary + suffix)
-                if (from.exists()) check(from.renameTo(context.getDatabasePath(name + suffix))) { "could not replace the plain index" }
-            }
-        }
+        /** Every row of [from] into [to], which is empty: how an index changes hands, as from plain to encrypted. */
+        suspend fun copy(from: IndexDatabase, to: IndexDatabase) = copy(from.dao(), to.dao())
 
         private suspend fun copy(from: IndexDao, to: IndexDao) {
             to.insertFiles(from.files())
@@ -428,13 +404,9 @@ class RoomVaultIndex private constructor(private val db: IndexDatabase) : VaultI
             from.appliedOps().forEach { to.markOpApplied(it) }
         }
 
-        private val PLAIN_HEADER = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
-
         private const val LAST_APPLIED = "lastAppliedMessageId"
         private const val CONTENT_VERSION = "contentVersion"
         private const val MAINTAINED_AT = "maintainedAt"
         private const val OLDEST_RECORD = "oldestRecord"
     }
 }
-
-private suspend fun <R> RoomDatabase.withTransactionCompat(block: suspend () -> R): R = withTransaction(block)

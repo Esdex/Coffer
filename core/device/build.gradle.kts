@@ -4,9 +4,10 @@ plugins {
     alias(libs.plugins.coffer.android.library)
 }
 
-// Coffer's Android side below the UI: the Keystore (fingerprint unlock, device-bound secrets) and TDLib
-// on the phone (its native libraries, the network callback). Its classes keep the packages of :core:vault
-// and :core:tdlib, which they are part of; only the Android dependencies are kept out of those.
+// Coffer's Android side below the UI: the Keystore (fingerprint unlock, device-bound secrets), TDLib on the
+// phone (its native libraries, the network callback) and the index in SQLCipher. Its classes keep the
+// packages of :core:vault, :core:tdlib and :core:index, which they are part of; only the Android
+// dependencies are kept out of those.
 
 // scripts/build-tdlib.sh writes the JNI libraries, the generated Java API and a STAMP into core/tdlib/dist/.
 // It is not in git: it is a build output of pinned sources. :core:tdlib compiles the Java API; the
@@ -31,6 +32,10 @@ extensions.configure<com.android.build.api.dsl.LibraryExtension> {
     }
     sourceSets.getByName("main") {
         jniLibs.directories += distDir.resolve("libs").path
+    }
+    // MigrationTest reads the index's schemas, which :core:database (a JVM module) keeps.
+    sourceSets.getByName("androidTest") {
+        assets.directories += rootProject.file("core/database/schemas").path
     }
 }
 
@@ -57,9 +62,13 @@ tasks.named("preBuild") { dependsOn(checkTdlibDist) }
 dependencies {
     api(project(":core:vault"))
     api(project(":core:tdlib"))
+    api(project(":core:database"))
     implementation(libs.androidx.biometric)
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.sqlcipher)
 
     androidTestImplementation(testFixtures(project(":core:storage")))
+    androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
 }

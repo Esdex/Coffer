@@ -9,8 +9,8 @@ import dagger.hilt.components.SingletonComponent
 import java.io.File
 import javax.inject.Singleton
 import me.esdex.coffer.core.crypto.sodium.Sodium
-import me.esdex.coffer.core.index.RoomVaultIndex
 import me.esdex.coffer.core.index.VaultIndex
+import me.esdex.coffer.core.index.androidVaultIndex
 import me.esdex.coffer.core.storage.DeviceSealer
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.tdlib.DeviceSecrets
@@ -71,7 +71,7 @@ object VaultModule {
             secrets.resetIndexKey()
             checkNotNull(secrets.indexKey()) { "no key for the index" }
         }
-        return RoomVaultIndex(context, key, INDEX_NAME)
+        return androidVaultIndex(context, key, INDEX_NAME)
     }
 
     private const val INDEX_NAME = "index.db"

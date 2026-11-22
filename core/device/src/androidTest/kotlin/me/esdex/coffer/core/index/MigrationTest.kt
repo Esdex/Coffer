@@ -3,12 +3,17 @@ package me.esdex.coffer.core.index
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import me.esdex.coffer.core.crypto.Id
 import me.esdex.coffer.core.storage.MessageId
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -39,9 +44,9 @@ class MigrationTest {
 
         // Audit 1, M9: the plain database is turned into an encrypted one, its rows kept.
         val file = context.getDatabasePath(name)
-        assertTrue(RoomVaultIndex.isPlain(file))
+        assertTrue(isPlainDatabase(file))
         val key = ByteArray(32) { (it * 7 + 3).toByte() }
-        val index = RoomVaultIndex(context, key, name)
+        val index = androidVaultIndex(context, key, name)
         runBlocking {
             val file = index.files().single()
             assertEquals(10L, file.plainSize)
@@ -85,10 +90,10 @@ class MigrationTest {
             index.removeUpload("replacing")
         }
         // Encrypted on disk now: not a plain SQLite file, and not the rows' bytes in the clear.
-        assertFalse(RoomVaultIndex.isPlain(file))
+        assertFalse(isPlainDatabase(file))
         assertFalse(String(file.readBytes(), Charsets.ISO_8859_1).contains("lastAppliedMessageId"))
         // And it opens again with the same key; the transfer queue outlives replaceContent.
-        runBlocking { assertArrayEquals(byteArrayOf(4, 5), RoomVaultIndex(context, key, name).uploads().single().sealedRequest) }
+        runBlocking { assertArrayEquals(byteArrayOf(4, 5), androidVaultIndex(context, key, name).uploads().single().sealedRequest) }
         context.deleteDatabase(name)
     }
 
@@ -102,7 +107,7 @@ class MigrationTest {
             db.execSQL("INSERT INTO uploads VALUES ('u7', ?, NULL, '', NULL)", arrayOf(byteArrayOf(7)))
         }
         helper.runMigrationsAndValidate(name, 11, true).close()
-        val index = RoomVaultIndex(context, ByteArray(32) { 5 }, name)
+        val index = androidVaultIndex(context, ByteArray(32) { 5 }, name)
         runBlocking {
             val op = index.ops().single()
             assertEquals("coffer:v2:op:x", op.caption)
@@ -117,6 +122,59 @@ class MigrationTest {
             val upload = index.uploads().single()
             assertEquals("u7", upload.uploadId)
             assertEquals(null, upload.replaces)
+        }
+        context.deleteDatabase(name)
+    }
+
+    @Test
+    fun clearEmptiesEveryTableTellsObserversAndLeavesTheIndexUsable() {
+        // Room's clearAllTables is written out in RoomVaultIndex since the index is shared with the desktop.
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        context.deleteDatabase(name)
+        val index = androidVaultIndex(context, ByteArray(32) { 6 }, name)
+        val file = Id.of(ByteArray(16) { 1 })
+        val folder = Id.of(ByteArray(16) { 2 })
+        runBlocking {
+            index.putFile(file, 10, 1, byteArrayOf(1), FileStatus.READY)
+            index.putPart(file, 0, MessageId(1048576))
+            index.markDeleted(Id.of(ByteArray(16) { 3 }))
+            index.putFolder(folder, byteArrayOf(2))
+            index.markFolderDeleted(Id.of(ByteArray(16) { 4 }))
+            index.putSnapshot(KnownSnapshot(MessageId(2097152), MessageId(1048576)))
+            index.setLastApplied(MessageId(1048576))
+            index.putUpload(PendingUpload("u", byteArrayOf(5), null, emptyList(), null))
+            index.putDownload(PendingDownload("d", file, null))
+            index.markOpApplied(Id.of(ByteArray(16) { 7 }), MessageId(1048576))
+            index.putOps("b", "RENAME", listOf(OpMessage("coffer:v2:op:x", 1)))
+
+            // An observer that has seen the file must be told it is gone.
+            val seenFile = CompletableDeferred<Unit>()
+            val emptied = async {
+                withTimeout(10_000) {
+                    index.observeFiles().first { files ->
+                        if (files.isNotEmpty()) seenFile.complete(Unit)
+                        files.isEmpty() && seenFile.isCompleted
+                    }
+                }
+            }
+            seenFile.await()
+            index.clear()
+            emptied.await()
+
+            assertEquals(emptyList<IndexedFile>(), index.files())
+            assertEquals(emptyMap<Id, Map<Int, MessageId>>(), index.allParts())
+            assertEquals(emptySet<Id>(), index.deletedFiles())
+            assertEquals(emptyList<IndexedFolder>(), index.folders())
+            assertEquals(emptySet<Id>(), index.deletedFolders())
+            assertEquals(emptyList<KnownSnapshot>(), index.snapshots())
+            assertNull(index.lastApplied())
+            assertEquals(emptyList<PendingUpload>(), index.uploads())
+            assertEquals(emptyList<PendingDownload>(), index.downloads())
+            assertNull(index.opAppliedFrom(Id.of(ByteArray(16) { 7 })))
+            assertEquals(emptyList<PendingOp>(), index.ops())
+
+            index.putFile(file, 20, 1, byteArrayOf(9), FileStatus.READY)
+            assertEquals(20L, index.file(file)?.plainSize)
         }
         context.deleteDatabase(name)
     }

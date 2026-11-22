@@ -1,5 +1,5 @@
 plugins {
-    alias(libs.plugins.coffer.android.library)
+    alias(libs.plugins.coffer.jvm.library)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
 }
@@ -8,19 +8,10 @@ room {
     schemaDirectory("$projectDir/schemas")
 }
 
-android {
-    defaultConfig {
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-}
-
+// The index in Room, the same tables and code on Android and the desktop. Each opens it with its own
+// SQLCipher: Android's in :core:device, the desktop's in :desktop.
 dependencies {
     api(project(":core:index"))
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    implementation(libs.sqlcipher)
+    api(libs.androidx.room.runtime)
     ksp(libs.androidx.room.compiler)
-    androidTestImplementation(libs.androidx.room.testing)
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(libs.androidx.test.ext.junit)
 }
