@@ -42,6 +42,10 @@ interface StatusNotifierItem : DBusInterface {
     @DBusBoundProperty(name = "IconPixmap", access = Access.READ, type = PixmapList::class)
     fun getIconPixmap(): List<Pixmap>
 
+    /** Where [getIconName] is looked for besides the icon theme. */
+    @DBusBoundProperty(name = "IconThemePath", access = Access.READ)
+    fun getIconThemePath(): String
+
     @DBusBoundProperty(name = "ToolTip", access = Access.READ)
     fun getToolTip(): ToolTip
 
@@ -61,6 +65,9 @@ interface StatusNotifierItem : DBusInterface {
 
     /** The tooltip changed: the host reads it again. */
     class NewToolTip(path: String) : DBusSignal(path)
+
+    /** The icon changed: the host reads its pixmaps again. */
+    class NewIcon(path: String) : DBusSignal(path)
 }
 
 /** org.kde.StatusNotifierWatcher: where an icon announces itself. */

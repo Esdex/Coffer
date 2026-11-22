@@ -9,9 +9,10 @@ import org.freedesktop.dbus.types.Variant
 import java.awt.image.BufferedImage
 import java.util.concurrent.ConcurrentHashMap
 
-/** A line of the tray menu: an action, a line of text, or a separator between groups of them. */
+/** A line of the tray menu: an action, a setting to tick, a line of text, or a separator between groups of them. */
 sealed interface MenuEntry {
     data class Action(val label: String, val onClick: () -> Unit) : MenuEntry
+    data class Toggle(val label: String, val checked: Boolean, val onClick: () -> Unit) : MenuEntry
     data class Label(val text: String) : MenuEntry
     data object Separator : MenuEntry
 }
@@ -30,7 +31,17 @@ class KdeTray(
     icon: List<BufferedImage>,
     private val onActivate: () -> Unit,
 ) : AutoCloseable {
-    private val pixmaps = icon.map { it.toPixmap() }
+    /** What the icon is: pictures, or a name for the panel to draw in its own colours, as Breeze's, found in [themePath]. */
+    sealed interface Look {
+        data class Pictures(val images: List<BufferedImage>) : Look
+        data class Named(val name: String, val themePath: String) : Look
+    }
+
+    @Volatile
+    private var look: Look = Look.Pictures(icon)
+
+    @Volatile
+    private var pixmaps = icon.map { it.toPixmap() }
     private val connection: DBusConnection = DBusConnectionBuilder.forSessionBus().build()
 
     /** One look of the menu: its entries, each with its id, and the revision it is. */
@@ -59,6 +70,7 @@ class KdeTray(
         val numbered = entries.mapIndexed { place, entry ->
             val key = when (entry) {
                 is MenuEntry.Action -> "action:${entry.label}"
+                is MenuEntry.Toggle -> "toggle:${entry.label}"
                 is MenuEntry.Label -> "line:$place"
                 MenuEntry.Separator -> "separator:$place"
             }
@@ -72,6 +84,15 @@ class KdeTray(
         if (description != before.description) connection.sendMessage(StatusNotifierItem.NewToolTip(ITEM_PATH))
     }
 
+    /** Shows the icon as [look] says: the same look as before changes nothing. */
+    @Synchronized
+    fun icon(look: Look) {
+        if (look == this.look) return
+        this.look = look
+        pixmaps = (look as? Look.Pictures)?.images.orEmpty().map { it.toPixmap() }
+        connection.sendMessage(StatusNotifierItem.NewIcon(ITEM_PATH))
+    }
+
     override fun close() = connection.close()
 
     private inner class Item : StatusNotifierItem {
@@ -81,9 +102,10 @@ class KdeTray(
         override fun getTitle() = title
         override fun getStatus() = "Active"
         override fun getWindowId() = 0
-        override fun getIconName() = ""
+        override fun getIconName() = (look as? Look.Named)?.name.orEmpty()
         override fun getIconPixmap() = pixmaps
-        override fun getToolTip() = ToolTip("", pixmaps, title, shown.description)
+        override fun getIconThemePath() = (look as? Look.Named)?.themePath.orEmpty()
+        override fun getToolTip() = ToolTip(getIconName(), pixmaps, title, shown.description)
         override fun getItemIsMenu() = false
         override fun getMenu() = DBusPath(MENU_PATH)
         override fun Activate(x: Int, y: Int) = onActivate()
@@ -114,7 +136,12 @@ class KdeTray(
         override fun GetProperty(id: Int, name: String): Variant<*> = properties(shown, id).getValue(name)
 
         override fun Event(id: Int, eventId: String, data: Variant<*>, timestamp: UInt32) {
-            if (eventId == "clicked") (entry(shown, id) as? MenuEntry.Action)?.onClick?.invoke()
+            if (eventId != "clicked") return
+            when (val entry = entry(shown, id)) {
+                is MenuEntry.Action -> entry.onClick()
+                is MenuEntry.Toggle -> entry.onClick()
+                else -> Unit
+            }
         }
 
         override fun EventGroup(events: List<MenuEvent>): List<Int> {
@@ -143,6 +170,7 @@ class KdeTray(
         private fun properties(current: Shown, id: Int): Map<String, Variant<*>> = when (val entry = entry(current, id)) {
             null -> mapOf("children-display" to Variant("submenu"))
             is MenuEntry.Action -> mapOf("label" to Variant(entry.label))
+            is MenuEntry.Toggle -> mapOf("label" to Variant(entry.label), "toggle-type" to Variant("checkmark"), "toggle-state" to Variant(if (entry.checked) 1 else 0))
             is MenuEntry.Label -> mapOf("label" to Variant(entry.text), "enabled" to Variant(false))
             MenuEntry.Separator -> mapOf("type" to Variant("separator"))
         }

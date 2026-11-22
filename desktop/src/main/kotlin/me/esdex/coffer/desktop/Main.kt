@@ -33,16 +33,11 @@ import me.esdex.coffer.desktop.keyring.KeyringException
 import me.esdex.coffer.desktop.signin.SignIn
 import me.esdex.coffer.desktop.tray.KdeTray
 import me.esdex.coffer.desktop.tray.MenuEntry
+import me.esdex.coffer.desktop.tray.TrayIcons
 import me.esdex.coffer.desktop.tray.TrayState
 import me.esdex.coffer.desktop.tray.TrayView
 import me.esdex.coffer.desktop.vault.DesktopVault
 import me.esdex.coffer.desktop.vault.Unlock
-import java.awt.BasicStroke
-import java.awt.Color
-import java.awt.RenderingHints
-import java.awt.geom.Ellipse2D
-import java.awt.geom.RoundRectangle2D
-import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
@@ -82,8 +77,14 @@ fun main() {
     Runtime.getRuntime().addShutdownHook(Thread { drive.unmount() })
     // The drive while unlocked; the unlock window before that.
     val open = { if (drive.isMounted) ProcessBuilder("xdg-open", drive.at.toString()).start() else unlock.show(); Unit }
-    val tray = KdeTray(title = "Coffer", icon = listOf(22, 32, 64).map(::padlock), onActivate = open)
-    showInTray(tray, telegram, vault, Actions(open = open, unlock = unlock::show, lock = vault::lock, signIn = signIn::show, quit = { quit.countDown() }))
+    val settings = DesktopSettings(File(dataDir(), "settings.properties"))
+    val themePath = TrayIcons.install(File(dataDir(), "icons"))
+    val tray = KdeTray(title = "Coffer", icon = TrayIcons.of(TrayIcons.Look.LOCKED), onActivate = open)
+    val actions = Actions(
+        open = open, unlock = unlock::show, lock = vault::lock, signIn = signIn::show, quit = { quit.countDown() },
+        monochrome = { settings.setMonochromeIcon(!settings.monochromeIcon.value) },
+    )
+    showInTray(tray, telegram, vault, settings, themePath, actions)
     // First start, or signed out elsewhere: sign-in opens by itself; then unlocking, unless the vault
     // opened with a remembered key.
     thread(name = "start") {
@@ -115,7 +116,7 @@ private fun openIndex(secrets: DesktopSecrets): RoomVaultIndex {
 }
 
 /** The tray's actions, made once: the menu is compared with what it showed to tell whether it changed. */
-private class Actions(open: () -> Unit, unlock: () -> Unit, lock: () -> Unit, signIn: () -> Unit, quit: () -> Unit) {
+private class Actions(open: () -> Unit, unlock: () -> Unit, lock: () -> Unit, signIn: () -> Unit, quit: () -> Unit, val monochrome: () -> Unit) {
     val open = MenuEntry.Action("Open Coffer drive", open)
     val unlock = MenuEntry.Action("Unlock", unlock)
     val lock = MenuEntry.Action("Lock", lock)
@@ -127,11 +128,11 @@ private class Actions(open: () -> Unit, unlock: () -> Unit, lock: () -> Unit, si
  * Keeps the tray telling where Coffer stands: signed in or not, the vault locked or open, and what goes to
  * Telegram. At most once a second: a large upload reports progress far more often than a menu needs.
  */
-private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, actions: Actions) {
+private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, settings: DesktopSettings, themePath: String, actions: Actions) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     scope.launch {
-        combine(telegram.state, vault.manager.state, vault.catchingUp, vault.transfers) { auth, state, catchingUp, transfers ->
-            TrayState(
+        combine(telegram.state, vault.manager.state, vault.catchingUp, vault.transfers, settings.monochromeIcon) { auth, state, catchingUp, transfers, monochrome ->
+            monochrome to TrayState(
                 signedIn = auth == AuthState.Ready,
                 vault = when (state) {
                     VaultManager.State.Unknown, is VaultManager.State.Searching -> TrayState.Vault.LOOKING
@@ -142,7 +143,7 @@ private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, a
                 catchingUp = catchingUp,
                 transfers = transfers,
             )
-        }.conflate().collect { state ->
+        }.conflate().collect { (monochrome, state) ->
             val view = TrayView.of(state)
             val menu = buildList {
                 view.lines.forEach { add(MenuEntry.Label(it)) }
@@ -155,9 +156,11 @@ private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, a
                 }
                 add(MenuEntry.Separator)
                 if (!state.signedIn) add(actions.signIn)
+                add(MenuEntry.Toggle("Monochrome icon", monochrome, actions.monochrome))
                 add(actions.quit)
             }
             tray.update(menu, view.status)
+            tray.icon(TrayIcons.tray(view.icon, monochrome, themePath))
             delay(TRAY_PACE_MS)
         }
     }
@@ -181,21 +184,4 @@ private fun fatal(title: String, cause: Exception): Nothing {
         }
     }
     exitProcess(1)
-}
-
-/** A padlock, drawn, until the desktop has the app's own icon. */
-private fun padlock(size: Int): BufferedImage {
-    val image = BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB)
-    val s = size.toDouble()
-    image.createGraphics().apply {
-        setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-        color = Color(0x3D7BD9)
-        stroke = BasicStroke((s * 0.10).toFloat())
-        draw(RoundRectangle2D.Double(s * 0.28, s * 0.10, s * 0.44, s * 0.50, s * 0.44, s * 0.44))
-        fill(RoundRectangle2D.Double(s * 0.16, s * 0.42, s * 0.68, s * 0.50, s * 0.20, s * 0.20))
-        color = Color.WHITE
-        fill(Ellipse2D.Double(s * 0.43, s * 0.57, s * 0.14, s * 0.14))
-        dispose()
-    }
-    return image
 }

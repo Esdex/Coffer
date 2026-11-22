@@ -21,6 +21,14 @@ data class TrayState(
 data class TrayView(val status: String, val lines: List<String>, val lock: Lock) {
     enum class Lock { LOCK, UNLOCK, NONE }
 
+    /** Busy while anything goes to or comes from Telegram; grey unless the vault is open. */
+    val icon: TrayIcons.Look
+        get() = when {
+            lock != Lock.LOCK -> TrayIcons.Look.LOCKED
+            lines != listOf(UP_TO_DATE) -> TrayIcons.Look.BUSY
+            else -> TrayIcons.Look.OPEN
+        }
+
     companion object {
         fun of(state: TrayState): TrayView {
             if (!state.signedIn) return TrayView("Not signed in to Telegram", emptyList(), Lock.NONE)
@@ -56,9 +64,9 @@ data class TrayView(val status: String, val lines: List<String>, val lock: Lock)
                 }
                 transfers.operations > 0 -> lines.first()
                 catchingUp != null -> "Reading what changed"
-                else -> "Up to date"
+                else -> UP_TO_DATE
             }
-            if (lines.isEmpty()) lines += "Up to date"
+            if (lines.isEmpty()) lines += UP_TO_DATE
             return TrayView(status, lines, Lock.LOCK)
         }
 
@@ -80,6 +88,7 @@ data class TrayView(val status: String, val lines: List<String>, val lock: Lock)
         internal fun short(name: String): String =
             if (name.length <= MAX_NAME) name else name.take(MAX_NAME - TAIL - 1) + "…" + name.takeLast(TAIL)
 
+        private const val UP_TO_DATE = "Up to date"
         private const val KB = 1024L
         private const val MB = KB * 1024
         private const val GB = MB * 1024

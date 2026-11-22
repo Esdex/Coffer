@@ -49,6 +49,51 @@ class TrayViewTest {
     }
 
     @Test
+    fun theIconSaysWhereThingsStand() {
+        assertEquals(TrayIcons.Look.OPEN, unlocked().icon)
+        assertEquals(TrayIcons.Look.BUSY, unlocked(VaultWriter.Transfers(emptyList(), 0, 1)).icon)
+        assertEquals(TrayIcons.Look.BUSY, unlocked(catchingUp = 5).icon)
+        assertEquals(TrayIcons.Look.BUSY, unlocked(VaultWriter.Transfers(listOf(Drafts.Progress("a", 1, 2, TransferStage.MOVING)), 0, 0)).icon)
+        assertEquals(TrayIcons.Look.LOCKED, TrayView.of(TrayState(true, TrayState.Vault.LOCKED, null, VaultWriter.Transfers.NONE)).icon)
+        assertEquals(TrayIcons.Look.LOCKED, TrayView.of(TrayState(false, TrayState.Vault.UNLOCKED, null, VaultWriter.Transfers.NONE)).icon)
+    }
+
+    @Test
+    fun everyLookComesInEverySizeAndTheyDiffer() {
+        val looks = TrayIcons.Look.entries.map { TrayIcons.of(it) }
+        for (look in looks) assertEquals(listOf(16, 22, 24, 32, 48, 64, 128), look.map { it.width })
+        val middle = looks.map { it.first { image -> image.width == 32 } }
+        fun pixels(i: java.awt.image.BufferedImage) = (0 until 32).flatMap { y -> (0 until 32).map { x -> i.getRGB(x, y) } }
+        assertEquals("three different looks", 3, middle.map(::pixels).toSet().size)
+    }
+
+    @Test
+    fun monochromeIsTheChestByNameWithOnlyTheArrowInColour() {
+        val path = "/icons"
+        assertEquals(KdeTray.Look.Named("coffer-tray-symbolic", path), TrayIcons.tray(TrayIcons.Look.OPEN, monochrome = true, themePath = path))
+        assertEquals(KdeTray.Look.Named("coffer-tray-locked-symbolic", path), TrayIcons.tray(TrayIcons.Look.LOCKED, monochrome = true, themePath = path))
+        assertEquals(KdeTray.Look.Named("coffer-tray-busy-symbolic", path), TrayIcons.tray(TrayIcons.Look.BUSY, monochrome = true, themePath = path))
+        assertEquals(KdeTray.Look.Pictures(TrayIcons.of(TrayIcons.Look.BUSY)), TrayIcons.tray(TrayIcons.Look.BUSY, monochrome = false, themePath = path))
+    }
+
+    @Test
+    fun theSymbolicIconsAreWrittenWhereThePanelLooks() {
+        val dir = java.nio.file.Files.createTempDirectory("icons").toFile()
+        try {
+            assertEquals(dir.absolutePath, TrayIcons.install(dir))
+            for (name in listOf("coffer-tray-symbolic", "coffer-tray-locked-symbolic", "coffer-tray-busy-symbolic")) {
+                val svg = java.io.File(dir, "hicolor/scalable/apps/$name.svg")
+                assertTrue(name, svg.isFile && java.io.File(dir, "$name.svg").isFile)
+                // The class the panel paints in its text colour.
+                val doc = javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(svg)
+                assertEquals("ColorScheme-Text", (doc.getElementsByTagName("path").item(0) as org.w3c.dom.Element).getAttribute("class"))
+            }
+        } finally {
+            dir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun sizesUseTheUnitOfTheWhole() {
         assertEquals("0 of 500 bytes", TrayView.sizes(0, 500))
         assertEquals("1 of 2 KB", TrayView.sizes(1500, 2048))
