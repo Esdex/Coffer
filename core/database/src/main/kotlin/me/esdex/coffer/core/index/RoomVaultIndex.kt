@@ -219,6 +219,9 @@ class RoomVaultIndex(private val db: IndexDatabase, private val platform: IndexP
 
     private suspend fun <R> withTransactionCompat(block: suspend () -> R): R = platform.transaction(block)
 
+    /** Closes the database: the desktop's index goes when the vault is locked. */
+    fun close() = db.close()
+
 
     private fun FileRow.indexed(parts: List<PartRow>) = IndexedFile(
         fileId = idOf(fileId),

@@ -44,6 +44,8 @@ sourceSets.main { resources.srcDir(buildInfo) }
 
 dependencies {
     implementation(project(":core:tdlib"))
+    implementation(project(":core:database"))
+    implementation(libs.sqlite.jdbc.crypt)
     implementation(compose.desktop.currentOs)
     implementation(libs.compose.material3)
     implementation(libs.zxing.core)
@@ -52,6 +54,7 @@ dependencies {
     implementation(libs.dbus.java.unixsocket)
 
     testImplementation(libs.junit)
+    testImplementation(testFixtures(project(":core:index")))
 }
 
 // KeyringTest touches the session's real keyring, so only on request: -Pcoffer.keyringTest
