@@ -18,6 +18,7 @@ local.properties
 
 # TDLib build output (scripts/build-tdlib.sh)
 /core/tdlib/dist
+/core/tdlib/dist-desktop
 
 # Working notes of the security audits: they cite the private SPEC and pre-fix line numbers
 audits/raw/
