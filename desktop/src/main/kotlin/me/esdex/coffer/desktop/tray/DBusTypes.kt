@@ -1,7 +1,7 @@
 package me.esdex.coffer.desktop.tray
 
+import me.esdex.coffer.desktop.dbus.Reply
 import org.freedesktop.dbus.Struct
-import org.freedesktop.dbus.Tuple
 import org.freedesktop.dbus.TypeRef
 import org.freedesktop.dbus.annotations.DBusBoundProperty
 import org.freedesktop.dbus.annotations.DBusInterfaceName
@@ -120,15 +120,6 @@ class LayoutItem(
     @field:Position(1) @JvmField val properties: Map<String, Variant<*>>,
     @field:Position(2) @JvmField val children: List<Variant<*>>,
 ) : Struct()
-
-/**
- * A method's two out values. Generic on purpose: dbus-java takes the D-Bus types of a tuple from the
- * method's declared return type, and a tuple class with concrete fields is refused at the call.
- */
-class Reply<A, B>(
-    @field:Position(0) @JvmField val first: A,
-    @field:Position(1) @JvmField val second: B,
-) : Tuple()
 
 /** (ia{sv}) */
 class ItemProperties(

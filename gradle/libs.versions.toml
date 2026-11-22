@@ -36,6 +36,8 @@ zxcvbn = "1.9.0"
 composeMultiplatform = "1.12.2"
 jfuse = "0.8.0"
 dbusJava = "5.2.2"
+# Compose Multiplatform's Material 3, versioned apart from the plugin since 1.8.
+composeMaterial3 = "1.9.0"
 
 [libraries]
 androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
@@ -91,7 +93,8 @@ compose-gradlePlugin = { group = "org.jetbrains.kotlin", name = "compose-compile
 ksp-gradlePlugin = { group = "com.google.devtools.ksp", name = "com.google.devtools.ksp.gradle.plugin", version.ref = "ksp" }
 
 jfuse = { group = "org.cryptomator", name = "jfuse", version.ref = "jfuse" }
-# The tray on Plasma: StatusNotifierItem over D-Bus (MIT).
+compose-material3 = { group = "org.jetbrains.compose.material3", name = "material3", version.ref = "composeMaterial3" }
+# The tray and the keyring on Plasma: StatusNotifierItem and Secret Service over D-Bus (MIT).
 dbus-java-core = { group = "com.github.hypfvieh", name = "dbus-java-core", version.ref = "dbusJava" }
 dbus-java-unixsocket = { group = "com.github.hypfvieh", name = "dbus-java-transport-native-unixsocket", version.ref = "dbusJava" }
 

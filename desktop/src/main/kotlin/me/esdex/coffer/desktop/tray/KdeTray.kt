@@ -1,5 +1,6 @@
 package me.esdex.coffer.desktop.tray
 
+import me.esdex.coffer.desktop.dbus.Reply
 import org.freedesktop.dbus.DBusPath
 import org.freedesktop.dbus.connections.impl.DBusConnection
 import org.freedesktop.dbus.connections.impl.DBusConnectionBuilder

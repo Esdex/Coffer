@@ -1,5 +1,21 @@
 package me.esdex.coffer.desktop
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.application
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import me.esdex.coffer.core.tdlib.AuthState
+import me.esdex.coffer.desktop.keyring.Keyring
+import me.esdex.coffer.desktop.keyring.KeyringException
+import me.esdex.coffer.desktop.signin.SignInWindow
 import me.esdex.coffer.desktop.tray.KdeTray
 import me.esdex.coffer.desktop.tray.MenuEntry
 import java.awt.BasicStroke
@@ -10,13 +26,31 @@ import java.awt.geom.RoundRectangle2D
 import java.awt.image.BufferedImage
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
+import kotlin.concurrent.thread
+import kotlin.system.exitProcess
 
 /**
- * Coffer in the tray with its drive mounted. For now the drive is [HelloDrive]; quitting unmounts it.
- * The mount point is under XDG_RUNTIME_DIR, which the system empties at logout, so nothing is left in
- * the home folder.
+ * Coffer in the tray with its drive mounted, signed in to Telegram. For now the drive is [HelloDrive];
+ * quitting unmounts it. The mount point is under XDG_RUNTIME_DIR, which the system empties at logout, so
+ * nothing is left in the home folder.
  */
 fun main() {
+    val keyring = try {
+        Keyring.open()
+    } catch (e: KeyringException) {
+        fatal("Coffer cannot reach the system keyring", e)
+    }
+    val secrets = DesktopSecrets(keyring)
+    // Before TDLib starts: a locked keyring shows its dialog now, and a refusal is said here instead of
+    // leaving sign-in waiting for a key that never comes.
+    try {
+        secrets.databaseKey()?.fill(0)
+    } catch (e: KeyringException) {
+        fatal("Coffer cannot read its key from the system keyring", e)
+    }
+    val telegram = desktopTelegram(secrets).also { it.start() }
+    val signIn = SignInWindow(telegram)
+
     val runtime = System.getenv("XDG_RUNTIME_DIR") ?: error("XDG_RUNTIME_DIR is not set")
     val drive = HelloDrive.mount(Path.of(runtime, "coffer"))
     val quit = CountDownLatch(1)
@@ -27,14 +61,40 @@ fun main() {
         icon = listOf(22, 32, 64).map(::padlock),
         entries = listOf(
             MenuEntry.Action("Open Coffer drive", open),
+            MenuEntry.Action("Sign in to Telegram", signIn::show),
             MenuEntry.Separator,
             MenuEntry.Action("Quit") { quit.countDown() },
         ),
         onActivate = open,
     )
+    // First start, or signed out elsewhere: the window opens by itself.
+    thread(name = "sign-in check") {
+        runBlocking { if (telegram.state.first { it != AuthState.Starting } != AuthState.Ready) signIn.show() }
+    }
     quit.await()
     tray.close()
-    drive.close()
+    runCatching { drive.close() }
+    keyring.close()
+    // The windows' AWT threads would keep the process alive.
+    exitProcess(0)
+}
+
+/** Says what stops Coffer from starting, in a window, and ends it when the window closes. */
+private fun fatal(title: String, cause: Exception): Nothing {
+    System.err.println("$title: ${cause.message}")
+    application {
+        Window(onCloseRequest = ::exitApplication, title = "Coffer") {
+            MaterialTheme {
+                Surface {
+                    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(title, style = MaterialTheme.typography.headlineSmall)
+                        Text(cause.message.orEmpty())
+                    }
+                }
+            }
+        }
+    }
+    exitProcess(1)
 }
 
 /** A padlock, drawn, until the desktop has the app's own icon. */
