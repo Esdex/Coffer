@@ -129,14 +129,19 @@ class VaultDrive private constructor(
 
     /** Lets go of every file still open: the vault is locking, and their keys go with it. */
     private fun closeAll() {
-        handles.keys.toList().forEach { handles.remove(it)?.close() }
+        // Straight over the map: a file released on FUSE's thread meanwhile made toList() throw.
+        for (handle in handles.keys) handles.remove(handle)?.close()
     }
 
     /** The drive, mounted at [at] until [close], which also closes what is still open on it. */
     class Mounted internal constructor(private val fuse: Fuse, private val drive: VaultDrive, val at: Path) : AutoCloseable {
         override fun close() {
-            drive.closeAll()
-            fuse.close()
+            // Unmounted whatever closing the files did: a lock must not leave the drive there.
+            try {
+                drive.closeAll()
+            } finally {
+                fuse.close()
+            }
         }
     }
 
