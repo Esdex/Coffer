@@ -63,6 +63,8 @@ dependencies {
 // KeyringTest touches the session's real keyring, so only on request: -Pcoffer.keyringTest
 tasks.test {
     systemProperty("coffer.keyringTest", providers.gradleProperty("coffer.keyringTest").isPresent.toString())
+    // VaultDriveTest mounts the drive through jfuse, as the app does.
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
 compose.desktop {

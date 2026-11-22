@@ -18,6 +18,7 @@ import me.esdex.coffer.core.crypto.sodium.LazySodiumAdapter
 import me.esdex.coffer.core.index.RoomVaultIndex
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.vault.VaultManager
+import me.esdex.coffer.desktop.drive.DriveMount
 import me.esdex.coffer.desktop.index.desktopVaultIndex
 import me.esdex.coffer.desktop.keyring.Keyring
 import me.esdex.coffer.desktop.keyring.KeyringException
@@ -39,9 +40,9 @@ import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 
 /**
- * Coffer in the tray with its drive mounted, signed in to Telegram, the vault unlocked with its password.
- * For now the drive is [HelloDrive]; quitting unmounts it. The mount point is under XDG_RUNTIME_DIR, which
- * the system empties at logout, so nothing is left in the home folder.
+ * Coffer in the tray, signed in to Telegram; the vault, once unlocked, is a drive. Locking unmounts it, and
+ * so does quitting. The mount point is under XDG_RUNTIME_DIR, which the system empties at logout, so nothing
+ * is left in the home folder.
  */
 fun main() {
     val keyring = try {
@@ -65,10 +66,12 @@ fun main() {
     val unlock = AppWindow { close -> Unlock(vault, onDone = close) }
 
     val runtime = System.getenv("XDG_RUNTIME_DIR") ?: error("XDG_RUNTIME_DIR is not set")
-    val drive = HelloDrive.mount(Path.of(runtime, "coffer"))
+    val drive = DriveMount(Path.of(runtime, "coffer"), vault)
+    drive.follow()
     val quit = CountDownLatch(1)
-    Runtime.getRuntime().addShutdownHook(Thread { runCatching { drive.close() } })
-    val open = { ProcessBuilder("xdg-open", drive.at.toString()).start(); Unit }
+    Runtime.getRuntime().addShutdownHook(Thread { drive.unmount() })
+    // The drive while unlocked; the unlock window before that.
+    val open = { if (drive.isMounted) ProcessBuilder("xdg-open", drive.at.toString()).start() else unlock.show(); Unit }
     val tray = KdeTray(
         title = "Coffer",
         icon = listOf(22, 32, 64).map(::padlock),
@@ -95,7 +98,7 @@ fun main() {
     }
     quit.await()
     tray.close()
-    runCatching { drive.close() }
+    drive.unmount()
     index.close()
     keyring.close()
     // The windows' AWT threads would keep the process alive.

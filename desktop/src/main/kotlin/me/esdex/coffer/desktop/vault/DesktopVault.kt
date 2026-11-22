@@ -9,17 +9,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.esdex.coffer.core.crypto.sodium.Sodium
+import me.esdex.coffer.core.index.FileStatus
 import me.esdex.coffer.core.index.RoomVaultIndex
 import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.storage.StorageEvent
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.Indexer
 import me.esdex.coffer.core.sync.VaultKeys
+import me.esdex.coffer.core.sync.VaultTree
+import me.esdex.coffer.core.sync.reader
+import me.esdex.coffer.core.sync.transferKeys
 import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.FoundHeader
@@ -27,6 +33,8 @@ import me.esdex.coffer.core.vault.UnlockedVault
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.core.vault.VaultStore
 import me.esdex.coffer.desktop.DesktopSecrets
+import me.esdex.coffer.desktop.drive.DriveTree
+import me.esdex.coffer.desktop.drive.OpenFile
 import java.io.File
 
 /**
@@ -74,6 +82,11 @@ class DesktopVault(
     val catchingUp: StateFlow<Int?> = catchUpFlow.asStateFlow()
 
     private var session: Job? = null
+
+    private val treeFlow = MutableStateFlow(DriveTree.EMPTY)
+
+    /** What the drive shows: the open vault's folders and whole files; empty while locked. */
+    val tree: StateFlow<DriveTree> = treeFlow.asStateFlow()
 
     private val settledFlow = MutableStateFlow(false)
 
@@ -157,6 +170,15 @@ class DesktopVault(
         keysFlow.value = keys
         log("unlocked")
         session = scope.launch {
+            // Names are opened once per change of the index, not per call of the file manager.
+            launch {
+                combine(index.observeFiles(), index.observeFolders()) { files, _ -> files }
+                    .debounce(TREE_DEBOUNCE_MS)
+                    .collect { files ->
+                        val whole = files.filter { it.status == FileStatus.READY }.associateBy { it.fileId }
+                        treeFlow.value = DriveTree.of(VaultTree.of(index, keys), whole)
+                    }
+            }
             telegram.state.first { it == AuthState.Ready }
             val storage = telegram.storage()
             catchUpFlow.value = 0
@@ -174,10 +196,24 @@ class DesktopVault(
         }
     }
 
+    /** [file] open for reading in place; null while locked, or if it is no longer whole. */
+    suspend fun openFile(file: DriveTree.File): OpenFile? {
+        val keys = keysFlow.value ?: return null
+        val indexed = index.file(file.fileId)?.takeIf { it.status == FileStatus.READY } ?: return null
+        val storage = telegram.storage()
+        val transfer = keys.transferKeys(file.fileId, indexed.sealedMeta) ?: return null
+        val reader = keys.reader(storage, indexed, transfer)
+        return OpenFile(reader::read) {
+            reader.close()
+            transfer.close()
+        }
+    }
+
     private fun close() {
         if (keysFlow.value != null) log("locked")
         session?.cancel()
         session = null
+        treeFlow.value = DriveTree.EMPTY
         keysFlow.value = null
         catchUpFlow.value = null
     }
@@ -191,6 +227,7 @@ class DesktopVault(
 
     private companion object {
         const val CONTENT_PROBES = 8
+        const val TREE_DEBOUNCE_MS = 200L
     }
 }
 
