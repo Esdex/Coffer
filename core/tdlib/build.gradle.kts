@@ -1,60 +1,49 @@
 import java.util.Properties
 
 plugins {
-    alias(libs.plugins.coffer.android.library)
+    alias(libs.plugins.coffer.jvm.library)
 }
 
-// scripts/build-tdlib.sh writes the JNI libraries, the generated Java API and a STAMP into dist/.
-// dist/ is not in git: it is a build output of pinned sources.
+// TDLib's Java API comes out of the TDLib build of pinned sources, not git: scripts/build-tdlib.sh writes it
+// to dist/, scripts/build-tdlib-linux.sh to dist-desktop/. It is one file (the desktop script compares the
+// two), so either will do. The native libraries are the platforms': :core:device packs Android's.
 val tdlibPin = Properties().apply { file("tdlib.properties").inputStream().use(::load) }
-val distDir = file("dist")
 
-val localProperties = Properties().apply {
-    val file = rootProject.file("local.properties")
-    if (file.exists()) file.inputStream().use(::load)
+/** The keys the Java API depends on; the other pins are for the native libraries. */
+val apiPins = listOf("TDLIB_COMMIT", "TDLIB_VERSION")
+
+fun stampOf(dist: File): Properties? =
+    dist.resolve("STAMP").takeIf { it.exists() }?.let { stamp -> Properties().apply { stamp.inputStream().use(::load) } }
+
+fun isCurrent(dist: File): Boolean =
+    stampOf(dist)?.let { stamp -> apiPins.all { stamp.getProperty(it) == tdlibPin.getProperty(it) } } ?: false
+
+val dists = listOf(file("dist"), file("dist-desktop"))
+val apiDist: File? = dists.firstOrNull(::isCurrent)
+
+sourceSets.main {
+    apiDist?.let { java.srcDir(it.resolve("java")) }
 }
 
-// Through the dsl type: the generated `android` accessor casts source sets to a legacy type and fails on AGP 9.
-extensions.configure<com.android.build.api.dsl.LibraryExtension> {
-    defaultConfig {
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        // Device tests sign in to Telegram's test servers with the personal keys. Passed to
-        // `am instrument` at run time, not packed into an APK, and never printed.
-        localProperties.getProperty("COFFER_API_ID")?.let { testInstrumentationRunnerArguments["cofferApiId"] = it.trim() }
-        localProperties.getProperty("COFFER_API_HASH")?.let { testInstrumentationRunnerArguments["cofferApiHash"] = it.trim() }
-    }
-    sourceSets.getByName("main") {
-        java.directories += distDir.resolve("java").path
-        jniLibs.directories += distDir.resolve("libs").path
-    }
-}
-
-val checkTdlibDist = tasks.register("checkTdlibDist") {
-    val pinned = tdlibPin.stringPropertyNames().associateWith { tdlibPin.getProperty(it) }
-    val stampFile = distDir.resolve("STAMP")
+val checkTdlibApi = tasks.register("checkTdlibApi") {
+    val stale = dists.filter { stampOf(it) != null && !isCurrent(it) }.map { it.name }
+    val found = apiDist != null
     doLast {
-        if (!stampFile.exists()) {
-            logger.warn("TDLib is not built yet. Run scripts/build-tdlib.sh (needed from stage 2 on).")
-            return@doLast
-        }
-        val stamp = Properties().apply { stampFile.inputStream().use(::load) }
-        val stale = pinned.filter { (key, value) -> stamp.getProperty(key) != value }.keys
+        if (found) return@doLast
         if (stale.isNotEmpty()) {
             throw GradleException(
-                "core/tdlib/dist was built from different inputs (${stale.joinToString()}). " +
-                    "Rerun scripts/build-tdlib.sh."
+                "core/tdlib/${stale.joinToString(" and core/tdlib/")} was built from another TDLib. " +
+                    "Rerun scripts/build-tdlib.sh (or scripts/build-tdlib-linux.sh for the desktop).",
             )
         }
+        logger.warn("TDLib is not built yet. Run scripts/build-tdlib.sh, or scripts/build-tdlib-linux.sh for the desktop.")
     }
 }
-tasks.named("preBuild") { dependsOn(checkTdlibDist) }
+tasks.named("compileJava") { dependsOn(checkTdlibApi) }
+tasks.named("compileKotlin") { dependsOn(checkTdlibApi) }
 
 dependencies {
     api(project(":core:storage"))
-    // The generated TdApi.java uses @IntDef.
+    // The generated TdApi.java uses @IntDef and @Nullable; androidx.annotation has a plain JVM build.
     implementation(libs.androidx.annotation)
-
-    androidTestImplementation(testFixtures(project(":core:storage")))
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(libs.androidx.test.ext.junit)
 }

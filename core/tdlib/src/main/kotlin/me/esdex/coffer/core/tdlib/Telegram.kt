@@ -1,9 +1,5 @@
 package me.esdex.coffer.core.tdlib
 
-import android.content.Context
-import android.net.ConnectivityManager
-import android.net.Network
-import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,17 +21,22 @@ import java.util.Locale
  * The app's Telegram connection. Starts TDLib with the right keys and starts a fresh session after
  * every log out, so [state] goes on after [AuthState.Closed].
  *
+ * The platform gives it a place and its secrets: on Android see androidTelegram in :core:device.
+ *
+ * @param root TDLib's database and files; nothing else lives there, it is deleted whole on a reset.
  * @param bundledCredentials keys built into the app from local.properties; null when there are none.
  * @param allowsOwnKeys a user may bring API keys of their own (public build); they win over built-in ones.
+ * @param deviceModel and [systemVersion]: what Telegram shows for this session among the account's devices.
  */
 class Telegram(
-    context: Context,
+    private val root: File,
+    private val secrets: TelegramSecrets,
     private val bundledCredentials: ApiCredentials?,
     private val allowsOwnKeys: Boolean,
+    private val deviceModel: String,
+    private val systemVersion: String,
     private val applicationVersion: String,
 ) {
-    private val root = File(context.noBackupFilesDir, "tdlib")
-    private val secrets = DeviceSecrets(File(context.noBackupFilesDir, "secrets"))
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lock = Mutex()
     private var session: TelegramSession? = null
@@ -59,22 +60,8 @@ class Telegram(
     /** The running session's link to Telegram; [Connection.CONNECTING] between sessions. */
     val connection: StateFlow<Connection> = connectionFlow.asStateFlow()
 
-    init {
-        // Android 15 cuts the network of an app a few seconds after it leaves the screen and gives it
-        // back when it returns or runs a transfer; TDLib, meanwhile, backs off further with every
-        // failed attempt. Seen 2026-11-09: sends waited 28 s to 7 min with the app on screen.
-        context.getSystemService(ConnectivityManager::class.java)?.registerDefaultNetworkCallback(
-            object : ConnectivityManager.NetworkCallback() {
-                override fun onAvailable(network: Network) = networkChanged()
-
-                override fun onBlockedStatusChanged(network: Network, blocked: Boolean) {
-                    if (!blocked) networkChanged()
-                }
-            },
-        )
-    }
-
-    private fun networkChanged() {
+    /** The network came back: TDLib backs off further with every failed attempt and is told to try now. */
+    fun networkChanged() {
         scope.launch { lock.withLock { session }?.networkChanged() }
     }
 
@@ -98,7 +85,7 @@ class Telegram(
             return
         }
         val databaseKey = secrets.databaseKey() ?: run {
-            // The Keystore key is gone, so TDLib's database can never be opened again. Start clean;
+            // The device key is gone, so TDLib's database can never be opened again. Start clean;
             // the user signs in again.
             root.deleteRecursively()
             secrets.resetDatabaseKey()
@@ -109,8 +96,8 @@ class Telegram(
             databaseDir = File(root, "db"),
             filesDir = File(root, "files"),
             databaseKey = databaseKey,
-            deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}",
-            systemVersion = "Android ${Build.VERSION.RELEASE}",
+            deviceModel = deviceModel,
+            systemVersion = systemVersion,
             applicationVersion = applicationVersion,
             languageCode = Locale.getDefault().language,
         )

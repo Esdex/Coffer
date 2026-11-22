@@ -9,7 +9,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import android.util.Log
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import java.io.File
@@ -104,7 +103,7 @@ class TelegramSession(config: TdlibConfig) {
             ),
         ) { result ->
             if (result is TdApi.Error) {
-                Log.w(TAG, "setTdlibParameters failed: ${result.code}")
+                TdlibLog.w("setTdlibParameters failed: ${result.code}")
                 stateFlow.value = AuthState.Failed(TdlibException(result.code, result.message))
             }
         }
@@ -118,7 +117,7 @@ class TelegramSession(config: TdlibConfig) {
         if (update is TdApi.UpdateAuthorizationState) onAuthorizationState(update.authorizationState)
         // A send that waits for minutes is often a send waiting for the network.
         if (update is TdApi.UpdateConnectionState) {
-            Log.i(TAG, "connection state ${update.state.javaClass.simpleName}")
+            TdlibLog.i("connection state ${update.state.javaClass.simpleName}")
             connectionFlow.value = when (update.state) {
                 is TdApi.ConnectionStateWaitingForNetwork -> Connection.WAITING_FOR_NETWORK
                 is TdApi.ConnectionStateUpdating -> Connection.UPDATING
@@ -132,7 +131,7 @@ class TelegramSession(config: TdlibConfig) {
 
     private fun onAuthorizationState(state: TdApi.AuthorizationState) {
         // The state's name only: its fields carry phone numbers, links and hints.
-        Log.i(TAG, "authorization state ${state.javaClass.simpleName}")
+        TdlibLog.i("authorization state ${state.javaClass.simpleName}")
         stateFlow.value = when (state) {
             is TdApi.AuthorizationStateWaitTdlibParameters -> AuthState.Starting
             is TdApi.AuthorizationStateWaitPhoneNumber -> AuthState.WaitPhoneNumber
@@ -159,7 +158,7 @@ class TelegramSession(config: TdlibConfig) {
             client.send(function) { result ->
                 if (result is TdApi.Error) {
                     // Function name and error code only: messages can echo what was sent.
-                    Log.w(TAG, "${function.javaClass.simpleName} failed: ${result.code}")
+                    TdlibLog.w("${function.javaClass.simpleName} failed: ${result.code}")
                     continuation.resumeWithException(result.toException())
                 } else {
                     continuation.resume(result as T)
@@ -280,13 +279,13 @@ class TelegramSession(config: TdlibConfig) {
         return AuthState.WaitCode(phoneNumber, delivery, length?.takeIf { it > 0 }, nextType != null, timeout)
     }
 
-    // Test helpers: accounts on Telegram's test servers have to be created, and a second test
-    // device signs in by QR the way a phone would confirm it.
-    internal suspend fun registerTestAccount() {
+    // Test helpers, public for the device tests in :core:device: accounts on Telegram's test servers
+    // have to be created, and a second test device signs in by QR the way a phone would confirm it.
+    suspend fun registerTestAccount() {
         send(TdApi.RegisterUser("Coffer", "Test", true))
     }
 
-    internal suspend fun confirmQrCode(link: String) {
+    suspend fun confirmQrCode(link: String) {
         send(TdApi.ConfirmQrCodeAuthentication(link))
     }
 
@@ -296,11 +295,12 @@ class TelegramSession(config: TdlibConfig) {
      * reconnect now.
      */
     internal fun networkChanged() {
-        Log.i(TAG, "network available, reconnecting")
+        TdlibLog.i("network available, reconnecting")
         client.send(TdApi.SetNetworkType(TdApi.NetworkTypeOther()), null)
     }
 
-    internal suspend fun setPassword(password: String) {
+    /** A test helper too: a cloud password on a test account. */
+    suspend fun setPassword(password: String) {
         send(TdApi.SetPassword("", password, "", false, ""))
     }
 

@@ -1,7 +1,5 @@
 package me.esdex.coffer.core.tdlib
 
-import android.os.SystemClock
-import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -90,27 +88,27 @@ class TdlibStorageBackend internal constructor(
         val kind = if (content is TdApi.InputMessageText) "text" else "blob"
         val pending = session.send(TdApi.SendMessage(chatId, null, null, null, null, content))
         if (pending.sendingState == null) return pending.toStored()
-        val started = SystemClock.elapsedRealtime()
-        fun elapsed() = SystemClock.elapsedRealtime() - started
-        Log.i(TAG, "send $kind ${pending.id} pending")
+        val started = System.nanoTime()
+        fun elapsed() = (System.nanoTime() - started) / 1_000_000
+        TdlibLog.i("send $kind ${pending.id} pending")
         val outcome = outcomeOf(pending.id)
         try {
             onPending(pending)
             return when (val result = outcome.await()) {
                 is TdApi.UpdateMessageSendSucceeded -> {
-                    Log.i(TAG, "send $kind ${pending.id} sent as ${result.message.id} after ${elapsed()} ms")
+                    TdlibLog.i("send $kind ${pending.id} sent as ${result.message.id} after ${elapsed()} ms")
                     result.message.toStored()
                 }
                 is TdApi.UpdateMessageSendFailed -> {
                     // How long Telegram asked to wait, too: that is what decides the pace operations are sent at.
                     val wait = floodWaitSeconds(result.error.code, result.error.message)?.let { ", asked to wait $it s" }.orEmpty()
-                    Log.w(TAG, "send $kind ${pending.id} failed with ${result.error.code} after ${elapsed()} ms$wait")
+                    TdlibLog.w("send $kind ${pending.id} failed with ${result.error.code} after ${elapsed()} ms$wait")
                     throw result.error.toException()
                 }
                 else -> error("unexpected send result")
             }
         } catch (e: CancellationException) {
-            Log.i(TAG, "send $kind ${pending.id} cancelled after ${elapsed()} ms")
+            TdlibLog.i("send $kind ${pending.id} cancelled after ${elapsed()} ms")
             synchronized(sendLock) { waiting.remove(pending.id) }
             // Deleting a message that is still being sent stops its upload; it never reaches the server.
             withContext(NonCancellable) {
@@ -260,7 +258,7 @@ class TdlibStorageBackend internal constructor(
         val range = blobRange(file.size, offset, length)
         val count = range.last - range.first + 1
         if (count == 0L) return ByteArrayInputStream(ByteArray(0))
-        val input = openMoving(onRetry = { Log.i(TAG, "download of file ${file.id} moved out of temp, asking again") }) {
+        val input = openMoving(onRetry = { TdlibLog.i("download of file ${file.id} moved out of temp, asking again") }) {
             limiter.transfer { download(file.id, range.first, count, onProgress) }
         }
         try {

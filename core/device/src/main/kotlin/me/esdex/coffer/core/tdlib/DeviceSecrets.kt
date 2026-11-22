@@ -22,7 +22,7 @@ import me.esdex.coffer.core.storage.DeviceSealer
  * **not** require user authentication, so TDLib can start in the background (SPEC §8). The Master
  * Key gets its own Keystore key with authentication (SPEC §3.8), never this one.
  */
-class DeviceSecrets(private val dir: File) : DeviceSealer {
+class DeviceSecrets(private val dir: File) : DeviceSealer, TelegramSecrets {
 
     /** Small files Coffer keeps on the phone, sealed under the same Keystore key (audit 1, L9, L14). */
     override fun seal(plain: ByteArray, purpose: String): ByteArray = wrap(plain, FILE_AD_PREFIX + purpose)
@@ -30,9 +30,8 @@ class DeviceSecrets(private val dir: File) : DeviceSealer {
     override fun open(sealed: ByteArray, purpose: String): ByteArray? =
         if (sealed.size <= IV_BYTES) null else unwrap(sealed, FILE_AD_PREFIX + purpose)
 
-    /** The key for TDLib's database, created on first use. Null if a stored one can no longer be unwrapped. */
     @Synchronized
-    fun databaseKey(): ByteArray? {
+    override fun databaseKey(): ByteArray? {
         val file = File(dir, DB_KEY_FILE)
         if (file.exists()) return unwrap(file.readBytes(), DB_KEY_AD)
         val key = ByteArray(DB_KEY_BYTES).also(SecureRandom()::nextBytes)
@@ -60,14 +59,13 @@ class DeviceSecrets(private val dir: File) : DeviceSealer {
         File(dir, INDEX_KEY_FILE).delete()
     }
 
-    /** Forgets the database key, for when TDLib's data is wiped with it. */
     @Synchronized
-    fun resetDatabaseKey() {
+    override fun resetDatabaseKey() {
         File(dir, DB_KEY_FILE).delete()
     }
 
     @Synchronized
-    fun apiCredentials(): ApiCredentials? {
+    override fun apiCredentials(): ApiCredentials? {
         val file = File(dir, API_FILE)
         if (!file.exists()) return null
         return runCatching {
@@ -81,7 +79,7 @@ class DeviceSecrets(private val dir: File) : DeviceSealer {
     }
 
     @Synchronized
-    fun saveApiCredentials(credentials: ApiCredentials) {
+    override fun saveApiCredentials(credentials: ApiCredentials) {
         val wrapped = wrap(credentials.apiHash.toByteArray(Charsets.US_ASCII), API_HASH_AD)
         val bytes = java.io.ByteArrayOutputStream().also { out ->
             DataOutputStream(out).use { it.writeInt(credentials.apiId); it.write(wrapped) }
@@ -90,7 +88,7 @@ class DeviceSecrets(private val dir: File) : DeviceSealer {
     }
 
     @Synchronized
-    fun clearApiCredentials() {
+    override fun clearApiCredentials() {
         File(dir, API_FILE).delete()
     }
 
