@@ -6,6 +6,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -19,6 +23,7 @@ import me.esdex.coffer.core.storage.StorageBackend
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.OpQueue
 import me.esdex.coffer.core.sync.SourceChangedException
+import me.esdex.coffer.core.sync.TransferStage
 import me.esdex.coffer.core.sync.UploadPreparer
 import me.esdex.coffer.core.sync.UploadRunner
 import me.esdex.coffer.core.sync.UploadSource
@@ -67,6 +72,14 @@ class Drafts(
         @Volatile var upload: Job? = null
         @Volatile var wanted: Wanted? = null
     }
+
+    /** An upload going on: what it is called, how far it got, and whether bytes are on the wire yet. */
+    data class Progress(val name: String, val done: Long, val total: Long, val stage: TransferStage)
+
+    private val progressFlow = MutableStateFlow<Map<String, Progress>>(emptyMap())
+
+    /** The uploads going on, by upload id; one at a time for now. */
+    val progress: StateFlow<Map<String, Progress>> = progressFlow.asStateFlow()
 
     private val states = ConcurrentHashMap<String, State>()
     private val lock = Mutex()
@@ -230,7 +243,13 @@ class Drafts(
         state.upload = null
     }
 
-    private suspend fun upload(uploadId: String) {
+    private suspend fun upload(uploadId: String) = try {
+        attempts(uploadId)
+    } finally {
+        progressFlow.update { it - uploadId }
+    }
+
+    private suspend fun attempts(uploadId: String) {
         var pause = FIRST_RETRY_MS
         while (true) {
             val queued = index.uploads().find { it.uploadId == uploadId } ?: return
@@ -249,7 +268,10 @@ class Drafts(
                 }
                 try {
                     log("uploading a file of ${copy.length()} bytes")
-                    UploadRunner(keys.sodium, storage(), index, File(dir, TEMP)).run(upload, transfer, source)
+                    val name = wantedOf(uploadId, request, queued.replaces).request.name
+                    UploadRunner(keys.sodium, storage(), index, File(dir, TEMP)).run(upload, transfer, source) { done, total, stage ->
+                        progressFlow.update { it + (uploadId to Progress(name, done, total, stage)) }
+                    }
                 } finally {
                     transfer.close()
                 }

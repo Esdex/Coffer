@@ -7,7 +7,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -67,6 +69,24 @@ class VaultWriter(
     }
 
     private val drafts = Drafts(scope, index, keys, storage, draftsDir, clock, ::uploaded, ::rebuild)
+
+    /** What goes to Telegram from here: for the tray. */
+    data class Transfers(val uploading: List<Drafts.Progress>, val waiting: Int, val operations: Int) {
+        val idle: Boolean get() = uploading.isEmpty() && waiting == 0 && operations == 0
+
+        companion object {
+            val NONE = Transfers(emptyList(), 0, 0)
+        }
+    }
+
+    /** Uploads going on and waiting, and operations to send; held deletes wait for an upload, not counted. */
+    val transfers: StateFlow<Transfers> = combine(drafts.progress, index.observeUploads(), index.observeOps()) { going, uploads, ops ->
+        Transfers(
+            uploading = going.values.toList(),
+            waiting = uploads.count { it.uploadId !in going },
+            operations = ops.filter { it.caption.isNotEmpty() }.sumOf { it.opCount },
+        )
+    }.stateIn(scope, SharingStarted.Eagerly, Transfers.NONE)
 
     // Deleted on the drive, not queued yet: gone from it already. Under editLock.
     private val deletingFiles = LinkedHashSet<Id>()

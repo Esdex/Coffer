@@ -12,11 +12,19 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.goterl.lazysodium.LazySodiumJava
 import com.goterl.lazysodium.SodiumJava
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import me.esdex.coffer.core.crypto.sodium.LazySodiumAdapter
 import me.esdex.coffer.core.index.RoomVaultIndex
 import me.esdex.coffer.core.tdlib.AuthState
+import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.desktop.drive.DriveMount
 import me.esdex.coffer.desktop.index.desktopVaultIndex
@@ -25,6 +33,8 @@ import me.esdex.coffer.desktop.keyring.KeyringException
 import me.esdex.coffer.desktop.signin.SignIn
 import me.esdex.coffer.desktop.tray.KdeTray
 import me.esdex.coffer.desktop.tray.MenuEntry
+import me.esdex.coffer.desktop.tray.TrayState
+import me.esdex.coffer.desktop.tray.TrayView
 import me.esdex.coffer.desktop.vault.DesktopVault
 import me.esdex.coffer.desktop.vault.Unlock
 import java.awt.BasicStroke
@@ -72,20 +82,8 @@ fun main() {
     Runtime.getRuntime().addShutdownHook(Thread { drive.unmount() })
     // The drive while unlocked; the unlock window before that.
     val open = { if (drive.isMounted) ProcessBuilder("xdg-open", drive.at.toString()).start() else unlock.show(); Unit }
-    val tray = KdeTray(
-        title = "Coffer",
-        icon = listOf(22, 32, 64).map(::padlock),
-        entries = listOf(
-            MenuEntry.Action("Open Coffer drive", open),
-            MenuEntry.Action("Unlock", unlock::show),
-            MenuEntry.Action("Lock", vault::lock),
-            MenuEntry.Separator,
-            MenuEntry.Action("Sign in to Telegram", signIn::show),
-            MenuEntry.Separator,
-            MenuEntry.Action("Quit") { quit.countDown() },
-        ),
-        onActivate = open,
-    )
+    val tray = KdeTray(title = "Coffer", icon = listOf(22, 32, 64).map(::padlock), onActivate = open)
+    showInTray(tray, telegram, vault, Actions(open = open, unlock = unlock::show, lock = vault::lock, signIn = signIn::show, quit = { quit.countDown() }))
     // First start, or signed out elsewhere: sign-in opens by itself; then unlocking, unless the vault
     // opened with a remembered key.
     thread(name = "start") {
@@ -115,6 +113,57 @@ private fun openIndex(secrets: DesktopSecrets): RoomVaultIndex {
     }
     return desktopVaultIndex(file, key).also { key.fill(0) }
 }
+
+/** The tray's actions, made once: the menu is compared with what it showed to tell whether it changed. */
+private class Actions(open: () -> Unit, unlock: () -> Unit, lock: () -> Unit, signIn: () -> Unit, quit: () -> Unit) {
+    val open = MenuEntry.Action("Open Coffer drive", open)
+    val unlock = MenuEntry.Action("Unlock", unlock)
+    val lock = MenuEntry.Action("Lock", lock)
+    val signIn = MenuEntry.Action("Sign in to Telegram", signIn)
+    val quit = MenuEntry.Action("Quit", quit)
+}
+
+/**
+ * Keeps the tray telling where Coffer stands: signed in or not, the vault locked or open, and what goes to
+ * Telegram. At most once a second: a large upload reports progress far more often than a menu needs.
+ */
+private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, actions: Actions) {
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    scope.launch {
+        combine(telegram.state, vault.manager.state, vault.catchingUp, vault.transfers) { auth, state, catchingUp, transfers ->
+            TrayState(
+                signedIn = auth == AuthState.Ready,
+                vault = when (state) {
+                    VaultManager.State.Unknown, is VaultManager.State.Searching -> TrayState.Vault.LOOKING
+                    VaultManager.State.NotFound -> TrayState.Vault.NONE
+                    is VaultManager.State.Locked -> TrayState.Vault.LOCKED
+                    is VaultManager.State.Unlocked -> TrayState.Vault.UNLOCKED
+                },
+                catchingUp = catchingUp,
+                transfers = transfers,
+            )
+        }.conflate().collect { state ->
+            val view = TrayView.of(state)
+            val menu = buildList {
+                view.lines.forEach { add(MenuEntry.Label(it)) }
+                if (view.lines.isNotEmpty()) add(MenuEntry.Separator)
+                add(actions.open)
+                when (view.lock) {
+                    TrayView.Lock.LOCK -> add(actions.lock)
+                    TrayView.Lock.UNLOCK -> add(actions.unlock)
+                    TrayView.Lock.NONE -> Unit
+                }
+                add(MenuEntry.Separator)
+                if (!state.signedIn) add(actions.signIn)
+                add(actions.quit)
+            }
+            tray.update(menu, view.status)
+            delay(TRAY_PACE_MS)
+        }
+    }
+}
+
+private const val TRAY_PACE_MS = 1_000L
 
 /** Says what stops Coffer from starting, in a window, and ends it when the window closes. */
 private fun fatal(title: String, cause: Exception): Nothing {

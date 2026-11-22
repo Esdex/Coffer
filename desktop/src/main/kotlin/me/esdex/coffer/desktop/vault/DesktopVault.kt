@@ -88,6 +88,11 @@ class DesktopVault(
     /** What the drive shows: the open vault's folders and whole files; empty while locked. */
     val tree: StateFlow<DriveTree> = treeFlow.asStateFlow()
 
+    private val transfersFlow = MutableStateFlow(VaultWriter.Transfers.NONE)
+
+    /** What goes to Telegram from here while unlocked; nothing while locked, as nothing goes then. */
+    val transfers: StateFlow<VaultWriter.Transfers> = transfersFlow.asStateFlow()
+
     private val settledFlow = MutableStateFlow(false)
 
     /** The vault was looked for and a remembered key had its go: what is locked now waits for the password. */
@@ -183,6 +188,7 @@ class DesktopVault(
             val current = VaultWriter(this, index, keys, storage = { telegram.state.first { it == AuthState.Ready }; telegram.storage() }, draftsDir)
             writer = current
             launch { current.tree.collect { treeFlow.value = it } }
+            launch { current.transfers.collect { transfersFlow.value = it } }
             current.start()
             telegram.state.first { it == AuthState.Ready }
             val storage = telegram.storage()
@@ -220,6 +226,7 @@ class DesktopVault(
         session = null
         writer = null
         treeFlow.value = DriveTree.EMPTY
+        transfersFlow.value = VaultWriter.Transfers.NONE
         keysFlow.value = null
         catchUpFlow.value = null
     }

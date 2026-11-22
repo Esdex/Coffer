@@ -9,6 +9,7 @@ import org.freedesktop.dbus.annotations.DBusProperty.Access
 import org.freedesktop.dbus.annotations.Position
 import org.freedesktop.dbus.DBusPath
 import org.freedesktop.dbus.interfaces.DBusInterface
+import org.freedesktop.dbus.messages.DBusSignal
 import org.freedesktop.dbus.types.UInt32
 import org.freedesktop.dbus.types.Variant
 
@@ -57,6 +58,9 @@ interface StatusNotifierItem : DBusInterface {
     fun ContextMenu(x: Int, y: Int)
 
     fun Scroll(delta: Int, orientation: String)
+
+    /** The tooltip changed: the host reads it again. */
+    class NewToolTip(path: String) : DBusSignal(path)
 }
 
 /** org.kde.StatusNotifierWatcher: where an icon announces itself. */
@@ -112,6 +116,9 @@ interface DBusMenu : DBusInterface {
 
     /** The ids to update, and the ids not found. */
     fun AboutToShowGroup(ids: List<Int>): Reply<List<Int>, List<Int>>
+
+    /** The menu changed from [parent] down: the host asks for its layout again. */
+    class LayoutUpdated(path: String, val revision: UInt32, val parent: Int) : DBusSignal(path, revision, parent)
 }
 
 /** (ia{sv}av): an item, its properties, and its children as variants of the same. */
