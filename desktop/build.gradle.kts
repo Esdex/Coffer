@@ -45,6 +45,9 @@ sourceSets.main { resources.srcDir(buildInfo) }
 dependencies {
     implementation(project(":core:tdlib"))
     implementation(project(":core:database"))
+    implementation(project(":core:vault"))
+    implementation(project(":core:sync"))
+    implementation(libs.lazysodium.java)
     implementation(libs.sqlite.jdbc.crypt)
     implementation(compose.desktop.currentOs)
     implementation(libs.compose.material3)

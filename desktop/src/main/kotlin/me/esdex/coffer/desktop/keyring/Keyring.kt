@@ -9,6 +9,18 @@ import java.util.concurrent.CompletableFuture
 
 class KeyringException(message: String, cause: Throwable? = null) : Exception(message, cause)
 
+/** Small secrets by name; [Keyring] in the app, a map in tests. */
+interface SecretStore {
+    /** The secret stored under [name], or null if there is none. */
+    fun read(name: String): ByteArray?
+
+    /** Stores [value] under [name], replacing what was there. */
+    fun write(name: String, label: String, value: ByteArray)
+
+    /** Removes the secret stored under [name], if there is one. */
+    fun delete(name: String)
+}
+
 /**
  * Coffer's secrets in the desktop's keyring, through the Secret Service API: KWallet, GNOME Keyring or
  * whichever serves org.freedesktop.secrets. Each secret is one item, found by its name. A locked keyring
@@ -18,13 +30,12 @@ class KeyringException(message: String, cause: Throwable? = null) : Exception(me
  * The session is "plain": secrets cross the session bus unencrypted, which only this user's processes
  * can listen to, and those can ask the keyring for them anyway.
  */
-class Keyring private constructor(private val connection: DBusConnection) : AutoCloseable {
+class Keyring private constructor(private val connection: DBusConnection) : SecretStore, AutoCloseable {
     private val service = remote<SecretServiceApi>(SERVICE_PATH)
     private val session: DBusPath = service.OpenSession("plain", Variant("")).second
 
-    /** The secret stored under [name], or null if there is none. */
     @Synchronized
-    fun read(name: String): ByteArray? = call {
+    override fun read(name: String): ByteArray? = call {
         val found = service.SearchItems(attributes(name))
         val items = found.first + found.second
         if (items.isEmpty()) return@call null
@@ -32,9 +43,9 @@ class Keyring private constructor(private val connection: DBusConnection) : Auto
         service.GetSecrets(items.take(1), session).values.firstOrNull()?.value
     }
 
-    /** Stores [value] under [name] in the default collection, replacing what was there. */
+    /** In the default collection. */
     @Synchronized
-    fun write(name: String, label: String, value: ByteArray): Unit = call {
+    override fun write(name: String, label: String, value: ByteArray): Unit = call {
         val collection = service.ReadAlias(DEFAULT_COLLECTION)
         if (collection.path == NO_OBJECT) throw KeyringException("the keyring has no default collection")
         unlock(listOf(collection))
@@ -47,9 +58,8 @@ class Keyring private constructor(private val connection: DBusConnection) : Auto
         if (created.second.path != NO_OBJECT) prompt(created.second)
     }
 
-    /** Removes the secret stored under [name], if there is one. */
     @Synchronized
-    fun delete(name: String): Unit = call {
+    override fun delete(name: String): Unit = call {
         val found = service.SearchItems(attributes(name))
         if (found.second.isNotEmpty()) unlock(found.second)
         for (item in found.first + found.second) {
