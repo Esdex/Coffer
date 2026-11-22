@@ -19,7 +19,8 @@ class DriveTree private constructor(private val entries: Map<String, Entry>) {
         val modifiedAt: Long
     }
 
-    class Folder(val children: List<String>, override val modifiedAt: Long) : Entry
+    /** [folderId] is null for the root. */
+    class Folder(val folderId: Id?, val children: List<String>, override val modifiedAt: Long) : Entry
 
     class File(val fileId: Id, val size: Long, val createdAt: Long, override val modifiedAt: Long) : Entry
 
@@ -27,7 +28,7 @@ class DriveTree private constructor(private val entries: Map<String, Entry>) {
     operator fun get(path: String): Entry? = entries[path]
 
     companion object {
-        val EMPTY = DriveTree(mapOf(ROOT to Folder(emptyList(), 0)))
+        val EMPTY = DriveTree(mapOf(ROOT to Folder(null, emptyList(), 0)))
 
         private const val ROOT = "/"
 
@@ -52,7 +53,7 @@ class DriveTree private constructor(private val entries: Map<String, Entry>) {
                     }
                     newest = maxOf(newest, time)
                 }
-                entries[path] = Folder(names.map { it.second }, newest)
+                entries[path] = Folder(folderId, names.map { it.second }, newest)
                 return newest
             }
             layOut(null, ROOT)

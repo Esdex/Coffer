@@ -9,8 +9,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -23,7 +21,6 @@ import me.esdex.coffer.core.storage.StorageEvent
 import me.esdex.coffer.core.storage.StorageException
 import me.esdex.coffer.core.sync.Indexer
 import me.esdex.coffer.core.sync.VaultKeys
-import me.esdex.coffer.core.sync.VaultTree
 import me.esdex.coffer.core.sync.reader
 import me.esdex.coffer.core.sync.transferKeys
 import me.esdex.coffer.core.tdlib.AuthState
@@ -132,8 +129,18 @@ class DesktopVault(
     val remembered: Boolean get() = runCatching { secrets.rememberedMaster()?.close() != null }.getOrDefault(false)
 
     fun lock() {
-        scope.launch { manager.lockVault(byHand = true) }
+        scope.launch {
+            // Deletes gathered on the drive go into the queue while the keys are still there.
+            runCatching { writer?.flush() }.onFailure { log("queueing deletes before the lock failed (${it.javaClass.simpleName})") }
+            manager.lockVault(byHand = true)
+        }
     }
+
+    @Volatile
+    private var writer: VaultWriter? = null
+
+    /** What changes the vault from the drive; null while locked. */
+    val edits: VaultWriter? get() = writer
 
     /** At start only: a vault locked by hand asks for the password, or Lock would mean nothing. */
     private suspend fun openRemembered() {
@@ -170,15 +177,10 @@ class DesktopVault(
         keysFlow.value = keys
         log("unlocked")
         session = scope.launch {
-            // Names are opened once per change of the index, not per call of the file manager.
-            launch {
-                combine(index.observeFiles(), index.observeFolders()) { files, _ -> files }
-                    .debounce(TREE_DEBOUNCE_MS)
-                    .collect { files ->
-                        val whole = files.filter { it.status == FileStatus.READY }.associateBy { it.fileId }
-                        treeFlow.value = DriveTree.of(VaultTree.of(index, keys), whole)
-                    }
-            }
+            val current = VaultWriter(this, index, keys, storage = { telegram.state.first { it == AuthState.Ready }; telegram.storage() })
+            writer = current
+            launch { current.tree.collect { treeFlow.value = it } }
+            current.start()
             telegram.state.first { it == AuthState.Ready }
             val storage = telegram.storage()
             catchUpFlow.value = 0
@@ -213,6 +215,7 @@ class DesktopVault(
         if (keysFlow.value != null) log("locked")
         session?.cancel()
         session = null
+        writer = null
         treeFlow.value = DriveTree.EMPTY
         keysFlow.value = null
         catchUpFlow.value = null
@@ -227,7 +230,6 @@ class DesktopVault(
 
     private companion object {
         const val CONTENT_PROBES = 8
-        const val TREE_DEBOUNCE_MS = 200L
     }
 }
 

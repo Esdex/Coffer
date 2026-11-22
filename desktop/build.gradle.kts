@@ -63,6 +63,8 @@ dependencies {
 // KeyringTest touches the session's real keyring, so only on request: -Pcoffer.keyringTest
 tasks.test {
     systemProperty("coffer.keyringTest", providers.gradleProperty("coffer.keyringTest").isPresent.toString())
+    // TrashProbeTest runs KDE's trash on the user's real session, so only on request: -Pcoffer.trashProbe
+    systemProperty("coffer.trashProbe", providers.gradleProperty("coffer.trashProbe").isPresent.toString())
     // VaultDriveTest mounts the drive through jfuse, as the app does.
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
