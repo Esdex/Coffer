@@ -56,6 +56,15 @@ import kotlin.system.exitProcess
  * is left in the home folder.
  */
 fun main() {
+    // Before the keyring and TDLib: a second start only asks the first to come forward.
+    val instance = when (val claim = SingleInstance.claim(BuildInfo.variant.application)) {
+        is SingleInstance.Claim.First -> claim.instance
+        is SingleInstance.Claim.Running -> {
+            System.err.println("${BuildInfo.variant.title} is running already${if (claim.asked) "; asked it to come forward" else ""}")
+            exitProcess(0)
+        }
+        SingleInstance.Claim.NoBus -> null
+    }
     val keyring = try {
         Keyring.open()
     } catch (e: KeyringException) {
@@ -110,6 +119,8 @@ fun main() {
         }
     }
     val tray = KdeTray(id = BuildInfo.variant.id, title = BuildInfo.variant.title, icon = TrayIcons.of(TrayIcons.Look.LOCKED), onActivate = activate)
+    // Started again, as from the menu: what a left click on the icon does.
+    instance?.onActivate = activate
     val actions = Actions(
         open = open, unlock = unlock::show, lock = vault::lock, signIn = signIn::show, logOut = logOut::show, quit = { quit.countDown() },
         monochrome = { settings.setMonochromeIcon(!settings.monochromeIcon.value) },
@@ -134,6 +145,7 @@ fun main() {
     recent.close()
     index.close()
     keyring.close()
+    instance?.close()
     // The windows' AWT threads would keep the process alive.
     exitProcess(0)
 }
