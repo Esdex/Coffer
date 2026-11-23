@@ -89,6 +89,7 @@ fun main() {
     val logOut = AppWindow { close -> LogOut(telegram, vault, onDone = close) }
 
     val settings = DesktopSettings(File(dataDir(), "settings.properties"))
+    val autostart = Autostart(Autostart.dir(), BuildInfo.variant.application, BuildInfo.variant.title, Autostart.launcher())
     val runtime = System.getenv("XDG_RUNTIME_DIR") ?: error("XDG_RUNTIME_DIR is not set")
     val at = Path.of(runtime, BuildInfo.variant.id)
     // Left by a crash or a kill, then each as it comes.
@@ -126,8 +127,9 @@ fun main() {
         open = open, unlock = unlock::show, lock = vault::lock, signIn = signIn::show, logOut = logOut::show, quit = { quit.countDown() },
         monochrome = { settings.setMonochromeIcon(!settings.monochromeIcon.value) },
         dolphin = { settings.setShowInDolphin(!settings.showInDolphin.value) },
+        autostart = { runCatching { autostart.set(!autostart.enabled.value) }.onFailure { System.err.println("autostart: ${it.message}") } },
     )
-    showInTray(tray, telegram, vault, settings, themePath, actions, click)
+    showInTray(tray, telegram, vault, settings, autostart, themePath, actions, click)
     // First start, or signed out elsewhere: sign-in opens by itself; then unlocking, unless the vault
     // opened with a remembered key.
     thread(name = "start") {
@@ -172,6 +174,7 @@ private class Actions(
     quit: () -> Unit,
     val monochrome: () -> Unit,
     val dolphin: () -> Unit,
+    val autostart: () -> Unit,
 ) {
     val open = MenuEntry.Action("Open Coffer drive", open)
     val unlock = MenuEntry.Action("Unlock", unlock)
@@ -190,6 +193,7 @@ private fun showInTray(
     telegram: Telegram,
     vault: DesktopVault,
     settings: DesktopSettings,
+    autostart: Autostart,
     themePath: String,
     actions: Actions,
     click: AtomicReference<TrayView.Click>,
@@ -197,7 +201,7 @@ private fun showInTray(
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     scope.launch {
         val telegramState = combine(telegram.state, telegram.connection.asLink(), ::Pair)
-        val looks = combine(settings.monochromeIcon, settings.showInDolphin, ::Pair)
+        val looks = combine(settings.monochromeIcon, settings.showInDolphin, autostart.enabled, ::Triple)
         combine(telegramState, vault.manager.state, vault.catchingUp, vault.transfers, looks) { (auth, link), state, catchingUp, transfers, looks ->
             looks to TrayState(
                 signedIn = auth == AuthState.Ready,
@@ -212,7 +216,7 @@ private fun showInTray(
                 link = link,
             )
         }.conflate().collect { (looks, state) ->
-            val (monochrome, dolphin) = looks
+            val (monochrome, dolphin, startsWithSession) = looks
             val view = TrayView.of(state)
             val menu = buildList {
                 view.lines.forEach { add(MenuEntry.Label(it)) }
@@ -228,7 +232,8 @@ private fun showInTray(
                 add(
                     MenuEntry.Submenu(
                         "Settings",
-                        listOf(
+                        listOfNotNull(
+                            MenuEntry.Toggle("Start with the session", startsWithSession, actions.autostart).takeIf { autostart.available },
                             MenuEntry.Toggle("Show the drive in Dolphin", dolphin, actions.dolphin),
                             MenuEntry.Toggle("Monochrome icon", monochrome, actions.monochrome),
                         ),
