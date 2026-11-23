@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Coffer
+GenericName=Encrypted file vault
+Comment=Your files, encrypted, in Telegram's Saved Messages, as a drive
+Exec=coffer
+Icon=me.esdex.coffer
+Terminal=false
+Categories=Utility;Security;FileTools;
+Keywords=vault;encryption;telegram;drive;
+StartupNotify=false
