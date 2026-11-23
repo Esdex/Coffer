@@ -11,15 +11,26 @@ import java.util.Properties
  * the phone. Kept apart from the vault: signing out forgets the vault, not how the app looks.
  */
 class DesktopSettings(private val file: File) {
-    private val monochromeFlow = MutableStateFlow(read().getProperty(MONOCHROME_ICON) == "true")
+    private val stored = read()
+    private val monochromeFlow = MutableStateFlow(flag(MONOCHROME_ICON, false))
+    private val dolphinFlow = MutableStateFlow(flag(SHOW_IN_DOLPHIN, true))
 
     /** The tray's chest in the panel's colour, only what goes on in colour (Esdex, 2026-11-22); off by default. */
     val monochromeIcon: StateFlow<Boolean> = monochromeFlow.asStateFlow()
 
+    /** The drive in Dolphin's Places while it is mounted (Esdex, 2026-11-22); on by default, as before the setting. */
+    val showInDolphin: StateFlow<Boolean> = dolphinFlow.asStateFlow()
+
+    fun setMonochromeIcon(on: Boolean) = set(MONOCHROME_ICON, on, monochromeFlow)
+
+    fun setShowInDolphin(on: Boolean) = set(SHOW_IN_DOLPHIN, on, dolphinFlow)
+
+    private fun flag(key: String, default: Boolean) = stored.getProperty(key)?.let { it == "true" } ?: default
+
     @Synchronized
-    fun setMonochromeIcon(on: Boolean) {
-        write { it.setProperty(MONOCHROME_ICON, on.toString()) }
-        monochromeFlow.value = on
+    private fun set(key: String, on: Boolean, flow: MutableStateFlow<Boolean>) {
+        write { it.setProperty(key, on.toString()) }
+        flow.value = on
     }
 
     private fun read() = Properties().apply { if (file.exists()) file.inputStream().use(::load) }
@@ -34,5 +45,6 @@ class DesktopSettings(private val file: File) {
 
     private companion object {
         const val MONOCHROME_ICON = "monochromeIcon"
+        const val SHOW_IN_DOLPHIN = "showInDolphin"
     }
 }

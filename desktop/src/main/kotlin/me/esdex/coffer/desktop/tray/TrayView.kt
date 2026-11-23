@@ -46,11 +46,17 @@ private const val CONNECTING_PATIENCE_MS = 10_000L
 
 /**
  * What the tray shows: a line for its tooltip, the lines at the top of its menu, whether its menu offers to
- * lock or to unlock, and whether Telegram is out of reach. Names of files show here as on the phone's transfer
- * notifications; they never go to a log.
+ * lock or to unlock, whether Telegram is out of reach, and what a left click does. Names of files show here as on
+ * the phone's transfer notifications; they never go to a log.
  */
-data class TrayView(val status: String, val lines: List<String>, val lock: Lock, val offline: Boolean = false) {
+data class TrayView(val status: String, val lines: List<String>, val lock: Lock, val offline: Boolean = false, val click: Click = Click.MENU) {
     enum class Lock { LOCK, UNLOCK, NONE }
+
+    /**
+     * A left click opens what stands in the way, sign-in or unlocking, and otherwise the menu, as a right click
+     * always does (Esdex, 2026-11-23).
+     */
+    enum class Click { MENU, SIGN_IN, UNLOCK }
 
     /**
      * Grey unless the vault is open; marked while Telegram is out of reach, as nothing moves then; busy while
@@ -66,7 +72,7 @@ data class TrayView(val status: String, val lines: List<String>, val lock: Lock,
 
     companion object {
         fun of(state: TrayState): TrayView {
-            if (!state.signedIn) return TrayView("Not signed in to Telegram", emptyList(), Lock.NONE)
+            if (!state.signedIn) return TrayView("Not signed in to Telegram", emptyList(), Lock.NONE, click = Click.SIGN_IN)
             val link = when (state.link) {
                 TrayState.Link.UP -> null
                 TrayState.Link.WAITING_FOR_NETWORK -> "Waiting for network"
@@ -76,7 +82,7 @@ data class TrayView(val status: String, val lines: List<String>, val lock: Lock,
                 // Looking goes no further without Telegram, so the tooltip tells why.
                 TrayState.Vault.LOOKING -> TrayView(link ?: "Looking for your vault", emptyList(), Lock.NONE)
                 TrayState.Vault.NONE -> TrayView("No vault in this account yet", listOfNotNull(link), Lock.NONE)
-                TrayState.Vault.LOCKED -> TrayView("Locked", listOfNotNull(link), Lock.UNLOCK)
+                TrayState.Vault.LOCKED -> TrayView("Locked", listOfNotNull(link), Lock.UNLOCK, click = Click.UNLOCK)
                 TrayState.Vault.UNLOCKED -> unlocked(state.transfers, state.catchingUp, link)
             }
             return view.copy(offline = link != null)

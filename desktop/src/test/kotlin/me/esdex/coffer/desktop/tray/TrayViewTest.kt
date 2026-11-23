@@ -17,8 +17,8 @@ class TrayViewTest {
 
     @Test
     fun lockedSignedOutAndSearchingSayWhereThingsStand() {
-        assertEquals(TrayView("Not signed in to Telegram", emptyList(), TrayView.Lock.NONE), TrayView.of(TrayState(false, TrayState.Vault.LOCKED, null, VaultWriter.Transfers.NONE)))
-        assertEquals(TrayView("Locked", emptyList(), TrayView.Lock.UNLOCK), TrayView.of(TrayState(true, TrayState.Vault.LOCKED, null, VaultWriter.Transfers.NONE)))
+        assertEquals(TrayView("Not signed in to Telegram", emptyList(), TrayView.Lock.NONE, click = TrayView.Click.SIGN_IN), TrayView.of(TrayState(false, TrayState.Vault.LOCKED, null, VaultWriter.Transfers.NONE)))
+        assertEquals(TrayView("Locked", emptyList(), TrayView.Lock.UNLOCK, click = TrayView.Click.UNLOCK), TrayView.of(TrayState(true, TrayState.Vault.LOCKED, null, VaultWriter.Transfers.NONE)))
         assertEquals(TrayView.Lock.NONE, TrayView.of(TrayState(true, TrayState.Vault.LOOKING, null, VaultWriter.Transfers.NONE)).lock)
     }
 
@@ -65,19 +65,30 @@ class TrayViewTest {
     @Test
     fun aLockedVaultStaysGreyAndSaysItInTheMenu() {
         val view = vault(TrayState.Vault.LOCKED, TrayState.Link.WAITING_FOR_NETWORK)
-        assertEquals(TrayView("Locked", listOf("Waiting for network"), TrayView.Lock.UNLOCK, offline = true), view)
+        assertEquals(TrayView("Locked", listOf("Waiting for network"), TrayView.Lock.UNLOCK, offline = true, click = TrayView.Click.UNLOCK), view)
         assertEquals(TrayIcons.Look.LOCKED, view.icon)
         assertEquals("Waiting for network", vault(TrayState.Vault.LOOKING, TrayState.Link.WAITING_FOR_NETWORK).status)
         assertEquals(listOf("Connecting to Telegram"), vault(TrayState.Vault.NONE, TrayState.Link.CONNECTING).lines)
-        assertEquals(TrayView("Locked", emptyList(), TrayView.Lock.UNLOCK), vault(TrayState.Vault.LOCKED, TrayState.Link.UP))
+        assertEquals(TrayView("Locked", emptyList(), TrayView.Lock.UNLOCK, click = TrayView.Click.UNLOCK), vault(TrayState.Vault.LOCKED, TrayState.Link.UP))
     }
 
     @Test
     fun notSignedInSaysNothingOfTheNetwork() {
         assertEquals(
-            TrayView("Not signed in to Telegram", emptyList(), TrayView.Lock.NONE),
+            TrayView("Not signed in to Telegram", emptyList(), TrayView.Lock.NONE, click = TrayView.Click.SIGN_IN),
             TrayView.of(TrayState(false, TrayState.Vault.LOCKED, null, VaultWriter.Transfers.NONE, TrayState.Link.WAITING_FOR_NETWORK)),
         )
+    }
+
+    @Test
+    fun aLeftClickOpensWhatStandsInTheWayOrElseTheMenu() {
+        fun click(signedIn: Boolean, vault: TrayState.Vault) = TrayView.of(TrayState(signedIn, vault, null, VaultWriter.Transfers.NONE)).click
+        assertEquals(TrayView.Click.SIGN_IN, click(false, TrayState.Vault.UNLOCKED))
+        assertEquals(TrayView.Click.UNLOCK, click(true, TrayState.Vault.LOCKED))
+        assertEquals(TrayView.Click.MENU, click(true, TrayState.Vault.UNLOCKED))
+        assertEquals(TrayView.Click.MENU, click(true, TrayState.Vault.LOOKING))
+        assertEquals(TrayView.Click.MENU, click(true, TrayState.Vault.NONE))
+        assertEquals(TrayView.Click.UNLOCK, vault(TrayState.Vault.LOCKED, TrayState.Link.WAITING_FOR_NETWORK).click)
     }
 
     @Test

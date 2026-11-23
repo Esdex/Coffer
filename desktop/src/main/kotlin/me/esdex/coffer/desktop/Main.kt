@@ -43,6 +43,7 @@ import me.esdex.coffer.desktop.vault.Unlock
 import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.system.exitProcess
 
@@ -73,21 +74,31 @@ fun main() {
     val signIn = AppWindow { close -> SignIn(telegram, onDone = close) }
     val unlock = AppWindow { close -> Unlock(vault, onDone = close) }
 
+    val settings = DesktopSettings(File(dataDir(), "settings.properties"))
     val runtime = System.getenv("XDG_RUNTIME_DIR") ?: error("XDG_RUNTIME_DIR is not set")
-    val drive = DriveMount(Path.of(runtime, BuildInfo.variant.id), vault)
+    val drive = DriveMount(Path.of(runtime, BuildInfo.variant.id), vault, settings.showInDolphin)
     drive.follow()
     val quit = CountDownLatch(1)
     Runtime.getRuntime().addShutdownHook(Thread { drive.unmount() })
     // The drive while unlocked; the unlock window before that.
     val open = { if (drive.isMounted) ProcessBuilder("xdg-open", drive.at.toString()).start() else unlock.show(); Unit }
-    val settings = DesktopSettings(File(dataDir(), "settings.properties"))
     val themePath = TrayIcons.install(File(dataDir(), "icons"))
-    val tray = KdeTray(id = BuildInfo.variant.id, title = BuildInfo.variant.title, icon = TrayIcons.of(TrayIcons.Look.LOCKED), onActivate = open)
+    val click = AtomicReference(TrayView.Click.SIGN_IN)
+    // A host that shows no menu on a left click, as Plasma does for an item that asks for it, opens the drive.
+    val activate = {
+        when (click.get()) {
+            TrayView.Click.SIGN_IN -> signIn.show()
+            TrayView.Click.UNLOCK -> unlock.show()
+            TrayView.Click.MENU -> open()
+        }
+    }
+    val tray = KdeTray(id = BuildInfo.variant.id, title = BuildInfo.variant.title, icon = TrayIcons.of(TrayIcons.Look.LOCKED), onActivate = activate)
     val actions = Actions(
         open = open, unlock = unlock::show, lock = vault::lock, signIn = signIn::show, quit = { quit.countDown() },
         monochrome = { settings.setMonochromeIcon(!settings.monochromeIcon.value) },
+        dolphin = { settings.setShowInDolphin(!settings.showInDolphin.value) },
     )
-    showInTray(tray, telegram, vault, settings, themePath, actions)
+    showInTray(tray, telegram, vault, settings, themePath, actions, click)
     // First start, or signed out elsewhere: sign-in opens by itself; then unlocking, unless the vault
     // opened with a remembered key.
     thread(name = "start") {
@@ -120,7 +131,15 @@ private fun openIndex(secrets: DesktopSecrets): RoomVaultIndex {
 }
 
 /** The tray's actions, made once: the menu is compared with what it showed to tell whether it changed. */
-private class Actions(open: () -> Unit, unlock: () -> Unit, lock: () -> Unit, signIn: () -> Unit, quit: () -> Unit, val monochrome: () -> Unit) {
+private class Actions(
+    open: () -> Unit,
+    unlock: () -> Unit,
+    lock: () -> Unit,
+    signIn: () -> Unit,
+    quit: () -> Unit,
+    val monochrome: () -> Unit,
+    val dolphin: () -> Unit,
+) {
     val open = MenuEntry.Action("Open Coffer drive", open)
     val unlock = MenuEntry.Action("Unlock", unlock)
     val lock = MenuEntry.Action("Lock", lock)
@@ -132,12 +151,21 @@ private class Actions(open: () -> Unit, unlock: () -> Unit, lock: () -> Unit, si
  * Keeps the tray telling where Coffer stands: signed in or not, Telegram in reach or not, the vault locked or
  * open, and what goes to Telegram. At most once a second: a large upload reports progress far more often than a menu needs.
  */
-private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, settings: DesktopSettings, themePath: String, actions: Actions) {
+private fun showInTray(
+    tray: KdeTray,
+    telegram: Telegram,
+    vault: DesktopVault,
+    settings: DesktopSettings,
+    themePath: String,
+    actions: Actions,
+    click: AtomicReference<TrayView.Click>,
+) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     scope.launch {
         val telegramState = combine(telegram.state, telegram.connection.asLink(), ::Pair)
-        combine(telegramState, vault.manager.state, vault.catchingUp, vault.transfers, settings.monochromeIcon) { (auth, link), state, catchingUp, transfers, monochrome ->
-            monochrome to TrayState(
+        val looks = combine(settings.monochromeIcon, settings.showInDolphin, ::Pair)
+        combine(telegramState, vault.manager.state, vault.catchingUp, vault.transfers, looks) { (auth, link), state, catchingUp, transfers, looks ->
+            looks to TrayState(
                 signedIn = auth == AuthState.Ready,
                 vault = when (state) {
                     VaultManager.State.Unknown, is VaultManager.State.Searching -> TrayState.Vault.LOOKING
@@ -149,7 +177,8 @@ private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, s
                 transfers = transfers,
                 link = link,
             )
-        }.conflate().collect { (monochrome, state) ->
+        }.conflate().collect { (looks, state) ->
+            val (monochrome, dolphin) = looks
             val view = TrayView.of(state)
             val menu = buildList {
                 view.lines.forEach { add(MenuEntry.Label(it)) }
@@ -162,9 +191,19 @@ private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, s
                 }
                 add(MenuEntry.Separator)
                 if (!state.signedIn) add(actions.signIn)
-                add(MenuEntry.Toggle("Monochrome icon", monochrome, actions.monochrome))
+                add(
+                    MenuEntry.Submenu(
+                        "Settings",
+                        listOf(
+                            MenuEntry.Toggle("Show the drive in Dolphin", dolphin, actions.dolphin),
+                            MenuEntry.Toggle("Monochrome icon", monochrome, actions.monochrome),
+                        ),
+                    ),
+                )
                 add(actions.quit)
             }
+            click.set(view.click)
+            tray.clickOpensMenu(view.click == TrayView.Click.MENU)
             tray.update(menu, view.status)
             tray.icon(TrayIcons.tray(view.icon, monochrome, themePath))
             delay(TRAY_PACE_MS)

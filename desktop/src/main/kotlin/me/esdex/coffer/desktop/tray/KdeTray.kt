@@ -9,12 +9,49 @@ import org.freedesktop.dbus.types.Variant
 import java.awt.image.BufferedImage
 import java.util.concurrent.ConcurrentHashMap
 
-/** A line of the tray menu: an action, a setting to tick, a line of text, or a separator between groups of them. */
+/**
+ * A line of the tray menu: an action, a setting to tick, a line of text, a separator between groups of them, or a
+ * submenu of more lines.
+ */
 sealed interface MenuEntry {
     data class Action(val label: String, val onClick: () -> Unit) : MenuEntry
     data class Toggle(val label: String, val checked: Boolean, val onClick: () -> Unit) : MenuEntry
     data class Label(val text: String) : MenuEntry
     data object Separator : MenuEntry
+    data class Submenu(val label: String, val entries: List<MenuEntry>) : MenuEntry
+}
+
+/**
+ * The menu's lines numbered as dbusmenu names them: 0 is the root, and the rest keep their ids for as long as the
+ * tray lives, by what they are: an action, a setting or a submenu by its label, a line or separator by its place,
+ * each within its submenu. So a click on a menu drawn before a change still means what it said.
+ */
+internal class MenuIds {
+    data class Node(val id: Int, val entry: MenuEntry, val children: List<Node>)
+
+    private val ids = ConcurrentHashMap<String, Int>()
+
+    fun number(entries: List<MenuEntry>, within: String = ""): List<Node> = entries.mapIndexed { place, entry ->
+        val key = within + when (entry) {
+            is MenuEntry.Action -> "action:${entry.label}"
+            is MenuEntry.Toggle -> "toggle:${entry.label}"
+            is MenuEntry.Submenu -> "submenu:${entry.label}"
+            is MenuEntry.Label -> "line:$place"
+            MenuEntry.Separator -> "separator:$place"
+        }
+        val id = ids.computeIfAbsent(key) { ids.size + 1 }
+        Node(id, entry, if (entry is MenuEntry.Submenu) number(entry.entries, "$key/") else emptyList())
+    }
+
+    companion object {
+        fun find(nodes: List<Node>, id: Int): Node? {
+            for (node in nodes) {
+                if (node.id == id) return node
+                find(node.children, id)?.let { return it }
+            }
+            return null
+        }
+    }
 }
 
 /**
@@ -24,7 +61,8 @@ sealed interface MenuEntry {
  * (seen on Esdex's Plasma 6.8, 2026-11-21).
  *
  * The menu and the tooltip change with [update]: the host is told and asks again. An action keeps its id
- * for as long as the tray lives, so a click on a menu drawn before a change still means what it said.
+ * for as long as the tray lives ([MenuIds]). A left click activates the item, or, when [clickOpensMenu], shows the
+ * menu as a right click does.
  */
 class KdeTray(
     private val id: String,
@@ -46,15 +84,15 @@ class KdeTray(
     private val connection: DBusConnection = DBusConnectionBuilder.forSessionBus().build()
 
     /** One look of the menu: its entries, each with its id, and the revision it is. */
-    private class Shown(val revision: Long, val entries: List<Pair<Int, MenuEntry>>, val description: String)
+    private class Shown(val revision: Long, val entries: List<MenuIds.Node>, val description: String)
 
     @Volatile
     private var shown = Shown(1, emptyList(), "")
 
-    // Ids by what an entry is: an action by its label, a line or separator by its place. 0 is the root.
-    private val ids = ConcurrentHashMap<String, Int>()
+    private val ids = MenuIds()
 
-    private fun idOf(key: String) = ids.computeIfAbsent(key) { ids.size + 1 }
+    @Volatile
+    private var itemIsMenu = false
 
     init {
         val name = "org.kde.StatusNotifierItem-${ProcessHandle.current().pid()}-1"
@@ -68,15 +106,7 @@ class KdeTray(
     /** Shows [entries] as the menu and [description] under the title in the tooltip. */
     @Synchronized
     fun update(entries: List<MenuEntry>, description: String) {
-        val numbered = entries.mapIndexed { place, entry ->
-            val key = when (entry) {
-                is MenuEntry.Action -> "action:${entry.label}"
-                is MenuEntry.Toggle -> "toggle:${entry.label}"
-                is MenuEntry.Label -> "line:$place"
-                MenuEntry.Separator -> "separator:$place"
-            }
-            idOf(key) to entry
-        }
+        val numbered = ids.number(entries)
         val before = shown
         if (numbered == before.entries && description == before.description) return
         val now = Shown(before.revision + 1, numbered, description)
@@ -94,6 +124,17 @@ class KdeTray(
         connection.sendMessage(StatusNotifierItem.NewIcon(ITEM_PATH))
     }
 
+    /**
+     * Whether a left click shows the menu rather than activating the item. The host reads it again with the rest of
+     * the item's properties, which a new tooltip makes it do.
+     */
+    @Synchronized
+    fun clickOpensMenu(on: Boolean) {
+        if (on == itemIsMenu) return
+        itemIsMenu = on
+        connection.sendMessage(StatusNotifierItem.NewToolTip(ITEM_PATH))
+    }
+
     override fun close() = connection.close()
 
     private inner class Item : StatusNotifierItem {
@@ -107,7 +148,7 @@ class KdeTray(
         override fun getIconPixmap() = pixmaps
         override fun getIconThemePath() = (look as? Look.Named)?.themePath.orEmpty()
         override fun getToolTip() = ToolTip(getIconName(), pixmaps, title, shown.description)
-        override fun getItemIsMenu() = false
+        override fun getItemIsMenu() = itemIsMenu
         override fun getMenu() = DBusPath(MENU_PATH)
         override fun Activate(x: Int, y: Int) = onActivate()
         override fun SecondaryActivate(x: Int, y: Int) = Unit
@@ -115,7 +156,7 @@ class KdeTray(
         override fun Scroll(delta: Int, orientation: String) = Unit
     }
 
-    /** A flat menu: the root is id 0, its entries the ids [update] gave them. */
+    /** The root is id 0, its entries and theirs the ids [update] gave them. */
     private inner class Menu : DBusMenu {
         override fun getObjectPath() = MENU_PATH
         override fun getVersion() = UInt32(3)
@@ -125,16 +166,16 @@ class KdeTray(
 
         override fun GetLayout(parentId: Int, recursionDepth: Int, propertyNames: List<String>): Reply<UInt32, LayoutItem> {
             val current = shown
-            val layout = if (parentId == 0) root(current) else item(current, parentId)
+            val layout = if (parentId == 0) root(current) else MenuIds.find(current.entries, parentId)?.let(::layout) ?: LayoutItem(parentId, properties(null), emptyList())
             return Reply(UInt32(current.revision), layout)
         }
 
         override fun GetGroupProperties(ids: List<Int>, propertyNames: List<String>): List<ItemProperties> {
             val current = shown
-            return ids.filter { it == 0 || entry(current, it) != null }.map { ItemProperties(it, properties(current, it)) }
+            return ids.filter { it == 0 || entry(current, it) != null }.map { ItemProperties(it, properties(entry(current, it))) }
         }
 
-        override fun GetProperty(id: Int, name: String): Variant<*> = properties(shown, id).getValue(name)
+        override fun GetProperty(id: Int, name: String): Variant<*> = properties(entry(shown, id)).getValue(name)
 
         override fun Event(id: Int, eventId: String, data: Variant<*>, timestamp: UInt32) {
             if (eventId != "clicked") return
@@ -158,18 +199,21 @@ class KdeTray(
             return Reply(emptyList(), ids.filter { it != 0 && entry(current, it) == null })
         }
 
-        private fun entry(current: Shown, id: Int): MenuEntry? = current.entries.firstOrNull { it.first == id }?.second
+        private fun entry(current: Shown, id: Int): MenuEntry? = MenuIds.find(current.entries, id)?.entry
 
         private fun root(current: Shown) = LayoutItem(
             0,
-            properties(current, 0),
-            current.entries.map { (id, _) -> Variant(item(current, id), LAYOUT_SIGNATURE) },
+            properties(null),
+            current.entries.map { Variant(layout(it), LAYOUT_SIGNATURE) },
         )
 
-        private fun item(current: Shown, id: Int) = LayoutItem(id, properties(current, id), emptyList())
+        private fun layout(node: MenuIds.Node): LayoutItem =
+            LayoutItem(node.id, properties(node.entry), node.children.map { Variant(layout(it), LAYOUT_SIGNATURE) })
 
-        private fun properties(current: Shown, id: Int): Map<String, Variant<*>> = when (val entry = entry(current, id)) {
+        /** The root's for null. */
+        private fun properties(entry: MenuEntry?): Map<String, Variant<*>> = when (entry) {
             null -> mapOf("children-display" to Variant("submenu"))
+            is MenuEntry.Submenu -> mapOf("label" to Variant(entry.label), "children-display" to Variant("submenu"))
             is MenuEntry.Action -> mapOf("label" to Variant(entry.label))
             is MenuEntry.Toggle -> mapOf("label" to Variant(entry.label), "toggle-type" to Variant("checkmark"), "toggle-state" to Variant(if (entry.checked) 1 else 0))
             is MenuEntry.Label -> mapOf("label" to Variant(entry.text), "enabled" to Variant(false))

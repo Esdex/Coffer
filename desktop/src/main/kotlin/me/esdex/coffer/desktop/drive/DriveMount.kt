@@ -3,7 +3,9 @@ package me.esdex.coffer.desktop.drive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -14,9 +16,14 @@ import java.nio.file.Path
 
 /**
  * The drive at [at] for as long as [vault] is unlocked (Esdex, 2026-11-21: lock = unmount), shown in
- * Dolphin's Places while it is there.
+ * Dolphin's Places while it is there if [showInPlaces], which takes effect at once.
  */
-class DriveMount(val at: Path, private val vault: DesktopVault, private val places: PlacesBookmark = PlacesBookmark.kde("${BuildInfo.variant.id}-drive")) {
+class DriveMount(
+    val at: Path,
+    private val vault: DesktopVault,
+    private val showInPlaces: StateFlow<Boolean>,
+    private val places: PlacesBookmark = PlacesBookmark.kde("${BuildInfo.variant.id}-drive"),
+) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var mounted: VaultDrive.Mounted? = null
 
@@ -28,6 +35,14 @@ class DriveMount(val at: Path, private val vault: DesktopVault, private val plac
         scope.launch {
             vault.keys.map { it != null }.distinctUntilChanged().collect { unlocked -> if (unlocked) mount() else unmount() }
         }
+        scope.launch { showInPlaces.drop(1).collect { show -> place(show) } }
+    }
+
+    @Synchronized
+    private fun place(show: Boolean) {
+        if (mounted == null) return
+        if (show) quietly("putting the drive in Places") { places.add(at, BuildInfo.variant.title) }
+        else quietly("taking the drive out of Places") { places.remove() }
     }
 
     @Synchronized
@@ -36,7 +51,7 @@ class DriveMount(val at: Path, private val vault: DesktopVault, private val plac
         mounted = try {
             VaultDrive.mount(at, tree = { vault.tree.value }, open = { runBlocking { vault.openFile(it) } }, edits = { vault.edits }, space = vault.draftsDir.toPath().parent).also {
                 log("drive mounted")
-                quietly("putting the drive in Places") { places.add(at, BuildInfo.variant.title) }
+                if (showInPlaces.value) quietly("putting the drive in Places") { places.add(at, BuildInfo.variant.title) }
             }
         } catch (e: Exception) {
             log("mounting the drive failed (${e.javaClass.simpleName})")
