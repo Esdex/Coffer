@@ -113,7 +113,7 @@ class Telegram(
         val config = TdlibConfig(
             credentials = credentials,
             databaseDir = File(root, "db"),
-            filesDir = File(root, "files"),
+            filesDir = File(root, FILES),
             databaseKey = databaseKey,
             deviceModel = deviceModel,
             systemVersion = systemVersion,
@@ -137,10 +137,17 @@ class Telegram(
         }
     }
 
+    /**
+     * The session closed by itself: logged out, here or from another device. TDLib deletes its database then but
+     * leaves its files folder, the vault's blobs it downloaded, whole and in part (seen on the desktop, 2026-11-23:
+     * 11 documents and 2 partial ones after logging out). They are encrypted, but nothing of a vault is to outlive
+     * the session, so they go before the next one starts.
+     */
     private suspend fun restartAfter(closed: TelegramSession) = lock.withLock {
         if (session !== closed) return@withLock
         stateJob?.cancel()
         session = null
+        File(root, FILES).deleteRecursively()
         startLocked()
     }
 
@@ -216,8 +223,13 @@ class Telegram(
     suspend fun storage(): TdlibStorageBackend = current().storage()
 
     /**
-     * Signs out, or abandons a half-done sign-in. TDLib deletes its data and closes; a new session
-     * starts at the phone number step.
+     * Signs out, or abandons a half-done sign-in. TDLib deletes its data and closes, and its downloads go with
+     * it ([restartAfter]); a new session starts at the phone number step.
      */
     suspend fun logOut() = current().logOut()
+
+    private companion object {
+        /** TDLib's files folder under [root]: what it downloads and its partial downloads. */
+        const val FILES = "files"
+    }
 }
