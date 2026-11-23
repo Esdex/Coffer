@@ -21,7 +21,9 @@ kotlin {
 }
 
 // Coffer's own Telegram API keys, the ones the Android public build carries (app/public-api-keys.properties,
-// in git on purpose), and the version: written into a resource the app reads at start.
+// in git on purpose), the version, and which Coffer it is: written into a resource the app reads at start.
+// Coffer Dev unless -Pcoffer.release, which packaging passes: a build that forgets it keeps away from the
+// installed Coffer's data rather than into it (Esdex, 2026-11-23).
 val publicApiKeys = Properties().apply {
     rootProject.file("app/public-api-keys.properties").takeIf { it.isFile }?.inputStream()?.use(::load)
 }
@@ -29,6 +31,7 @@ val buildInfo = tasks.register("buildInfo") {
     val out = layout.buildDirectory.dir("generated/buildInfo")
     val values = mapOf(
         "VERSION" to version.toString(),
+        "VARIANT" to if (providers.gradleProperty("coffer.release").isPresent) "release" else "dev",
         "API_ID" to publicApiKeys.getProperty("COFFER_PUBLIC_API_ID").orEmpty().trim(),
         "API_HASH" to publicApiKeys.getProperty("COFFER_PUBLIC_API_HASH").orEmpty().trim(),
     )

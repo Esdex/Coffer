@@ -45,7 +45,7 @@ class PlacesBookmarkTest {
     private fun places(text: String? = original): Pair<Path, PlacesBookmark> {
         val file = folder.root.toPath().resolve("user-places.xbel")
         if (text != null) Files.writeString(file, text)
-        return file to PlacesBookmark(file)
+        return file to PlacesBookmark(file, "coffer-drive")
     }
 
     /** Each bookmark as its href and title, by the JDK's parser. */
@@ -109,6 +109,21 @@ class PlacesBookmarkTest {
         places.remove()
         assertEquals(listOf("Home", "s"), bookmarks(file).map { it.second })
         assertEquals(0, ours(file))
+    }
+
+    @Test
+    fun coffersAndCofferDevsBookmarksAreEachTheirOwn() {
+        val (file, coffer) = places()
+        val dev = PlacesBookmark(file, "coffer-dev-drive")
+        coffer.add(Path.of("/run/user/1000/coffer"), "Coffer")
+        dev.add(Path.of("/run/user/1000/coffer-dev"), "Coffer Dev")
+        assertEquals(listOf("Home", "s", "Coffer", "Coffer Dev"), bookmarks(file).map { it.second })
+        coffer.remove()
+        assertEquals(listOf("Home", "s", "Coffer Dev"), bookmarks(file).map { it.second })
+        dev.add(Path.of("/run/user/1000/coffer-dev"), "Coffer Dev")
+        assertEquals(1, ours(file))
+        dev.remove()
+        assertEquals(original, Files.readString(file))
     }
 
     @Test

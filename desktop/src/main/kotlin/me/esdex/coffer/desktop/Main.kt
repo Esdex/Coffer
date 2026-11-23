@@ -53,7 +53,7 @@ fun main() {
     val keyring = try {
         Keyring.open()
     } catch (e: KeyringException) {
-        fatal("Coffer cannot reach the system keyring", e)
+        fatal("${BuildInfo.variant.title} cannot reach the system keyring", e)
     }
     val secrets = DesktopSecrets(keyring)
     // Before TDLib starts: a locked keyring shows its dialog now, and a refusal is said here instead of
@@ -62,7 +62,7 @@ fun main() {
         secrets.databaseKey()?.fill(0)
         openIndex(secrets)
     } catch (e: KeyringException) {
-        fatal("Coffer cannot read its keys from the system keyring", e)
+        fatal("${BuildInfo.variant.title} cannot read its keys from the system keyring", e)
     }
     val sodium = LazySodiumAdapter(LazySodiumJava(SodiumJava()))
     val telegram = desktopTelegram(secrets).also { it.start() }
@@ -71,7 +71,7 @@ fun main() {
     val unlock = AppWindow { close -> Unlock(vault, onDone = close) }
 
     val runtime = System.getenv("XDG_RUNTIME_DIR") ?: error("XDG_RUNTIME_DIR is not set")
-    val drive = DriveMount(Path.of(runtime, "coffer"), vault)
+    val drive = DriveMount(Path.of(runtime, BuildInfo.variant.id), vault)
     drive.follow()
     val quit = CountDownLatch(1)
     Runtime.getRuntime().addShutdownHook(Thread { drive.unmount() })
@@ -79,7 +79,7 @@ fun main() {
     val open = { if (drive.isMounted) ProcessBuilder("xdg-open", drive.at.toString()).start() else unlock.show(); Unit }
     val settings = DesktopSettings(File(dataDir(), "settings.properties"))
     val themePath = TrayIcons.install(File(dataDir(), "icons"))
-    val tray = KdeTray(title = "Coffer", icon = TrayIcons.of(TrayIcons.Look.LOCKED), onActivate = open)
+    val tray = KdeTray(id = BuildInfo.variant.id, title = BuildInfo.variant.title, icon = TrayIcons.of(TrayIcons.Look.LOCKED), onActivate = open)
     val actions = Actions(
         open = open, unlock = unlock::show, lock = vault::lock, signIn = signIn::show, quit = { quit.countDown() },
         monochrome = { settings.setMonochromeIcon(!settings.monochromeIcon.value) },
@@ -172,7 +172,7 @@ private const val TRAY_PACE_MS = 1_000L
 private fun fatal(title: String, cause: Exception): Nothing {
     System.err.println("$title: ${cause.message}")
     application {
-        Window(onCloseRequest = ::exitApplication, title = "Coffer") {
+        Window(onCloseRequest = ::exitApplication, title = BuildInfo.variant.title) {
             MaterialTheme {
                 Surface {
                     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

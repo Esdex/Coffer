@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import me.esdex.coffer.desktop.BuildInfo
 import me.esdex.coffer.desktop.vault.DesktopVault
 import me.esdex.coffer.desktop.vault.log
 import java.nio.file.Path
@@ -15,7 +16,7 @@ import java.nio.file.Path
  * The drive at [at] for as long as [vault] is unlocked (Esdex, 2026-11-21: lock = unmount), shown in
  * Dolphin's Places while it is there.
  */
-class DriveMount(val at: Path, private val vault: DesktopVault, private val places: PlacesBookmark = PlacesBookmark.kde()) {
+class DriveMount(val at: Path, private val vault: DesktopVault, private val places: PlacesBookmark = PlacesBookmark.kde("${BuildInfo.variant.id}-drive")) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var mounted: VaultDrive.Mounted? = null
 
@@ -35,7 +36,7 @@ class DriveMount(val at: Path, private val vault: DesktopVault, private val plac
         mounted = try {
             VaultDrive.mount(at, tree = { vault.tree.value }, open = { runBlocking { vault.openFile(it) } }, edits = { vault.edits }, space = vault.draftsDir.toPath().parent).also {
                 log("drive mounted")
-                quietly("putting the drive in Places") { places.add(at, PLACE_TITLE) }
+                quietly("putting the drive in Places") { places.add(at, BuildInfo.variant.title) }
             }
         } catch (e: Exception) {
             log("mounting the drive failed (${e.javaClass.simpleName})")
@@ -56,9 +57,5 @@ class DriveMount(val at: Path, private val vault: DesktopVault, private val plac
     /** Places is a convenience: the drive works without it, so a failure there is only logged. */
     private inline fun quietly(what: String, block: () -> Unit) {
         runCatching(block).onFailure { log("$what failed (${it.javaClass.simpleName})") }
-    }
-
-    private companion object {
-        const val PLACE_TITLE = "Coffer"
     }
 }

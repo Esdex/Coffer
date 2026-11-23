@@ -27,6 +27,7 @@ sealed interface MenuEntry {
  * for as long as the tray lives, so a click on a menu drawn before a change still means what it said.
  */
 class KdeTray(
+    private val id: String,
     private val title: String,
     icon: List<BufferedImage>,
     private val onActivate: () -> Unit,
@@ -98,7 +99,7 @@ class KdeTray(
     private inner class Item : StatusNotifierItem {
         override fun getObjectPath() = ITEM_PATH
         override fun getCategory() = "ApplicationStatus"
-        override fun getId() = "coffer"
+        override fun getId() = id
         override fun getTitle() = title
         override fun getStatus() = "Active"
         override fun getWindowId() = 0

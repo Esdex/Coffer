@@ -1,5 +1,6 @@
 package me.esdex.coffer.desktop.keyring
 
+import me.esdex.coffer.desktop.BuildInfo
 import org.freedesktop.dbus.DBusPath
 import org.freedesktop.dbus.connections.impl.DBusConnection
 import org.freedesktop.dbus.connections.impl.DBusConnectionBuilder
@@ -50,7 +51,7 @@ class Keyring private constructor(private val connection: DBusConnection) : Secr
         if (collection.path == NO_OBJECT) throw KeyringException("the keyring has no default collection")
         unlock(listOf(collection))
         val properties = mapOf(
-            "org.freedesktop.Secret.Item.Label" to Variant("Coffer: $label"),
+            "org.freedesktop.Secret.Item.Label" to Variant("${BuildInfo.variant.title}: $label"),
             "org.freedesktop.Secret.Item.Attributes" to Variant(attributes(name), "a{ss}"),
         )
         val created = remote<SecretCollection>(collection.path)
@@ -107,8 +108,8 @@ class Keyring private constructor(private val connection: DBusConnection) : Secr
         private const val DEFAULT_COLLECTION = "default"
         private const val NO_OBJECT = "/"
 
-        /** How Coffer's items are told from others; secret-tool finds them by the same attributes. */
-        fun attributes(name: String) = mapOf("application" to "me.esdex.coffer", "secret" to name)
+        /** How Coffer's items are told from others, and Coffer Dev's from Coffer's; secret-tool finds them by the same attributes. */
+        fun attributes(name: String) = mapOf("application" to BuildInfo.variant.application, "secret" to name)
 
         /** Connects to the session's keyring. */
         fun open(): Keyring {

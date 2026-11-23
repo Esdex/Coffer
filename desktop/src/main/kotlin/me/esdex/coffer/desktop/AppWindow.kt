@@ -27,7 +27,7 @@ class AppWindow(private val content: @Composable (close: () -> Unit) -> Unit) {
                 application(exitProcessOnExit = false) {
                     Window(
                         onCloseRequest = ::exitApplication,
-                        title = "Coffer",
+                        title = BuildInfo.variant.title,
                         state = rememberWindowState(width = 440.dp, height = 620.dp),
                     ) {
                         MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {

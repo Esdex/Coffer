@@ -17,19 +17,38 @@ object BuildInfo {
 
     val version: String = values.getProperty("VERSION").orEmpty()
 
+    val variant: Variant = Variant.of(values.getProperty("VARIANT"))
+
     /** Coffer's own API keys; null in a build without them. */
     val apiCredentials: ApiCredentials? =
         ApiCredentials.parse(values.getProperty("API_ID").orEmpty(), values.getProperty("API_HASH").orEmpty())
 }
 
 /**
- * Where Coffer keeps its data: $XDG_DATA_HOME/coffer, by default ~/.local/share/coffer. For this user
+ * Which Coffer this is. One built to try things is Coffer Dev, as on the phone, and keeps apart from an installed
+ * Coffer in all it has on the computer: its data, its keys in the keyring, its drive, its place in Dolphin and
+ * in the tray (Esdex, 2026-11-23). So the two run side by side, and a fault in one never reaches the other's data.
+ * In Telegram they are two devices: signed in to the same account, they open the same vault.
+ */
+enum class Variant(val title: String, val id: String, val application: String) {
+    DEV("Coffer Dev", "coffer-dev", "me.esdex.coffer.debug"),
+    RELEASE("Coffer", "coffer", "me.esdex.coffer"),
+    ;
+
+    companion object {
+        /** Anything but "release" is Coffer Dev. */
+        fun of(value: String?): Variant = if (value == "release") RELEASE else DEV
+    }
+}
+
+/**
+ * Where Coffer keeps its data: $XDG_DATA_HOME/coffer, by default ~/.local/share/coffer; coffer-dev for Coffer Dev. For this user
  * alone, as an Android app's own files are: created with the umask it would be readable by the group.
  */
 fun dataDir(): File {
     val base = System.getenv("XDG_DATA_HOME")?.takeIf { it.isNotBlank() }
         ?: Path.of(System.getProperty("user.home"), ".local", "share").toString()
-    val dir = Path.of(base, "coffer")
+    val dir = Path.of(base, BuildInfo.variant.id)
     Files.createDirectories(dir)
     Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"))
     return dir.toFile()
