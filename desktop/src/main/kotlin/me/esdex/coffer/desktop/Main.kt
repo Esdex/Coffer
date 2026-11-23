@@ -27,6 +27,7 @@ import me.esdex.coffer.core.tdlib.AuthState
 import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.desktop.drive.DriveMount
+import me.esdex.coffer.desktop.drive.PreviewSweeper
 import me.esdex.coffer.desktop.index.desktopVaultIndex
 import me.esdex.coffer.desktop.keyring.Keyring
 import me.esdex.coffer.desktop.keyring.KeyringException
@@ -76,7 +77,13 @@ fun main() {
 
     val settings = DesktopSettings(File(dataDir(), "settings.properties"))
     val runtime = System.getenv("XDG_RUNTIME_DIR") ?: error("XDG_RUNTIME_DIR is not set")
-    val drive = DriveMount(Path.of(runtime, BuildInfo.variant.id), vault, settings.showInDolphin)
+    val at = Path.of(runtime, BuildInfo.variant.id)
+    // Left by a crash or a kill, then each as it comes.
+    val previews = PreviewSweeper(PreviewSweeper.cache(), at).apply {
+        runCatching { sweep() }
+        watch()
+    }
+    val drive = DriveMount(at, vault, settings.showInDolphin, previews)
     drive.follow()
     val quit = CountDownLatch(1)
     Runtime.getRuntime().addShutdownHook(Thread { drive.unmount() })
@@ -113,6 +120,7 @@ fun main() {
     tray.close()
     network?.close()
     drive.unmount()
+    previews.close()
     index.close()
     keyring.close()
     // The windows' AWT threads would keep the process alive.
