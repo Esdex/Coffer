@@ -231,6 +231,12 @@ class DesktopVault(
         catchUpFlow.value = null
     }
 
+    /**
+     * Whether files written to the drive wait to be sent, which forgetting the vault would lose; also while it is
+     * locked. A file in the drafts' folder, a copy or an upload's prepared part: their folders stay when empty.
+     */
+    fun hasUnsentFiles(): Boolean = unsentFilesIn(draftsDir)
+
     private suspend fun forget() {
         close()
         index.clear()
@@ -247,3 +253,5 @@ class DesktopVault(
 
 /** Coffer's lines about the vault: states, counts and ids, never names or content (SPEC §8). */
 internal fun log(message: String) = System.err.println("I/CofferVault: $message")
+
+internal fun unsentFilesIn(drafts: File): Boolean = drafts.walkTopDown().any { it.isFile }

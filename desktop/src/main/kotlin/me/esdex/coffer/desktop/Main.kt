@@ -33,6 +33,7 @@ import me.esdex.coffer.desktop.index.desktopVaultIndex
 import me.esdex.coffer.desktop.keyring.Keyring
 import me.esdex.coffer.desktop.keyring.KeyringException
 import me.esdex.coffer.desktop.network.NetworkWatch
+import me.esdex.coffer.desktop.signin.LogOut
 import me.esdex.coffer.desktop.signin.SignIn
 import me.esdex.coffer.desktop.tray.KdeTray
 import me.esdex.coffer.desktop.tray.MenuEntry
@@ -75,6 +76,7 @@ fun main() {
     val vault = DesktopVault(sodium, telegram, secrets, index, dataDir()).also { it.start() }
     val signIn = AppWindow { close -> SignIn(telegram, onDone = close) }
     val unlock = AppWindow { close -> Unlock(vault, onDone = close) }
+    val logOut = AppWindow { close -> LogOut(telegram, vault, onDone = close) }
 
     val settings = DesktopSettings(File(dataDir(), "settings.properties"))
     val runtime = System.getenv("XDG_RUNTIME_DIR") ?: error("XDG_RUNTIME_DIR is not set")
@@ -109,7 +111,7 @@ fun main() {
     }
     val tray = KdeTray(id = BuildInfo.variant.id, title = BuildInfo.variant.title, icon = TrayIcons.of(TrayIcons.Look.LOCKED), onActivate = activate)
     val actions = Actions(
-        open = open, unlock = unlock::show, lock = vault::lock, signIn = signIn::show, quit = { quit.countDown() },
+        open = open, unlock = unlock::show, lock = vault::lock, signIn = signIn::show, logOut = logOut::show, quit = { quit.countDown() },
         monochrome = { settings.setMonochromeIcon(!settings.monochromeIcon.value) },
         dolphin = { settings.setShowInDolphin(!settings.showInDolphin.value) },
     )
@@ -153,6 +155,7 @@ private class Actions(
     unlock: () -> Unit,
     lock: () -> Unit,
     signIn: () -> Unit,
+    logOut: () -> Unit,
     quit: () -> Unit,
     val monochrome: () -> Unit,
     val dolphin: () -> Unit,
@@ -161,6 +164,7 @@ private class Actions(
     val unlock = MenuEntry.Action("Unlock", unlock)
     val lock = MenuEntry.Action("Lock", lock)
     val signIn = MenuEntry.Action("Sign in to Telegram", signIn)
+    val logOut = MenuEntry.Action("Log out…", logOut)
     val quit = MenuEntry.Action("Quit", quit)
 }
 
@@ -217,6 +221,7 @@ private fun showInTray(
                         ),
                     ),
                 )
+                if (state.signedIn) add(actions.logOut)
                 add(actions.quit)
             }
             click.set(view.click)
