@@ -16,14 +16,14 @@ import java.nio.file.Path
 
 /**
  * The drive at [at] for as long as [vault] is unlocked (Esdex, 2026-11-21: lock = unmount), shown in
- * Dolphin's Places while it is there if [showInPlaces], which takes effect at once. The desktop's thumbnail cache
- * is swept of the drive's previews when it goes ([PreviewSweeper]).
+ * Dolphin's Places while it is there if [showInPlaces], which takes effect at once. When it goes, [sweep] takes
+ * what the desktop kept of its files out of its caches and lists ([PreviewSweeper], [RecentFiles]).
  */
 class DriveMount(
     val at: Path,
     private val vault: DesktopVault,
     private val showInPlaces: StateFlow<Boolean>,
-    private val previews: PreviewSweeper? = null,
+    private val sweep: () -> Unit = {},
     private val places: PlacesBookmark = PlacesBookmark.kde("${BuildInfo.variant.id}-drive"),
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -69,7 +69,7 @@ class DriveMount(
         quietly("taking the drive out of Places") { places.remove() }
         runCatching { drive.close() }.onFailure { log("unmounting the drive failed (${it.javaClass.simpleName})") }
         log("drive unmounted")
-        previews?.let { quietly("sweeping the drive's previews") { it.sweep() } }
+        quietly("sweeping what the drive left") { sweep() }
     }
 
     /** Places is a convenience: the drive works without it, so a failure there is only logged. */

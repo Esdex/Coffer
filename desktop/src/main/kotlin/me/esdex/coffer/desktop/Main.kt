@@ -28,6 +28,7 @@ import me.esdex.coffer.core.tdlib.Telegram
 import me.esdex.coffer.core.vault.VaultManager
 import me.esdex.coffer.desktop.drive.DriveMount
 import me.esdex.coffer.desktop.drive.PreviewSweeper
+import me.esdex.coffer.desktop.drive.RecentFiles
 import me.esdex.coffer.desktop.index.desktopVaultIndex
 import me.esdex.coffer.desktop.keyring.Keyring
 import me.esdex.coffer.desktop.keyring.KeyringException
@@ -83,7 +84,14 @@ fun main() {
         runCatching { sweep() }
         watch()
     }
-    val drive = DriveMount(at, vault, settings.showInDolphin, previews)
+    val recent = RecentFiles(RecentFiles.xbel(), at, RecentFiles.Activities.open()).apply {
+        runCatching { sweep() }
+        watch()
+    }
+    val drive = DriveMount(at, vault, settings.showInDolphin, sweep = {
+        previews.sweep()
+        recent.sweep()
+    })
     drive.follow()
     val quit = CountDownLatch(1)
     Runtime.getRuntime().addShutdownHook(Thread { drive.unmount() })
@@ -121,6 +129,7 @@ fun main() {
     network?.close()
     drive.unmount()
     previews.close()
+    recent.close()
     index.close()
     keyring.close()
     // The windows' AWT threads would keep the process alive.
