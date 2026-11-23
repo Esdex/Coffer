@@ -20,4 +20,6 @@ mkdir -p "$APP"
 for size in 16 22 24 32 48 64 128 256 512; do
   rsvg-convert -w "$size" -h "$size" "$LOGO" -o "$APP/coffer-$size.png"
 done
+# The windows' own icon, from the app's resources.
+cp "$APP/coffer-256.png" "$ROOT/desktop/src/main/resources/me/esdex/coffer/desktop/coffer.png"
 echo "Done: $APP"

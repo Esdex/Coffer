@@ -56,6 +56,7 @@ import kotlin.system.exitProcess
  * is left in the home folder.
  */
 fun main() {
+    nameWindows(BuildInfo.variant.application)
     // Before the keyring and TDLib: a second start only asks the first to come forward.
     val instance = when (val claim = SingleInstance.claim(BuildInfo.variant.application)) {
         is SingleInstance.Claim.First -> claim.instance
@@ -251,7 +252,7 @@ private const val TRAY_PACE_MS = 1_000L
 private fun fatal(title: String, cause: Exception): Nothing {
     System.err.println("$title: ${cause.message}")
     application {
-        Window(onCloseRequest = ::exitApplication, title = BuildInfo.variant.title) {
+        Window(onCloseRequest = ::exitApplication, title = BuildInfo.variant.title, icon = appIcon) {
             MaterialTheme {
                 Surface {
                     Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -263,4 +264,17 @@ private fun fatal(title: String, cause: Exception): Nothing {
         }
     }
     exitProcess(1)
+}
+
+/**
+ * The class X11 gives Coffer's windows, [name], so the desktop knows them as Coffer's: its menu entry's icon on the
+ * panel, its name in the window list (StartupWMClass). AWT takes it from the bottom of the stack of the thread that
+ * first draws, here a window's own thread, which made it "kotlin-concurrent-ThreadsKt$thread$thread$1" (measured with
+ * xprop, 2026-11-24). Set before any window, from AWT's field, which is not public: without it the class stays AWT's.
+ */
+private fun nameWindows(name: String) {
+    runCatching {
+        val toolkit = java.awt.Toolkit.getDefaultToolkit()
+        toolkit.javaClass.getDeclaredField("awtAppClassName").apply { isAccessible = true }.set(toolkit, name)
+    }
 }

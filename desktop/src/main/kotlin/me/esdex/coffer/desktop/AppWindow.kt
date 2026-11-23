@@ -6,6 +6,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -28,6 +30,7 @@ class AppWindow(private val content: @Composable (close: () -> Unit) -> Unit) {
                     Window(
                         onCloseRequest = ::exitApplication,
                         title = BuildInfo.variant.title,
+                        icon = appIcon,
                         state = rememberWindowState(width = 440.dp, height = 620.dp),
                     ) {
                         MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
@@ -40,4 +43,10 @@ class AppWindow(private val content: @Composable (close: () -> Unit) -> Unit) {
             }
         }
     }
+}
+
+/** Coffer's logo, as its menu entry has it, for its windows and the panel's button for them. */
+val appIcon: BitmapPainter by lazy {
+    val image = checkNotNull(AppWindow::class.java.getResourceAsStream("coffer.png")) { "no app icon" }.use(javax.imageio.ImageIO::read)
+    BitmapPainter(image.toComposeImageBitmap())
 }

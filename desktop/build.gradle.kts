@@ -60,6 +60,7 @@ dependencies {
     implementation(libs.jfuse)
     implementation(libs.dbus.java.core)
     implementation(libs.dbus.java.unixsocket)
+    runtimeOnly(libs.slf4j.nop)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -86,6 +87,8 @@ compose.desktop {
         mainClass = "me.esdex.coffer.desktop.MainKt"
         // jfuse and TDLib's JNI library are loaded from the class path, not a named module.
         jvmArgs += "--enable-native-access=ALL-UNNAMED"
+        // The windows' class is set from AWT's own field (Main.kt, nameWindows).
+        jvmArgs += "--add-opens=java.desktop/sun.awt.X11=ALL-UNNAMED"
         // The packaged app: TDLib in its own resources, then the system's libraries, where jfuse finds libfuse3.
         // Running from Gradle sets its own (run, below).
         jvmArgs += "-Djava.library.path=\$APPDIR/resources:/usr/lib64:/lib64:/lib:/usr/lib"

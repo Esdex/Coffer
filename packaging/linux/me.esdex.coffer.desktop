@@ -9,3 +9,4 @@ Terminal=false
 Categories=Utility;Security;FileTools;
 Keywords=vault;encryption;telegram;drive;
 StartupNotify=false
+StartupWMClass=me.esdex.coffer
