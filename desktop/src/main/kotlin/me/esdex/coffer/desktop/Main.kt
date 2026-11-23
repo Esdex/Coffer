@@ -30,12 +30,14 @@ import me.esdex.coffer.desktop.drive.DriveMount
 import me.esdex.coffer.desktop.index.desktopVaultIndex
 import me.esdex.coffer.desktop.keyring.Keyring
 import me.esdex.coffer.desktop.keyring.KeyringException
+import me.esdex.coffer.desktop.network.NetworkWatch
 import me.esdex.coffer.desktop.signin.SignIn
 import me.esdex.coffer.desktop.tray.KdeTray
 import me.esdex.coffer.desktop.tray.MenuEntry
 import me.esdex.coffer.desktop.tray.TrayIcons
 import me.esdex.coffer.desktop.tray.TrayState
 import me.esdex.coffer.desktop.tray.TrayView
+import me.esdex.coffer.desktop.tray.asLink
 import me.esdex.coffer.desktop.vault.DesktopVault
 import me.esdex.coffer.desktop.vault.Unlock
 import java.io.File
@@ -66,6 +68,7 @@ fun main() {
     }
     val sodium = LazySodiumAdapter(LazySodiumJava(SodiumJava()))
     val telegram = desktopTelegram(secrets).also { it.start() }
+    val network = NetworkWatch.start { up -> if (up) telegram.networkChanged() else telegram.networkLost() }
     val vault = DesktopVault(sodium, telegram, secrets, index, dataDir()).also { it.start() }
     val signIn = AppWindow { close -> SignIn(telegram, onDone = close) }
     val unlock = AppWindow { close -> Unlock(vault, onDone = close) }
@@ -97,6 +100,7 @@ fun main() {
     }
     quit.await()
     tray.close()
+    network?.close()
     drive.unmount()
     index.close()
     keyring.close()
@@ -125,13 +129,14 @@ private class Actions(open: () -> Unit, unlock: () -> Unit, lock: () -> Unit, si
 }
 
 /**
- * Keeps the tray telling where Coffer stands: signed in or not, the vault locked or open, and what goes to
- * Telegram. At most once a second: a large upload reports progress far more often than a menu needs.
+ * Keeps the tray telling where Coffer stands: signed in or not, Telegram in reach or not, the vault locked or
+ * open, and what goes to Telegram. At most once a second: a large upload reports progress far more often than a menu needs.
  */
 private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, settings: DesktopSettings, themePath: String, actions: Actions) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     scope.launch {
-        combine(telegram.state, vault.manager.state, vault.catchingUp, vault.transfers, settings.monochromeIcon) { auth, state, catchingUp, transfers, monochrome ->
+        val telegramState = combine(telegram.state, telegram.connection.asLink(), ::Pair)
+        combine(telegramState, vault.manager.state, vault.catchingUp, vault.transfers, settings.monochromeIcon) { (auth, link), state, catchingUp, transfers, monochrome ->
             monochrome to TrayState(
                 signedIn = auth == AuthState.Ready,
                 vault = when (state) {
@@ -142,6 +147,7 @@ private fun showInTray(tray: KdeTray, telegram: Telegram, vault: DesktopVault, s
                 },
                 catchingUp = catchingUp,
                 transfers = transfers,
+                link = link,
             )
         }.conflate().collect { (monochrome, state) ->
             val view = TrayView.of(state)

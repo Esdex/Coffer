@@ -60,9 +60,28 @@ class Telegram(
     /** The running session's link to Telegram; [Connection.CONNECTING] between sessions. */
     val connection: StateFlow<Connection> = connectionFlow.asStateFlow()
 
+    @Volatile
+    private var networkUp = true
+
     /** The network came back: TDLib backs off further with every failed attempt and is told to try now. */
     fun networkChanged() {
-        scope.launch { lock.withLock { session }?.networkChanged() }
+        networkUp = true
+        tellNetwork()
+    }
+
+    /**
+     * The computer has no network, as the desktop app hears from NetworkManager: TDLib stops trying and says it
+     * waits for the network, where it would otherwise go on connecting; [networkChanged] once it is back. Android
+     * does not call it: it tells only of the network coming back.
+     */
+    fun networkLost() {
+        networkUp = false
+        tellNetwork()
+    }
+
+    // The latest word, whichever call gets the lock first: a loss and a return a moment apart end as the return.
+    private fun tellNetwork() {
+        scope.launch { lock.withLock { session?.network(networkUp) } }
     }
 
     /** The user may pick API keys of their own before signing in. */
@@ -105,6 +124,7 @@ class Telegram(
         // TelegramSession has handed the parameters to TDLib in its constructor.
         databaseKey.fill(0)
         session = started
+        if (!networkUp) started.network(false)
         stateJob = scope.launch {
             launch { started.connection.collect { connectionFlow.value = it } }
             started.state.collect { state ->

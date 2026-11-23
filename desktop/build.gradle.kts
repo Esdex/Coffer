@@ -60,6 +60,7 @@ dependencies {
     implementation(libs.dbus.java.unixsocket)
 
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(testFixtures(project(":core:index")))
 }
 

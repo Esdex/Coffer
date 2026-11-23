@@ -8,8 +8,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TrayViewTest {
-    private fun unlocked(transfers: VaultWriter.Transfers = VaultWriter.Transfers.NONE, catchingUp: Int? = null) =
-        TrayView.of(TrayState(signedIn = true, vault = TrayState.Vault.UNLOCKED, catchingUp = catchingUp, transfers = transfers))
+    private fun unlocked(transfers: VaultWriter.Transfers = VaultWriter.Transfers.NONE, catchingUp: Int? = null, link: TrayState.Link = TrayState.Link.UP) =
+        TrayView.of(TrayState(signedIn = true, vault = TrayState.Vault.UNLOCKED, catchingUp = catchingUp, transfers = transfers, link = link))
+
+    private fun vault(vault: TrayState.Vault, link: TrayState.Link) = TrayView.of(TrayState(true, vault, null, VaultWriter.Transfers.NONE, link))
 
     private val mb = 1024L * 1024
 
@@ -49,6 +51,36 @@ class TrayViewTest {
     }
 
     @Test
+    fun withoutNetworkTheTooltipSaysSoAndTheTransfersWait() {
+        val upload = VaultWriter.Transfers(listOf(Drafts.Progress("video.mp4", 82 * mb, 182 * mb, TransferStage.MOVING)), 0, 2)
+        val view = unlocked(upload, link = TrayState.Link.WAITING_FOR_NETWORK)
+        assertEquals("Waiting for network", view.status)
+        assertEquals(listOf("Waiting for network", "Uploading video.mp4: 45% (82 of 182 MB)", "Sending 2 changes"), view.lines)
+        assertEquals(TrayIcons.Look.OFFLINE, view.icon)
+        assertEquals(TrayView("Waiting for network", listOf("Waiting for network"), TrayView.Lock.LOCK, offline = true), unlocked(link = TrayState.Link.WAITING_FOR_NETWORK))
+        assertEquals("Connecting to Telegram", unlocked(link = TrayState.Link.CONNECTING).status)
+        assertEquals(TrayIcons.Look.OFFLINE, unlocked(link = TrayState.Link.CONNECTING).icon)
+    }
+
+    @Test
+    fun aLockedVaultStaysGreyAndSaysItInTheMenu() {
+        val view = vault(TrayState.Vault.LOCKED, TrayState.Link.WAITING_FOR_NETWORK)
+        assertEquals(TrayView("Locked", listOf("Waiting for network"), TrayView.Lock.UNLOCK, offline = true), view)
+        assertEquals(TrayIcons.Look.LOCKED, view.icon)
+        assertEquals("Waiting for network", vault(TrayState.Vault.LOOKING, TrayState.Link.WAITING_FOR_NETWORK).status)
+        assertEquals(listOf("Connecting to Telegram"), vault(TrayState.Vault.NONE, TrayState.Link.CONNECTING).lines)
+        assertEquals(TrayView("Locked", emptyList(), TrayView.Lock.UNLOCK), vault(TrayState.Vault.LOCKED, TrayState.Link.UP))
+    }
+
+    @Test
+    fun notSignedInSaysNothingOfTheNetwork() {
+        assertEquals(
+            TrayView("Not signed in to Telegram", emptyList(), TrayView.Lock.NONE),
+            TrayView.of(TrayState(false, TrayState.Vault.LOCKED, null, VaultWriter.Transfers.NONE, TrayState.Link.WAITING_FOR_NETWORK)),
+        )
+    }
+
+    @Test
     fun theIconSaysWhereThingsStand() {
         assertEquals(TrayIcons.Look.OPEN, unlocked().icon)
         assertEquals(TrayIcons.Look.BUSY, unlocked(VaultWriter.Transfers(emptyList(), 0, 1)).icon)
@@ -64,7 +96,7 @@ class TrayViewTest {
         for (look in looks) assertEquals(listOf(16, 22, 24, 32, 48, 64, 128), look.map { it.width })
         val middle = looks.map { it.first { image -> image.width == 32 } }
         fun pixels(i: java.awt.image.BufferedImage) = (0 until 32).flatMap { y -> (0 until 32).map { x -> i.getRGB(x, y) } }
-        assertEquals("three different looks", 3, middle.map(::pixels).toSet().size)
+        assertEquals("four different looks", 4, middle.map(::pixels).toSet().size)
     }
 
     @Test
@@ -73,6 +105,7 @@ class TrayViewTest {
         assertEquals(KdeTray.Look.Named("coffer-tray-symbolic", path), TrayIcons.tray(TrayIcons.Look.OPEN, monochrome = true, themePath = path))
         assertEquals(KdeTray.Look.Named("coffer-tray-locked-symbolic", path), TrayIcons.tray(TrayIcons.Look.LOCKED, monochrome = true, themePath = path))
         assertEquals(KdeTray.Look.Named("coffer-tray-busy-symbolic", path), TrayIcons.tray(TrayIcons.Look.BUSY, monochrome = true, themePath = path))
+        assertEquals(KdeTray.Look.Named("coffer-tray-offline-symbolic", path), TrayIcons.tray(TrayIcons.Look.OFFLINE, monochrome = true, themePath = path))
         assertEquals(KdeTray.Look.Pictures(TrayIcons.of(TrayIcons.Look.BUSY)), TrayIcons.tray(TrayIcons.Look.BUSY, monochrome = false, themePath = path))
     }
 
@@ -81,7 +114,7 @@ class TrayViewTest {
         val dir = java.nio.file.Files.createTempDirectory("icons").toFile()
         try {
             assertEquals(dir.absolutePath, TrayIcons.install(dir))
-            for (name in listOf("coffer-tray-symbolic", "coffer-tray-locked-symbolic", "coffer-tray-busy-symbolic")) {
+            for (name in listOf("coffer-tray-symbolic", "coffer-tray-locked-symbolic", "coffer-tray-busy-symbolic", "coffer-tray-offline-symbolic")) {
                 val svg = java.io.File(dir, "hicolor/scalable/apps/$name.svg")
                 assertTrue(name, svg.isFile && java.io.File(dir, "$name.svg").isFile)
                 // The class the panel paints in its text colour.

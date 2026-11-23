@@ -292,11 +292,11 @@ class TelegramSession(config: TdlibConfig) {
     /**
      * The network came back, or Android let this app use it again. TDLib does not notice either and
      * retries on its own schedule, minutes apart after a long time without network; this makes it
-     * reconnect now.
+     * reconnect now. Without network, TDLib stops trying and says it waits for the network.
      */
-    internal fun networkChanged() {
-        TdlibLog.i("network available, reconnecting")
-        client.send(TdApi.SetNetworkType(TdApi.NetworkTypeOther()), null)
+    internal fun network(available: Boolean) {
+        TdlibLog.i(if (available) "network available, reconnecting" else "network lost")
+        client.send(TdApi.SetNetworkType(if (available) TdApi.NetworkTypeOther() else TdApi.NetworkTypeNone()), null)
     }
 
     /** A test helper too: a cloud password on a test account. */
